@@ -1,3 +1,11 @@
+// Program.cs  ✅ FULL COPY/REPLACE
+// ✅ GLOBAL BOT, MULTI-VTC (per Discord server / Guild)
+// ✅ Per-guild persistence: linked_drivers_<guildId>.json
+// ✅ Per-guild VTC name resolution: /api/vtc/name?guildId=...
+// ✅ Link codes are tied to a guild; DMs are blocked for linking
+// ✅ Railway env overrides: DISCORD_TOKEN/BOT_TOKEN + PORT + optional VTC_NAME/DEFAULT_DRIVER_NAME
+// ✅ Backwards-friendly: /api/vtc/servers still works without guildId
+
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -24,23 +32,19 @@ internal static class Program
     };
 
     private static readonly string LogPath = Path.Combine(AppContext.BaseDirectory, "vtcbot.log");
-    private static readonly string LinkedDriversPath = Path.Combine(AppContext.BaseDirectory, "linked_drivers.json");
 
     private static DiscordSocketClient? _client;
     private static BotConfig _cfg = BotConfig.LoadOrDefault();
 
-    // Cached VTC name so /api/vtc/name never returns empty
-    private static string _cachedVtcName = "OverWatch ELD";
-
     // Presence ping (optional)
     private static PresencePing? _lastPresence;
 
-    // ✅ Link codes -> Discord user (in-memory)
+    // ✅ Link codes -> Discord user + guild (in-memory)
     private static readonly ConcurrentDictionary<string, LinkRecord> _linkCodes = new(StringComparer.OrdinalIgnoreCase);
 
-    // ✅ Linked drivers (persisted)
-    // Key: driverKey (we use "discord:<id>" until ELD confirms a driver name)
-    private static readonly ConcurrentDictionary<string, LinkedDriverRecord> _linkedDrivers = new(StringComparer.OrdinalIgnoreCase);
+    // ✅ Linked drivers (persisted PER GUILD)
+    // guildId -> (driverKey -> record)
+    private static readonly ConcurrentDictionary<ulong, ConcurrentDictionary<string, LinkedDriverRecord>> _linkedByGuild = new();
 
     private static void Log(string message)
     {
@@ -57,11 +61,8 @@ internal static class Program
             Log(e.ExceptionObject?.ToString() ?? "(null)");
         };
 
-        // ✅ Load persisted links BEFORE starting services
-        LoadLinkedDriversFromDisk();
-
         // ------------------------------------------------------------
-        // ✅ Railway/Host ENV overrides (this is the missing piece)
+        // ✅ Railway/Host ENV overrides (DISCORD_TOKEN + PORT etc.)
         // ------------------------------------------------------------
         ApplyEnvironmentOverrides();
 
@@ -69,14 +70,10 @@ internal static class Program
         Log($"Runtime BaseDirectory: {AppContext.BaseDirectory}");
         Log($"Config path: {cfgPath}");
         Log($"Config exists: {File.Exists(cfgPath)}");
-        Log($"Linked drivers path: {LinkedDriversPath}");
-        Log($"Linked drivers loaded: {_linkedDrivers.Count}");
 
         if (_cfg.Port <= 0) _cfg.Port = 8080;
-        if (!string.IsNullOrWhiteSpace(_cfg.VtcName))
-            _cachedVtcName = _cfg.VtcName!;
 
-        Log("Starting OverWatchELD.VtcBot (baseline / no roles + LINK + LINKED-ONLY ROSTER + PERSIST + ROSTER-NAMES)...");
+        Log("Starting OverWatchELD.VtcBot (GLOBAL BOT / multi-VTC per guild + LINK + LINKED-ONLY ROSTER + PERSIST)...");
         Log($"Config: Port={_cfg.Port}  Token={(string.IsNullOrWhiteSpace(_cfg.BotToken) ? "MISSING" : "OK")}");
 
         // Start Discord (optional)
@@ -104,29 +101,46 @@ internal static class Program
                     return Task.CompletedTask;
                 };
 
+                _client.JoinedGuild += g =>
+                {
+                    Log($"✅ JoinedGuild: {g.Name} ({g.Id})");
+                    // Load persisted roster for this guild (if present)
+                    LoadLinkedDriversFromDisk(g.Id);
+                    return Task.CompletedTask;
+                };
+
+                _client.LeftGuild += g =>
+                {
+                    Log($"⚠️ LeftGuild: {g.Name} ({g.Id})");
+                    // keep any local files; no action required
+                    return Task.CompletedTask;
+                };
+
                 _client.Ready += async () =>
                 {
                     Log("✅ Discord client READY.");
                     Log($"✅ Logged in as: {_client.CurrentUser?.Username}#{_client.CurrentUser?.Discriminator}");
                     Log($"✅ Guilds visible: {_client.Guilds.Count}");
 
+                    // Load persisted rosters for all guilds we can see
+                    foreach (var g in _client.Guilds)
+                    {
+                        LoadLinkedDriversFromDisk(g.Id);
+                    }
+
+                    // Optional: download users (helps display names)
                     try
                     {
-                        var g = _client.Guilds.OrderBy(x => x.Name).FirstOrDefault();
-                        if (g != null && !string.IsNullOrWhiteSpace(g.Name))
+                        foreach (var g in _client.Guilds)
                         {
-                            _cachedVtcName = g.Name;
-                            Log($"✅ Cached VTC name set to: {_cachedVtcName}");
-
                             try
                             {
                                 await g.DownloadUsersAsync();
-                                Log($"✅ DownloadUsersAsync complete. Cached members: {g.Users.Count}");
+                                Log($"✅ DownloadUsersAsync complete for {g.Name} ({g.Id}). Cached members: {g.Users.Count}");
                             }
                             catch (Exception ex)
                             {
-                                Log("⚠️ DownloadUsersAsync failed (name resolving may be limited):");
-                                Log(ex.Message);
+                                Log($"⚠️ DownloadUsersAsync failed for {g.Name} ({g.Id}): {ex.Message}");
                             }
                         }
                     }
@@ -164,7 +178,7 @@ internal static class Program
         await RunHttpApiAsync(_cfg.Port);
     }
 
-    // ✅ New: read Railway env vars (DISCORD_TOKEN + PORT) and override config.json
+    // ✅ Reads Railway env vars and overrides config.json
     private static void ApplyEnvironmentOverrides()
     {
         try
@@ -192,7 +206,7 @@ internal static class Program
                 Log($"✅ PORT loaded from environment: {_cfg.Port}");
             }
 
-            // Optional nice-to-haves:
+            // Optional (not required now)
             var envVtcName = Environment.GetEnvironmentVariable("VTC_NAME");
             if (!string.IsNullOrWhiteSpace(envVtcName))
                 _cfg.VtcName = envVtcName.Trim();
@@ -219,11 +233,21 @@ internal static class Program
             // Support: !link CODE  (also accept /link CODE or "link CODE")
             if (TryParseLinkCode(content, out var code))
             {
+                // Must be in a guild (no DMs) so we can tie the code to a VTC
+                if (msg.Channel is not SocketGuildChannel gc)
+                {
+                    await msg.Channel.SendMessageAsync("⚠️ Use `!link CODE` inside your Discord server (not in DMs).");
+                    return;
+                }
+
+                var guildId = gc.Guild.Id;
+
                 code = NormalizeCode(code);
 
                 var rec = new LinkRecord
                 {
                     Code = code,
+                    GuildId = guildId,
                     DiscordUserId = msg.Author.Id,
                     DiscordUserName = $"{msg.Author.Username}#{msg.Author.Discriminator}",
                     CreatedUtc = DateTimeOffset.UtcNow
@@ -231,16 +255,19 @@ internal static class Program
 
                 _linkCodes[code] = rec;
 
-                // ✅ IMPORTANT FIX:
-                // Also create/persist a linked roster entry immediately so roster isn't empty.
-                // Driver will be "confirmed" when ELD later calls /api/vtc/link/consume?code=...&driver=...
-                UpsertLinkedDriverFromDiscord(rec.DiscordUserId, rec.DiscordUserName, confirmed: false, driverName: _cfg.DefaultDriverName);
+                // ✅ Create/persist a linked roster entry immediately so roster isn't empty
+                // Driver becomes "confirmed" when ELD later calls /api/vtc/link/consume
+                UpsertLinkedDriverFromDiscord(
+                    guildId: guildId,
+                    discordUserId: rec.DiscordUserId,
+                    fallbackTag: rec.DiscordUserName,
+                    confirmed: false,
+                    driverName: _cfg.DefaultDriverName
+                );
 
-                Log($"✅ LINK set: code={code} user={msg.Author.Username}({msg.Author.Id})");
-                Log($"✅ Linked roster entry ensured for discord:{msg.Author.Id}");
-
+                Log($"✅ LINK set: guild={guildId} code={code} user={msg.Author.Username}({msg.Author.Id})");
                 await msg.Channel.SendMessageAsync(
-                    "✅ Linked code created.\n" +
+                    "✅ Link code created for this server.\n" +
                     "Go back to the ELD and complete linking there.\n" +
                     "If it asks for a code, use: " + code
                 );
@@ -252,13 +279,12 @@ internal static class Program
                 content.Contains("health", StringComparison.OrdinalIgnoreCase))
             {
                 await msg.Channel.SendMessageAsync(
-                    "OverWatch ELD VTC Bot is online (baseline mode, no roles + LINK).\n" +
+                    "OverWatch ELD VTC Bot is online (GLOBAL bot; each Discord server = its own VTC).\n" +
                     $"Health:   http://localhost:{_cfg.Port}/health\n" +
-                    $"Name:     http://localhost:{_cfg.Port}/api/vtc/name\n" +
                     $"Servers:  http://localhost:{_cfg.Port}/api/vtc/servers\n" +
-                    $"Roster (linked-only): http://localhost:{_cfg.Port}/api/vtc/roster\n" +
-                    $"Link consume: http://localhost:{_cfg.Port}/api/vtc/link/consume?code=CODE&driver=NAME\n" +
-                    $"Pending codes: http://localhost:{_cfg.Port}/api/vtc/link/pending"
+                    "Tip: Your ELD must call APIs with a guildId, e.g.\n" +
+                    $"/api/vtc/roster?guildId=YOUR_SERVER_ID\n" +
+                    $"/api/vtc/name?guildId=YOUR_SERVER_ID\n"
                 );
             }
         }
@@ -304,19 +330,36 @@ internal static class Program
 
     private static string MakeDiscordKey(ulong discordUserId) => $"discord:{discordUserId}";
 
-    private static void UpsertLinkedDriverFromDiscord(ulong discordUserId, string fallbackTag, bool confirmed, string? driverName)
+    private static string LinkedDriversPathFor(ulong guildId) =>
+        Path.Combine(AppContext.BaseDirectory, $"linked_drivers_{guildId}.json");
+
+    private static ConcurrentDictionary<string, LinkedDriverRecord> GetGuildStore(ulong guildId)
+    {
+        return _linkedByGuild.GetOrAdd(guildId,
+            _ => new ConcurrentDictionary<string, LinkedDriverRecord>(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static void UpsertLinkedDriverFromDiscord(
+        ulong guildId,
+        ulong discordUserId,
+        string fallbackTag,
+        bool confirmed,
+        string? driverName)
     {
         try
         {
             var key = MakeDiscordKey(discordUserId);
 
-            var resolved = TryResolveDiscordName(discordUserId);
+            var resolved = TryResolveDiscordName(guildId, discordUserId);
             var display = !string.IsNullOrWhiteSpace(resolved) ? resolved! : (fallbackTag ?? $"DiscordUser-{discordUserId}");
 
-            _linkedDrivers.AddOrUpdate(
+            var store = GetGuildStore(guildId);
+
+            store.AddOrUpdate(
                 key,
                 _ => new LinkedDriverRecord
                 {
+                    GuildId = guildId,
                     DriverKey = key,
                     DriverName = string.IsNullOrWhiteSpace(driverName) ? null : driverName,
                     DiscordUserId = discordUserId,
@@ -326,6 +369,7 @@ internal static class Program
                 },
                 (_, existing) =>
                 {
+                    existing.GuildId = guildId;
                     existing.DiscordUserId = discordUserId;
                     existing.DiscordName = display;
                     if (!string.IsNullOrWhiteSpace(driverName))
@@ -336,7 +380,7 @@ internal static class Program
                 }
             );
 
-            SaveLinkedDriversToDisk();
+            SaveLinkedDriversToDisk(guildId);
         }
         catch { }
     }
@@ -385,12 +429,11 @@ internal static class Program
 
         Log($"Try: http://localhost:{port}/");
         Log($"Try: http://localhost:{port}/health");
-        Log($"Try: http://localhost:{port}/api/vtc/name");
-        Log($"Try: http://localhost:{port}/api/vtc/presence");
         Log($"Try: http://localhost:{port}/api/vtc/servers");
-        Log($"Try: http://localhost:{port}/api/vtc/roster");
-        Log($"Try: http://localhost:{port}/api/vtc/link/pending");
-        Log($"Try: http://localhost:{port}/api/vtc/link/consume?code=XXXXXX&driver=BamBam");
+        Log($"Try: http://localhost:{port}/api/vtc/name?guildId=GUILD_ID");
+        Log($"Try: http://localhost:{port}/api/vtc/roster?guildId=GUILD_ID");
+        Log($"Try: http://localhost:{port}/api/vtc/link/pending?guildId=GUILD_ID");
+        Log($"Try: http://localhost:{port}/api/vtc/link/consume?guildId=GUILD_ID&code=XXXXXX&driver=BamBam");
 
         while (listener.IsListening)
         {
@@ -416,6 +459,29 @@ internal static class Program
         try { listener.Stop(); } catch { }
     }
 
+    private static bool TryGetGuildId(HttpListenerRequest req, out ulong guildId)
+    {
+        guildId = 0;
+
+        // Prefer query string: ?guildId=123
+        var q = (req.QueryString["guildId"] ?? req.QueryString["guild"] ?? req.QueryString["serverId"] ?? "").Trim();
+        if (ulong.TryParse(q, out var gid) && gid > 0)
+        {
+            guildId = gid;
+            return true;
+        }
+
+        // Optional: header support: X-Guild-Id
+        var h = (req.Headers["X-Guild-Id"] ?? "").Trim();
+        if (ulong.TryParse(h, out gid) && gid > 0)
+        {
+            guildId = gid;
+            return true;
+        }
+
+        return false;
+    }
+
     private static async Task HandleHttp(HttpListenerContext ctx)
     {
         var traceId = Guid.NewGuid().ToString("N");
@@ -433,21 +499,18 @@ internal static class Program
                 await WriteJson(ctx, 200, new
                 {
                     ok = true,
-                    service = "OverWatchELD.VtcBot (baseline / no roles + LINK + LINKED-ONLY ROSTER + PERSIST + ROSTER-NAMES)",
+                    service = "OverWatchELD.VtcBot (GLOBAL / multi-VTC per guild + LINK + LINKED-ONLY ROSTER + PERSIST)",
                     traceId,
                     utc = DateTimeOffset.UtcNow,
-                    vtcName = ResolveVtcName(),
-                    linkedDrivers = _linkedDrivers.Count,
-                    pendingCodes = _linkCodes.Count,
+                    guildCount = _client?.Guilds.Count ?? 0,
                     endpoints = new[]
                     {
                         "/health",
-                        "/api/vtc/name",
-                        "/api/vtc/presence",
                         "/api/vtc/servers",
-                        "/api/vtc/roster (linked-only)",
-                        "/api/vtc/link/pending",
-                        "/api/vtc/link/consume?code=XXXXXX&driver=Name"
+                        "/api/vtc/name?guildId=GUILD_ID",
+                        "/api/vtc/roster?guildId=GUILD_ID (linked-only)",
+                        "/api/vtc/link/pending?guildId=GUILD_ID",
+                        "/api/vtc/link/consume?guildId=GUILD_ID&code=XXXXXX&driver=Name"
                     }
                 });
                 return;
@@ -461,7 +524,6 @@ internal static class Program
                     service = "OverWatchELD.VtcBot",
                     traceId,
                     utc = DateTimeOffset.UtcNow,
-                    vtcName = ResolveVtcName(),
                     baseDirectory = AppContext.BaseDirectory,
                     discord = new
                     {
@@ -471,16 +533,51 @@ internal static class Program
                         guildCount = _client?.Guilds.Count ?? 0
                     },
                     linkCodesInMemory = _linkCodes.Count,
-                    linkedDriversPersisted = _linkedDrivers.Count,
-                    linkedDriversFile = LinkedDriversPath,
                     lastPresence = _lastPresence
+                });
+                return;
+            }
+
+            if (path == "api/vtc/servers" || path == "api/servers" || path == "servers")
+            {
+                var servers = GetServersSafe();
+
+                var list = servers.Select(s => (object)new
+                {
+                    id = s.id,
+                    name = s.name,
+                    label = s.name,
+                    value = s.id,
+                    text = s.name
+                }).ToArray();
+
+                await WriteJson(ctx, 200, new
+                {
+                    traceId,
+                    count = servers.Length,
+                    servers = list,
+                    guilds = list,
+                    items = list,
+                    data = list
+                });
+                return;
+            }
+
+            // Everything below this requires a guildId
+            if (!TryGetGuildId(ctx.Request, out var guildId))
+            {
+                await WriteJson(ctx, 400, new
+                {
+                    error = "MissingGuildId",
+                    traceId,
+                    hint = "Provide ?guildId=YOUR_SERVER_ID (or header X-Guild-Id)"
                 });
                 return;
             }
 
             if (path == "api/vtc/name")
             {
-                var name = ResolveVtcName();
+                var name = ResolveVtcName(guildId);
 
                 var wantsJson =
                     accept.Contains("application/json", StringComparison.OrdinalIgnoreCase) ||
@@ -495,6 +592,7 @@ internal static class Program
                 await WriteJson(ctx, 200, new
                 {
                     traceId,
+                    guildId = guildId.ToString(),
                     name,
                     vtcName = name,
                     serverName = name,
@@ -531,32 +629,8 @@ internal static class Program
                 {
                     traceId,
                     ok = true,
+                    guildId = guildId.ToString(),
                     receivedUtc = _lastPresence.ReceivedUtc
-                });
-                return;
-            }
-
-            if (path == "api/vtc/servers" || path == "api/servers" || path == "servers")
-            {
-                var servers = GetServersSafe();
-
-                var list = servers.Select(s => (object)new
-                {
-                    id = s.id,
-                    name = s.name,
-                    label = s.name,
-                    value = s.id,
-                    text = s.name
-                }).ToArray();
-
-                await WriteJson(ctx, 200, new
-                {
-                    traceId,
-                    count = servers.Length,
-                    servers = list,
-                    guilds = list,
-                    items = list,
-                    data = list
                 });
                 return;
             }
@@ -564,10 +638,12 @@ internal static class Program
             if (path == "api/vtc/link/pending")
             {
                 var list = _linkCodes.Values
+                    .Where(x => x.GuildId == guildId)
                     .OrderByDescending(x => x.CreatedUtc)
                     .Select(x => new
                     {
                         code = x.Code,
+                        guildId = x.GuildId.ToString(),
                         discordUserId = x.DiscordUserId.ToString(),
                         discordUserName = x.DiscordUserName,
                         createdUtc = x.CreatedUtc
@@ -577,58 +653,86 @@ internal static class Program
                 await WriteJson(ctx, 200, new
                 {
                     traceId,
+                    guildId = guildId.ToString(),
                     count = list.Length,
                     codes = list
                 });
                 return;
             }
 
+            // ✅ Roster (linked-only) per guild
             if (path == "api/vtc/roster" ||
                 path == "api/roster" ||
                 path == "roster" ||
                 path == "bot/roster" ||
                 path == "api/bot/roster")
             {
-                var roster = GetLinkedRoster();
+                var roster = GetLinkedRoster(guildId);
                 await WriteJson(ctx, 200, new
                 {
                     traceId,
+                    guildId = guildId.ToString(),
                     count = roster.Length,
                     drivers = roster
                 });
                 return;
             }
 
+            // ✅ Link consume endpoint (ELD redeems the code)
+            // GET /api/vtc/link/consume?guildId=...&code=ABC123&driver=BamBam
             if (path == "api/vtc/link/consume")
             {
                 var code = NormalizeCode(ctx.Request.QueryString["code"] ?? "");
                 var driver = (ctx.Request.QueryString["driver"] ?? "").Trim();
-                var driverKey = NormalizeDriverKey(driver);
+                _ = NormalizeDriverKey(driver); // normalize for cleanliness
 
                 if (string.IsNullOrWhiteSpace(code))
                 {
-                    await WriteJson(ctx, 400, new { error = "MissingCode", traceId });
+                    await WriteJson(ctx, 400, new { error = "MissingCode", traceId, guildId = guildId.ToString() });
                     return;
                 }
 
                 if (!_linkCodes.TryRemove(code, out var rec))
                 {
-                    await WriteJson(ctx, 404, new { error = "CodeNotFound", traceId, code });
+                    await WriteJson(ctx, 404, new { error = "CodeNotFound", traceId, guildId = guildId.ToString(), code });
                     return;
                 }
 
-                var resolvedName = TryResolveDiscordName(rec.DiscordUserId) ?? rec.DiscordUserName;
+                // Ensure the code belongs to this guild
+                if (rec.GuildId != guildId)
+                {
+                    // Put it back so the correct guild can redeem it
+                    _linkCodes[code] = rec;
+
+                    await WriteJson(ctx, 409, new
+                    {
+                        error = "CodeGuildMismatch",
+                        traceId,
+                        requestedGuildId = guildId.ToString(),
+                        codeGuildId = rec.GuildId.ToString()
+                    });
+                    return;
+                }
+
+                var resolvedName = TryResolveDiscordName(guildId, rec.DiscordUserId) ?? rec.DiscordUserName;
 
                 var effectiveDriverName = !string.IsNullOrWhiteSpace(driver) ? driver : _cfg.DefaultDriverName;
 
-                UpsertLinkedDriverFromDiscord(rec.DiscordUserId, rec.DiscordUserName, confirmed: true, driverName: effectiveDriverName);
+                UpsertLinkedDriverFromDiscord(
+                    guildId: guildId,
+                    discordUserId: rec.DiscordUserId,
+                    fallbackTag: rec.DiscordUserName,
+                    confirmed: true,
+                    driverName: effectiveDriverName
+                );
 
-                Log($"✅ LINK CONSUMED+SAVED: discord:{rec.DiscordUserId} confirmed. driver='{effectiveDriverName}' name='{resolvedName}'");
+                Log($"✅ LINK CONSUMED+SAVED: guild={guildId} discord:{rec.DiscordUserId} confirmed. driver='{effectiveDriverName}' name='{resolvedName}'");
 
                 await WriteJson(ctx, 200, new
                 {
                     ok = true,
                     traceId,
+                    guildId = guildId.ToString(),
                     code,
                     driver = driver,
                     discordUserId = rec.DiscordUserId.ToString(),
@@ -657,22 +761,18 @@ internal static class Program
         }
     }
 
-    private static string ResolveVtcName()
+    // ✅ Per-guild name resolution (each Discord server = its own VTC)
+    private static string ResolveVtcName(ulong guildId)
     {
+        // Optional override (global) if you ever want it:
         if (!string.IsNullOrWhiteSpace(_cfg.VtcName))
             return _cfg.VtcName!;
 
-        if (!string.IsNullOrWhiteSpace(_cachedVtcName))
-            return _cachedVtcName;
-
         try
         {
-            if (_client != null && _client.Guilds.Count > 0)
-            {
-                var g = _client.Guilds.OrderBy(x => x.Name).FirstOrDefault();
-                if (g != null && !string.IsNullOrWhiteSpace(g.Name))
-                    return g.Name;
-            }
+            var g = _client?.GetGuild(guildId);
+            if (g != null && !string.IsNullOrWhiteSpace(g.Name))
+                return g.Name;
         }
         catch { }
 
@@ -697,16 +797,16 @@ internal static class Program
         }
     }
 
-    private static object[] GetLinkedRoster()
+    private static object[] GetLinkedRoster(ulong guildId)
     {
         try
         {
-            if (_linkedDrivers.Count == 0)
-                return Array.Empty<object>();
+            var store = GetGuildStore(guildId);
+            if (store.Count == 0) return Array.Empty<object>();
 
             int rowId = 0;
 
-            var list = _linkedDrivers.Values
+            var list = store.Values
                 .OrderBy(x => x.DiscordName ?? x.DriverName ?? x.DriverKey ?? "")
                 .Select(x =>
                 {
@@ -714,7 +814,7 @@ internal static class Program
 
                     var uid = x.DiscordUserId.ToString();
 
-                    var resolved = TryResolveDiscordName(x.DiscordUserId);
+                    var resolved = TryResolveDiscordName(guildId, x.DiscordUserId);
                     var discordDisplay = !string.IsNullOrWhiteSpace(resolved)
                         ? resolved
                         : (x.DiscordName ?? "");
@@ -744,13 +844,13 @@ internal static class Program
         }
     }
 
-    private static string? TryResolveDiscordName(ulong userId)
+    private static string? TryResolveDiscordName(ulong guildId, ulong userId)
     {
         try
         {
             if (_client == null) return null;
 
-            var g = _client.Guilds?.OrderBy(x => x.Name).FirstOrDefault();
+            var g = _client.GetGuild(guildId);
             if (g != null)
             {
                 var gu = g.GetUser(userId);
@@ -776,19 +876,26 @@ internal static class Program
         return null;
     }
 
-    private static void LoadLinkedDriversFromDisk()
+    // ---------------- Persistence (per guild) ----------------
+    private static void LoadLinkedDriversFromDisk(ulong guildId)
     {
         try
         {
-            if (!File.Exists(LinkedDriversPath)) return;
+            var path = LinkedDriversPathFor(guildId);
+            if (!File.Exists(path))
+            {
+                Log($"(guild {guildId}) linked drivers file not found: {path}");
+                return;
+            }
 
-            var json = File.ReadAllText(LinkedDriversPath);
+            var json = File.ReadAllText(path);
             if (string.IsNullOrWhiteSpace(json)) return;
 
             var list = JsonSerializer.Deserialize<List<LinkedDriverRecord>>(json, JsonReadOpts);
             if (list == null || list.Count == 0) return;
 
-            _linkedDrivers.Clear();
+            var store = GetGuildStore(guildId);
+            store.Clear();
 
             foreach (var rec in list)
             {
@@ -796,31 +903,37 @@ internal static class Program
                 if (string.IsNullOrWhiteSpace(key))
                     key = MakeDiscordKey(rec.DiscordUserId);
 
+                rec.GuildId = guildId;
                 rec.DriverKey = key;
-                _linkedDrivers[key] = rec;
+                store[key] = rec;
             }
+
+            Log($"✅ Loaded linked drivers for guild {guildId}: {store.Count} record(s)");
         }
         catch (Exception ex)
         {
-            Log("⚠️ Failed to load linked drivers from disk:");
+            Log($"⚠️ Failed to load linked drivers for guild {guildId}:");
             Log(ex.Message);
         }
     }
 
-    private static void SaveLinkedDriversToDisk()
+    private static void SaveLinkedDriversToDisk(ulong guildId)
     {
         try
         {
-            var list = _linkedDrivers.Values
+            var store = GetGuildStore(guildId);
+            var path = LinkedDriversPathFor(guildId);
+
+            var list = store.Values
                 .OrderBy(x => x.DiscordName ?? x.DriverName ?? x.DriverKey ?? "")
                 .ToList();
 
             var json = JsonSerializer.Serialize(list, JsonOpts);
-            File.WriteAllText(LinkedDriversPath, json);
+            File.WriteAllText(path, json);
         }
         catch (Exception ex)
         {
-            Log("⚠️ Failed to save linked drivers to disk:");
+            Log($"⚠️ Failed to save linked drivers for guild {guildId}:");
             Log(ex.Message);
         }
     }
@@ -872,6 +985,7 @@ internal static class Program
         ctx.Response.OutputStream.Close();
     }
 
+    // ---------------- Models ----------------
     private sealed class PresencePing
     {
         public DateTimeOffset ReceivedUtc { get; set; } = DateTimeOffset.UtcNow;
@@ -884,6 +998,7 @@ internal static class Program
     private sealed class LinkRecord
     {
         public string Code { get; set; } = "";
+        public ulong GuildId { get; set; } // ✅ ties the code to a server/VTC
         public ulong DiscordUserId { get; set; }
         public string DiscordUserName { get; set; } = "";
         public DateTimeOffset CreatedUtc { get; set; }
@@ -891,6 +1006,7 @@ internal static class Program
 
     private sealed class LinkedDriverRecord
     {
+        public ulong GuildId { get; set; } // ✅ stored for clarity
         public string? DriverKey { get; set; }
         public string? DriverName { get; set; }
         public ulong DiscordUserId { get; set; }
