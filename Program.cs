@@ -60,6 +60,11 @@ internal static class Program
         // ✅ Load persisted links BEFORE starting services
         LoadLinkedDriversFromDisk();
 
+        // ------------------------------------------------------------
+        // ✅ Railway/Host ENV overrides (this is the missing piece)
+        // ------------------------------------------------------------
+        ApplyEnvironmentOverrides();
+
         var cfgPath = Path.Combine(AppContext.BaseDirectory, "config.json");
         Log($"Runtime BaseDirectory: {AppContext.BaseDirectory}");
         Log($"Config path: {cfgPath}");
@@ -157,6 +162,50 @@ internal static class Program
         }
 
         await RunHttpApiAsync(_cfg.Port);
+    }
+
+    // ✅ New: read Railway env vars (DISCORD_TOKEN + PORT) and override config.json
+    private static void ApplyEnvironmentOverrides()
+    {
+        try
+        {
+            // Token (Railway Variables)
+            var envToken =
+                Environment.GetEnvironmentVariable("DISCORD_TOKEN") ??
+                Environment.GetEnvironmentVariable("BOT_TOKEN");
+
+            if (!string.IsNullOrWhiteSpace(envToken))
+            {
+                _cfg.BotToken = envToken.Trim();
+                Log("✅ DISCORD_TOKEN loaded from environment.");
+            }
+            else
+            {
+                Log("⚠️ DISCORD_TOKEN not found in environment (will rely on config.json).");
+            }
+
+            // Port (Railway sets PORT)
+            var envPort = Environment.GetEnvironmentVariable("PORT");
+            if (!string.IsNullOrWhiteSpace(envPort) && int.TryParse(envPort, out var p) && p > 0)
+            {
+                _cfg.Port = p;
+                Log($"✅ PORT loaded from environment: {_cfg.Port}");
+            }
+
+            // Optional nice-to-haves:
+            var envVtcName = Environment.GetEnvironmentVariable("VTC_NAME");
+            if (!string.IsNullOrWhiteSpace(envVtcName))
+                _cfg.VtcName = envVtcName.Trim();
+
+            var envDefaultDriver = Environment.GetEnvironmentVariable("DEFAULT_DRIVER_NAME");
+            if (!string.IsNullOrWhiteSpace(envDefaultDriver))
+                _cfg.DefaultDriverName = envDefaultDriver.Trim();
+        }
+        catch (Exception ex)
+        {
+            Log("⚠️ ApplyEnvironmentOverrides failed:");
+            Log(ex.Message);
+        }
     }
 
     private static async Task OnMessageReceivedAsync(SocketMessage msg)
@@ -512,7 +561,6 @@ internal static class Program
                 return;
             }
 
-            // ✅ NEW: pending link codes (debug / visibility)
             if (path == "api/vtc/link/pending")
             {
                 var list = _linkCodes.Values
@@ -535,7 +583,6 @@ internal static class Program
                 return;
             }
 
-            // ✅ Roster (linked-only)
             if (path == "api/vtc/roster" ||
                 path == "api/roster" ||
                 path == "roster" ||
@@ -552,8 +599,6 @@ internal static class Program
                 return;
             }
 
-            // ✅ Link consume endpoint (ELD redeems the code)
-            // GET /api/vtc/link/consume?code=ABC123&driver=BamBam
             if (path == "api/vtc/link/consume")
             {
                 var code = NormalizeCode(ctx.Request.QueryString["code"] ?? "");
@@ -574,8 +619,6 @@ internal static class Program
 
                 var resolvedName = TryResolveDiscordName(rec.DiscordUserId) ?? rec.DiscordUserName;
 
-                // If ELD supplies a driver name, we can store it.
-                // Also mark this link CONFIRMED.
                 var effectiveDriverName = !string.IsNullOrWhiteSpace(driver) ? driver : _cfg.DefaultDriverName;
 
                 UpsertLinkedDriverFromDiscord(rec.DiscordUserId, rec.DiscordUserName, confirmed: true, driverName: effectiveDriverName);
@@ -671,7 +714,6 @@ internal static class Program
 
                     var uid = x.DiscordUserId.ToString();
 
-                    // Prefer live-resolved Discord display name if possible
                     var resolved = TryResolveDiscordName(x.DiscordUserId);
                     var discordDisplay = !string.IsNullOrWhiteSpace(resolved)
                         ? resolved
@@ -680,8 +722,6 @@ internal static class Program
                     if (string.IsNullOrWhiteSpace(discordDisplay))
                         discordDisplay = $"DiscordUser-{uid}";
 
-                    // ✅ "name" is what your ELD roster UI most likely shows.
-                    // So set it to the Discord display name.
                     return (object)new
                     {
                         id = rowId,
@@ -736,7 +776,6 @@ internal static class Program
         return null;
     }
 
-    // ---------------- Persistence ----------------
     private static void LoadLinkedDriversFromDisk()
     {
         try
@@ -833,7 +872,6 @@ internal static class Program
         ctx.Response.OutputStream.Close();
     }
 
-    // ---------------- Models ----------------
     private sealed class PresencePing
     {
         public DateTimeOffset ReceivedUtc { get; set; } = DateTimeOffset.UtcNow;
