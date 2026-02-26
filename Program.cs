@@ -391,11 +391,11 @@ internal static class Program
     private static async Task RunHttpApiAsync(int port)
     {
         var prefixes = new[]
-        {
-            $"http://localhost:{port}/",
-            $"http://127.0.0.1:{port}/",
-            $"http://+:{port}/"
-        };
+{
+    // ✅ Railway-safe: listen on all interfaces (NOT localhost)
+    $"http://0.0.0.0:{port}/",
+    $"http://*:{port}/"
+};
 
         HttpListener? listener = null;
         Exception? last = null;
@@ -1046,3 +1046,4 @@ internal static class Program
         }
     }
 }
+
