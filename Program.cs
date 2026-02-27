@@ -1,228 +1,254 @@
-// ✅ Per-guild persistence: linked_drivers_<guildId>.json
-// ✅ Per-guild VTC name resolution: /api/vtc/name?guildId=...
-// ✅ Link codes are tied to a guild; DMs are blocked for linking
-// ✅ Railway env overrides: DISCORD_TOKEN/BOT_TOKEN + PORT + optional VTC_NAME/DEFAULT_DRIVER_NAME
-// ✅ Railway env overrides: DISCORD_TOKEN/BOT_TOKEN + PORT + DEFAULT_GUILD_ID + optional VTC_NAME/DEFAULT_DRIVER_NAME
-// ✅ Backwards-friendly: /api/vtc/servers still works without guildId
-// ✅ NEW: If guildId is missing, bot auto-uses DEFAULT_GUILD_ID (or auto-uses the only guild)
+using System.Net.Http.Json;
+using System.Text.Json;
+using Discord;
+using Discord.WebSocket;
+using Microsoft.AspNetCore.HttpOverrides;
 
-// NOTE: This file keeps your existing endpoints/logic, only adds the "default guild" fallback.
+var builder = WebApplication.CreateBuilder(args);
 
-using System;
-using System.Collections.Concurrent;
-@@ -62,7 +65,7 @@ public static async Task Main(string[] args)
+// --- Forwarded headers (Railway/proxy safe) ---
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+});
+
+// --- Config from environment ---
+static string? Env(params string[] keys)
+{
+    foreach (var k in keys)
+    {
+        var v = Environment.GetEnvironmentVariable(k);
+        if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+    }
+    return null;
+}
+
+var discordToken = Env("DISCORD_TOKEN", "BOT_TOKEN");
+var hubBaseUrl = Env("HUB_BASE_URL")?.TrimEnd('/');
+
+// Railway provides PORT, but we’ll default safely
+var portStr = Env("PORT");
+var port = 8080;
+if (!string.IsNullOrWhiteSpace(portStr) && int.TryParse(portStr, out var p) && p > 0) port = p;
+
+if (string.IsNullOrWhiteSpace(hubBaseUrl))
+{
+    Console.WriteLine("❌ HUB_BASE_URL is missing. Set HUB_BASE_URL=https://<your-hub-domain>");
+}
+
+if (string.IsNullOrWhiteSpace(discordToken))
+{
+    Console.WriteLine("❌ DISCORD_TOKEN (or BOT_TOKEN) is missing. Bot will NOT connect to Discord.");
+}
+
+// --- Discord client ---
+var discordConfig = new DiscordSocketConfig
+{
+    // You MUST enable Message Content Intent in the Discord Developer Portal for this bot
+    GatewayIntents =
+        GatewayIntents.Guilds |
+        GatewayIntents.GuildMessages |
+        GatewayIntents.MessageContent
 };
 
-// ------------------------------------------------------------
-        // ✅ Railway/Host ENV overrides (DISCORD_TOKEN + PORT etc.)
-        // ✅ Railway/Host ENV overrides (DISCORD_TOKEN + PORT + DEFAULT_GUILD_ID etc.)
-// ------------------------------------------------------------
-ApplyEnvironmentOverrides();
+var client = new DiscordSocketClient(discordConfig);
 
-@@ -74,7 +77,7 @@ public static async Task Main(string[] args)
-if (_cfg.Port <= 0) _cfg.Port = 8080;
-
-Log("Starting OverWatchELD.VtcBot (GLOBAL BOT / multi-VTC per guild + LINK + LINKED-ONLY ROSTER + PERSIST)...");
-        Log($"Config: Port={_cfg.Port}  Token={(string.IsNullOrWhiteSpace(_cfg.BotToken) ? "MISSING" : "OK")}");
-        Log($"Config: Port={_cfg.Port}  Token={(string.IsNullOrWhiteSpace(_cfg.BotToken) ? "MISSING" : "OK")}  DefaultGuildId={(string.IsNullOrWhiteSpace(_cfg.DefaultGuildId) ? "(none)" : _cfg.DefaultGuildId)}");
-
-// Start Discord (optional)
-if (!string.IsNullOrWhiteSpace(_cfg.BotToken))
-@@ -206,6 +209,14 @@ private static void ApplyEnvironmentOverrides()
-Log($"✅ PORT loaded from environment: {_cfg.Port}");
-}
-
-            // ✅ DEFAULT_GUILD_ID (Railway variable): used when guildId missing from requests
-            var envDefaultGuild = Environment.GetEnvironmentVariable("DEFAULT_GUILD_ID");
-            if (!string.IsNullOrWhiteSpace(envDefaultGuild))
-            {
-                _cfg.DefaultGuildId = envDefaultGuild.Trim();
-                Log($"✅ DEFAULT_GUILD_ID loaded from environment: {_cfg.DefaultGuildId}");
-            }
-
-// Optional (not required now)
-var envVtcName = Environment.GetEnvironmentVariable("VTC_NAME");
-if (!string.IsNullOrWhiteSpace(envVtcName))
-@@ -280,11 +291,9 @@ await msg.Channel.SendMessageAsync(
+// --- Http client for calling Hub ---
+var http = new HttpClient(new HttpClientHandler
 {
-await msg.Channel.SendMessageAsync(
-"OverWatch ELD VTC Bot is online (GLOBAL bot; each Discord server = its own VTC).\n" +
-                    $"Health:   http://localhost:{_cfg.Port}/health\n" +
-                    $"Servers:  http://localhost:{_cfg.Port}/api/vtc/servers\n" +
-                    "Tip: Your ELD must call APIs with a guildId, e.g.\n" +
-                    $"/api/vtc/roster?guildId=YOUR_SERVER_ID\n" +
-                    $"/api/vtc/name?guildId=YOUR_SERVER_ID\n"
-                    "Health:   /health\n" +
-                    "Servers:  /api/vtc/servers\n" +
-                    "Tip: Most APIs accept guildId, but the bot can also fallback to DEFAULT_GUILD_ID.\n"
-);
-}
-}
-@@ -390,12 +399,12 @@ private static void UpsertLinkedDriverFromDiscord(
-// ------------------------------------------------------------
-private static async Task RunHttpApiAsync(int port)
+    AutomaticDecompression = System.Net.DecompressionMethods.All
+})
 {
-        // ✅ Railway-safe binding: listen on all interfaces (NOT localhost)
-var prefixes = new[]
-{
-    // ✅ Railway-safe: listen on all interfaces (NOT localhost)
-    $"http://0.0.0.0:{port}/",
-    $"http://*:{port}/"
+    Timeout = TimeSpan.FromSeconds(10)
 };
+
+// Basic JSON options (just in case)
+var jsonOpts = new JsonSerializerOptions
+{
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+};
+
+// --- Track basic status ---
+var startedUtc = DateTimeOffset.UtcNow;
+string lastDiscordState = "starting";
+string lastDiscordUser = "";
+string? lastError = null;
+
+// --- Discord event wiring ---
+client.Log += msg =>
+{
+    Console.WriteLine($"[{DateTimeOffset.Now:HH:mm:ss}] {msg.Severity} {msg.Source}: {msg.Message}");
+    if (msg.Exception != null) Console.WriteLine(msg.Exception);
+    return Task.CompletedTask;
+};
+
+client.Ready += () =>
+{
+    lastDiscordState = "ready";
+    lastDiscordUser = client.CurrentUser?.ToString() ?? "";
+    Console.WriteLine($"✅ Discord READY as {lastDiscordUser}. Guilds={client.Guilds.Count}");
+    return Task.CompletedTask;
+};
+
+client.Disconnected += ex =>
+{
+    lastDiscordState = "disconnected";
+    lastError = ex?.Message;
+    Console.WriteLine($"⚠️ Discord disconnected: {ex?.Message ?? "(no exception)"}");
+    return Task.CompletedTask;
+};
+
+static string NormalizeCode(string s)
+{
+    s = (s ?? "").Trim().ToUpperInvariant();
+    // Keep alnum only
+    var chars = s.Where(char.IsLetterOrDigit).ToArray();
+    return new string(chars);
+}
+
+static bool LooksLikeLinkCode(string code)
+{
+    // You said your code is 6 chars (WEK6N5). Keep it strict.
+    if (code.Length != 6) return false;
+    return code.All(char.IsLetterOrDigit);
+}
+
+// This matches your Hub ConfirmLinkReq:
+// sealed class ConfirmLinkReq { public string Code; public string GuildId; public string? GuildName; public string? LinkedByUserId; }
+record ConfirmLinkReq(string Code, string GuildId, string? GuildName, string? LinkedByUserId);
+
+client.MessageReceived += async (msg) =>
+{
+    try
+    {
+        // Ignore system/bot messages
+        if (msg.Author.IsBot) return;
+
+        // Only handle "!link CODE"
+        var content = (msg.Content ?? "").Trim();
+        if (!content.StartsWith("!link", StringComparison.OrdinalIgnoreCase)) return;
+
+        // Block DMs (SaaS rule)
+        if (msg.Channel is IDMChannel)
         {
-            $"http://0.0.0.0:{port}/",
-            $"http://*:{port}/"
-        };
-
-HttpListener? listener = null;
-Exception? last = null;
-@@ -415,25 +424,23 @@ private static async Task RunHttpApiAsync(int port)
-last = ex;
-try { listener?.Close(); } catch { }
-listener = null;
-                Log($"⚠️ Failed to bind {pre}: {ex.Message}");
-}
-}
-
-if (listener == null)
-{
-Log("🔥 HTTP API FAILED to start on any prefix.");
-Log(last?.ToString() ?? "(no exception)");
-            Log("If you see Access Denied, run as Administrator OR reserve URL ACL:");
-            Log($"  netsh http add urlacl url=http://+:{port}/ user=Everyone");
-return;
-}
-
-        Log($"Try: http://localhost:{port}/");
-        Log($"Try: http://localhost:{port}/health");
-        Log($"Try: http://localhost:{port}/api/vtc/servers");
-        Log($"Try: http://localhost:{port}/api/vtc/name?guildId=GUILD_ID");
-        Log($"Try: http://localhost:{port}/api/vtc/roster?guildId=GUILD_ID");
-        Log($"Try: http://localhost:{port}/api/vtc/link/pending?guildId=GUILD_ID");
-        Log($"Try: http://localhost:{port}/api/vtc/link/consume?guildId=GUILD_ID&code=XXXXXX&driver=BamBam");
-        Log($"✅ Health: /health");
-        Log($"✅ Servers: /api/vtc/servers");
-        Log($"✅ Name: /api/vtc/name (guildId optional if DEFAULT_GUILD_ID set)");
-        Log($"✅ Roster: /api/vtc/roster (guildId optional if DEFAULT_GUILD_ID set)");
-        Log($"✅ Link Pending: /api/vtc/link/pending (guildId optional if DEFAULT_GUILD_ID set)");
-        Log($"✅ Link Consume: /api/vtc/link/consume?code=XXXXXX&driver=Name (guildId optional if DEFAULT_GUILD_ID set)");
-
-while (listener.IsListening)
-{
-@@ -459,26 +466,46 @@ private static async Task RunHttpApiAsync(int port)
-try { listener.Stop(); } catch { }
-}
-
-    // ✅ Step C: guildId resolution with fallbacks
-private static bool TryGetGuildId(HttpListenerRequest req, out ulong guildId)
-{
-guildId = 0;
-
-        // Prefer query string: ?guildId=123
-        // 1) Prefer query string: ?guildId=123
-var q = (req.QueryString["guildId"] ?? req.QueryString["guild"] ?? req.QueryString["serverId"] ?? "").Trim();
-if (ulong.TryParse(q, out var gid) && gid > 0)
-{
-guildId = gid;
-return true;
-}
-
-        // Optional: header support: X-Guild-Id
-        // 2) Optional: header support: X-Guild-Id
-var h = (req.Headers["X-Guild-Id"] ?? "").Trim();
-if (ulong.TryParse(h, out gid) && gid > 0)
-{
-guildId = gid;
-return true;
-}
-
-        // 3) ✅ DEFAULT_GUILD_ID fallback (Railway variable)
-        var def = (_cfg.DefaultGuildId ?? "").Trim();
-        if (ulong.TryParse(def, out gid) && gid > 0)
-        {
-            guildId = gid;
-            return true;
+            await msg.Channel.SendMessageAsync("❌ Linking must be run inside your Discord server (not DMs).");
+            return;
         }
 
-        // 4) ✅ If bot is only in ONE server, auto-use it
-        try
+        // We need a guild context
+        if (msg.Channel is not SocketGuildChannel gch)
         {
-            if (_client != null && _client.Guilds.Count == 1)
-            {
-                guildId = _client.Guilds.First().Id;
-                return true;
-            }
+            await msg.Channel.SendMessageAsync("❌ Could not resolve server context for linking.");
+            return;
         }
-        catch { }
 
-return false;
-}
+        var parts = content.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length < 2)
+        {
+            await msg.Channel.SendMessageAsync("Usage: `!link CODE`");
+            return;
+        }
 
-@@ -503,14 +530,15 @@ private static async Task HandleHttp(HttpListenerContext ctx)
-traceId,
-utc = DateTimeOffset.UtcNow,
-guildCount = _client?.Guilds.Count ?? 0,
-                    defaultGuildId = _cfg.DefaultGuildId,
-endpoints = new[]
+        var code = NormalizeCode(parts[1]);
+        if (!LooksLikeLinkCode(code))
+        {
+            await msg.Channel.SendMessageAsync("❌ Invalid code. Example: `!link WEK6N5`");
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(hubBaseUrl))
+        {
+            await msg.Channel.SendMessageAsync("❌ HUB is not configured. Set `HUB_BASE_URL` in Railway variables.");
+            return;
+        }
+
+        var guildId = gch.Guild.Id.ToString();
+        var guildName = gch.Guild.Name;
+        var userId = msg.Author.Id.ToString();
+
+        var url = $"{hubBaseUrl}/api/link/confirm";
+
+        var payload = new ConfirmLinkReq(code, guildId, guildName, userId);
+
+        var resp = await http.PostAsJsonAsync(url, payload, jsonOpts);
+        var body = await resp.Content.ReadAsStringAsync();
+
+        if (!resp.IsSuccessStatusCode)
+        {
+            await msg.Channel.SendMessageAsync($"❌ Hub confirm failed: {(int)resp.StatusCode} {resp.ReasonPhrase}\n```{body}```");
+            return;
+        }
+
+        await msg.Channel.SendMessageAsync($"✅ Linked code `{code}` to this server.\nNow return to the ELD and finish linking (Claim).");
+    }
+    catch (Exception ex)
+    {
+        lastError = ex.Message;
+        try { await msg.Channel.SendMessageAsync("❌ Error while linking. Check bot logs."); } catch { }
+        Console.WriteLine("🔥 MessageReceived handler exception:");
+        Console.WriteLine(ex);
+    }
+};
+
+// --- Minimal Web API for health (so Railway has something to hit) ---
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
+var app = builder.Build();
+app.UseForwardedHeaders();
+
+app.MapGet("/", () => Results.Ok(new
 {
-"/health",
-"/api/vtc/servers",
-                        "/api/vtc/name?guildId=GUILD_ID",
-                        "/api/vtc/roster?guildId=GUILD_ID (linked-only)",
-                        "/api/vtc/link/pending?guildId=GUILD_ID",
-                        "/api/vtc/link/consume?guildId=GUILD_ID&code=XXXXXX&driver=Name"
-                        "/api/vtc/name (guildId optional if DEFAULT_GUILD_ID set)",
-                        "/api/vtc/roster (guildId optional if DEFAULT_GUILD_ID set)",
-                        "/api/vtc/link/pending (guildId optional if DEFAULT_GUILD_ID set)",
-                        "/api/vtc/link/consume?code=XXXXXX&driver=Name (guildId optional if DEFAULT_GUILD_ID set)"
-}
+    ok = true,
+    service = "OverWatchELD.VtcBot",
+    hint = "Use /health"
+}));
+
+app.MapGet("/health", () => Results.Ok(new
+{
+    ok = true,
+    service = "OverWatchELD.VtcBot",
+    startedUtc,
+    discord = new
+    {
+        state = lastDiscordState,
+        user = lastDiscordUser,
+        guilds = client.Guilds.Count
+    },
+    hub = new
+    {
+        baseUrl = hubBaseUrl ?? "",
+        configured = !string.IsNullOrWhiteSpace(hubBaseUrl)
+    },
+    lastError = lastError ?? ""
+}));
+
+// --- Start Discord client in background ---
+_ = Task.Run(async () =>
+{
+    try
+    {
+        if (string.IsNullOrWhiteSpace(discordToken))
+        {
+            Console.WriteLine("⚠️ No DISCORD_TOKEN provided; skipping Discord login.");
+            lastDiscordState = "no-token";
+            return;
+        }
+
+        await client.LoginAsync(TokenType.Bot, discordToken);
+        await client.StartAsync();
+        lastDiscordState = "running";
+
+        // Keep alive forever
+        await Task.Delay(Timeout.InfiniteTimeSpan);
+    }
+    catch (Exception ex)
+    {
+        lastDiscordState = "crashed";
+        lastError = ex.Message;
+        Console.WriteLine("🔥 Discord background runner crashed:");
+        Console.WriteLine(ex);
+    }
 });
-return;
-@@ -532,6 +560,7 @@ private static async Task HandleHttp(HttpListenerContext ctx)
-botUser = _client?.CurrentUser?.Username,
-guildCount = _client?.Guilds.Count ?? 0
-},
-                    defaultGuildId = _cfg.DefaultGuildId,
-linkCodesInMemory = _linkCodes.Count,
-lastPresence = _lastPresence
-});
-@@ -563,14 +592,14 @@ private static async Task HandleHttp(HttpListenerContext ctx)
-return;
-}
 
-            // Everything below this requires a guildId
-            // Everything below this requires a guildId (but we now have fallbacks)
-if (!TryGetGuildId(ctx.Request, out var guildId))
-{
-await WriteJson(ctx, 400, new
-{
-error = "MissingGuildId",
-traceId,
-                    hint = "Provide ?guildId=YOUR_SERVER_ID (or header X-Guild-Id)"
-                    hint = "Provide ?guildId=YOUR_SERVER_ID (or header X-Guild-Id), or set DEFAULT_GUILD_ID in Railway."
-});
-return;
-}
-@@ -679,7 +708,7 @@ private static async Task HandleHttp(HttpListenerContext ctx)
-}
-
-// ✅ Link consume endpoint (ELD redeems the code)
-            // GET /api/vtc/link/consume?guildId=...&code=ABC123&driver=BamBam
-            // GET /api/vtc/link/consume?code=ABC123&driver=BamBam   (guildId optional if DEFAULT_GUILD_ID set)
-if (path == "api/vtc/link/consume")
-{
-var code = NormalizeCode(ctx.Request.QueryString["code"] ?? "");
-@@ -1022,6 +1051,9 @@ private sealed class BotConfig
-public string? VtcName { get; set; }
-public string? DefaultDriverName { get; set; }
-
-        // ✅ Step A: Default Guild fallback (Railway variable DEFAULT_GUILD_ID)
-        public string? DefaultGuildId { get; set; }
-
-public static BotConfig LoadOrDefault()
-{
-try
-@@ -1046,4 +1078,3 @@ public static BotConfig LoadOrDefault()
-}
-}
-}
+// --- Run web host (keeps container alive) ---
+await app.RunAsync();
