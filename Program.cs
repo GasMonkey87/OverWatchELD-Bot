@@ -1,37 +1,86 @@
-// Program.cs  ✅ FULL COPY/REPLACE
-// OverWatchELD.VtcBot
-//
-// Fixes: Prefix commands not responding + compile error on HasCharPrefix (older Discord.Net)
-// Adds: Hard "it WILL reply" handlers for !ping and !link CODE
-//
-// REQUIREMENT (Discord Developer Portal):
-// Bot -> Privileged Gateway Intents -> ENABLE "MESSAGE CONTENT INTENT"
-// Then restart Railway service.
-
 using System;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Discord;
 using Discord.WebSocket;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Hosting;
 
 internal static class Program
 {
     private static DiscordSocketClient? _client;
 
-    public static async Task Main()
+    // ✅ Your working SaaS API
+    private const string SaaSBase = "https://overwatcheld-saas-production.up.railway.app";
+
+    private static readonly HttpClient ProxyHttp = new HttpClient
     {
-        // Railway/env tokens: prefer DISCORD_TOKEN, fallback BOT_TOKEN
-        var token =
-            Environment.GetEnvironmentVariable("DISCORD_TOKEN") ??
-            Environment.GetEnvironmentVariable("BOT_TOKEN");
+        Timeout = TimeSpan.FromSeconds(15)
+    };
+
+    public static async Task Main(string[] args)
+    {
+        var token = Environment.GetEnvironmentVariable("DISCORD_TOKEN")
+                    ?? Environment.GetEnvironmentVariable("BOT_TOKEN");
 
         if (string.IsNullOrWhiteSpace(token))
         {
-            Console.WriteLine("❌ Missing DISCORD_TOKEN (or BOT_TOKEN) environment variable.");
+            Console.WriteLine("❌ Missing DISCORD_TOKEN (or BOT_TOKEN).");
             return;
         }
 
-        // ✅ Intents: This is REQUIRED for prefix commands like !link
-        // Also enable Message Content Intent in Developer Portal.
+        // -----------------------------
+        // HTTP API (Railway)
+        // -----------------------------
+        var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+
+        var builder = WebApplication.CreateBuilder(args);
+        builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
+        var app = builder.Build();
+
+        app.MapGet("/health", () => Results.Ok("ok"));
+
+        // ✅ Proxy GET /api/messages -> SaaS
+        app.MapGet("/api/messages", async (HttpRequest req) =>
+        {
+            var qs = req.QueryString.HasValue ? req.QueryString.Value : "";
+            var target = $"{SaaSBase}/api/messages{qs}";
+
+            using var resp = await ProxyHttp.GetAsync(target);
+            var body = await resp.Content.ReadAsStringAsync();
+
+            return Results.Content(body, resp.Content.Headers.ContentType?.ToString() ?? "application/json",
+                Encoding.UTF8, (int)resp.StatusCode);
+        });
+
+        // ✅ Proxy POST /api/messages/send -> SaaS
+        app.MapPost("/api/messages/send", async (HttpRequest req) =>
+        {
+            var qs = req.QueryString.HasValue ? req.QueryString.Value : "";
+            var target = $"{SaaSBase}/api/messages/send{qs}";
+
+            using var reader = new StreamReader(req.Body);
+            var json = await reader.ReadToEndAsync();
+
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            using var resp = await ProxyHttp.PostAsync(target, content);
+            var body = await resp.Content.ReadAsStringAsync();
+
+            return Results.Content(body, resp.Content.Headers.ContentType?.ToString() ?? "application/json",
+                Encoding.UTF8, (int)resp.StatusCode);
+        });
+
+        _ = Task.Run(() => app.RunAsync());
+        Console.WriteLine($"🌐 HTTP API listening on 0.0.0.0:{port}");
+
+        // -----------------------------
+        // Discord bot
+        // -----------------------------
         var socketConfig = new DiscordSocketConfig
         {
             LogLevel = LogSeverity.Info,
@@ -44,99 +93,50 @@ internal static class Program
         };
 
         _client = new DiscordSocketClient(socketConfig);
-
-        _client.Log += OnLogAsync;
-        _client.Ready += OnReadyAsync;
-        _client.Connected += () =>
+        _client.Log += m => { Console.WriteLine(m.ToString()); return Task.CompletedTask; };
+        _client.Ready += () =>
         {
-            Console.WriteLine("✅ Connected to Discord gateway.");
-            return Task.CompletedTask;
-        };
-        _client.Disconnected += (ex) =>
-        {
-            Console.WriteLine("⚠️ Disconnected from Discord gateway.");
-            if (ex != null) Console.WriteLine(ex.ToString());
+            Console.WriteLine($"✅ READY as {_client.CurrentUser} (id: {_client.CurrentUser.Id})");
             return Task.CompletedTask;
         };
 
-        // ✅ Prefix commands handler (no HasCharPrefix dependency)
         _client.MessageReceived += HandleMessageAsync;
 
-        Console.WriteLine("🔐 Logging in...");
         await _client.LoginAsync(TokenType.Bot, token);
-
-        Console.WriteLine("🚀 Starting client...");
         await _client.StartAsync();
 
-        Console.WriteLine("🟢 Bot is running. Waiting forever…");
+        Console.WriteLine("🤖 Discord bot started.");
         await Task.Delay(-1);
-    }
-
-    private static Task OnReadyAsync()
-    {
-        if (_client?.CurrentUser != null)
-            Console.WriteLine($"✅ READY as {_client.CurrentUser} (id: {_client.CurrentUser.Id})");
-        else
-            Console.WriteLine("✅ READY (CurrentUser unknown)");
-
-        Console.WriteLine("👉 Test in Discord: !ping");
-        Console.WriteLine("👉 Then test: !link 12345");
-        return Task.CompletedTask;
-    }
-
-    private static Task OnLogAsync(LogMessage msg)
-    {
-        Console.WriteLine(msg.ToString());
-        return Task.CompletedTask;
     }
 
     private static async Task HandleMessageAsync(SocketMessage raw)
     {
-        try
+        if (raw is not SocketUserMessage msg) return;
+        if (msg.Author.IsBot) return;
+
+        var content = (msg.Content ?? "").Trim();
+        if (!content.StartsWith("!")) return;
+
+        var body = content.Substring(1).Trim();
+        if (string.IsNullOrWhiteSpace(body)) return;
+
+        if (body.Equals("ping", StringComparison.OrdinalIgnoreCase))
         {
-            if (raw is not SocketUserMessage msg) return;
-            if (msg.Author.IsBot) return;
-
-            var content = (msg.Content ?? "").Trim();
-
-            // Prefix check that works across Discord.Net versions
-            if (!content.StartsWith("!")) return;
-
-            var body = content.Substring(1).Trim(); // everything after "!"
-            if (string.IsNullOrWhiteSpace(body)) return;
-
-            Console.WriteLine($"📩 CMD from {msg.Author.Username}#{msg.Author.Discriminator}: {body}");
-
-            // !ping
-            if (body.Equals("ping", StringComparison.OrdinalIgnoreCase))
-            {
-                await msg.Channel.SendMessageAsync("pong ✅");
-                return;
-            }
-
-            // !link CODE
-            if (body.StartsWith("link", StringComparison.OrdinalIgnoreCase))
-            {
-                var rest = body.Length > 4 ? body.Substring(4).Trim() : "";
-
-                if (string.IsNullOrWhiteSpace(rest))
-                {
-                    await msg.Channel.SendMessageAsync("Usage: `!link YOURCODE`");
-                    return;
-                }
-
-                // TODO: Persist the mapping: msg.Author.Id <-> rest (code)
-                await msg.Channel.SendMessageAsync($"✅ Link received for **{msg.Author.Username}**: `{rest}`");
-                return;
-            }
-
-            // Fallback: prove we are receiving commands
-            await msg.Channel.SendMessageAsync($"✅ I saw: `{body}`");
+            await msg.Channel.SendMessageAsync("pong ✅");
+            return;
         }
-        catch (Exception ex)
+
+        if (body.StartsWith("link", StringComparison.OrdinalIgnoreCase))
         {
-            Console.WriteLine("❌ HandleMessageAsync error:");
-            Console.WriteLine(ex.ToString());
+            var code = body.Length > 4 ? body.Substring(4).Trim() : "";
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                await msg.Channel.SendMessageAsync("Usage: `!link YOURCODE`");
+                return;
+            }
+
+            await msg.Channel.SendMessageAsync($"✅ Link received for **{msg.Author.Username}**: `{code}`");
+            return;
         }
     }
 }
