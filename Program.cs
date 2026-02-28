@@ -3,11 +3,11 @@ using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Discord;
 using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -19,23 +19,20 @@ internal static class Program
     private static string _discordUser = "";
     private static string? _lastError;
 
-    private static string? _hubBaseUrl;
+    private static string _hubBaseUrl = "";
 
     public static async Task Main(string[] args)
     {
-        var discordToken = Env("DISCORD_TOKEN", "BOT_TOKEN");
+        var token = Env("DISCORD_TOKEN", "BOT_TOKEN") ?? "";
         _hubBaseUrl = (Env("HUB_BASE_URL") ?? "").Trim().TrimEnd('/');
 
         var port = 8080;
         if (int.TryParse(Env("PORT"), out var p) && p > 0) port = p;
 
-        // ---- Start the HTTP host (keeps Railway container alive + /health endpoint)
-        var webTask = RunWebAsync(port);
+        var web = RunWebAsync(port);
+        var bot = RunDiscordAsync(token);
 
-        // ---- Start Discord bot (optional if no token)
-        var botTask = RunDiscordAsync(discordToken);
-
-        await Task.WhenAll(webTask, botTask);
+        await Task.WhenAll(web, bot);
     }
 
     private static async Task RunWebAsync(int port)
@@ -52,7 +49,7 @@ internal static class Program
         var app = builder.Build();
         app.UseForwardedHeaders();
 
-        app.MapGet("/", () => Results.Ok(new { ok = true, service = "OverWatchELD.VtcBot", hint = "Use /health" }));
+        app.MapGet("/", () => Results.Ok(new { ok = true, service = "OverWatchELD.VtcBot", endpoint = "/health" }));
 
         app.MapGet("/health", () => Results.Ok(new
         {
@@ -66,7 +63,7 @@ internal static class Program
             },
             hub = new
             {
-                baseUrl = _hubBaseUrl ?? "",
+                baseUrl = _hubBaseUrl,
                 configured = !string.IsNullOrWhiteSpace(_hubBaseUrl)
             },
             lastError = _lastError ?? ""
@@ -75,24 +72,21 @@ internal static class Program
         await app.RunAsync();
     }
 
-    private static async Task RunDiscordAsync(string? token)
+    private static async Task RunDiscordAsync(string token)
     {
         try
         {
             if (string.IsNullOrWhiteSpace(token))
             {
                 _discordState = "no-token";
-                Console.WriteLine("⚠️ No DISCORD_TOKEN/BOT_TOKEN set; skipping Discord login.");
+                Console.WriteLine("⚠️ No DISCORD_TOKEN/BOT_TOKEN set; bot will not connect to Discord.");
                 await Task.Delay(Timeout.InfiniteTimeSpan);
                 return;
             }
 
             _client = new DiscordSocketClient(new DiscordSocketConfig
             {
-                GatewayIntents =
-                    GatewayIntents.Guilds |
-                    GatewayIntents.GuildMessages |
-                    GatewayIntents.MessageContent
+                GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildMessages | GatewayIntents.MessageContent
             });
 
             _client.Log += m =>
@@ -110,7 +104,7 @@ internal static class Program
                 return Task.CompletedTask;
             };
 
-            _client.MessageReceived += HandleMessageAsync;
+            _client.MessageReceived += OnMessageAsync;
 
             await _client.LoginAsync(TokenType.Bot, token);
             await _client.StartAsync();
@@ -128,48 +122,36 @@ internal static class Program
         }
     }
 
-    private static string NormalizeCode(string s)
-    {
-        s = (s ?? "").Trim().ToUpperInvariant();
-        var chars = s.Where(char.IsLetterOrDigit).ToArray();
-        return new string(chars);
-    }
-
-    private static bool LooksLikeLinkCode(string code)
-    {
-        return code.Length == 6 && code.All(char.IsLetterOrDigit);
-    }
-
-    private static async Task HandleMessageAsync(SocketMessage msg)
+    private static async Task OnMessageAsync(SocketMessage msg)
     {
         try
         {
             if (msg.Author.IsBot) return;
 
-            var content = (msg.Content ?? "").Trim();
-            if (!content.StartsWith("!link", StringComparison.OrdinalIgnoreCase)) return;
+            var text = (msg.Content ?? "").Trim();
+            if (!text.StartsWith("!link", StringComparison.OrdinalIgnoreCase)) return;
 
             if (msg.Channel is IDMChannel)
             {
-                await msg.Channel.SendMessageAsync("❌ Linking must be run inside your Discord server (not DMs).");
+                await msg.Channel.SendMessageAsync("❌ Run `!link CODE` inside your Discord server (not DMs).");
                 return;
             }
 
             if (msg.Channel is not SocketGuildChannel gch)
             {
-                await msg.Channel.SendMessageAsync("❌ Could not resolve server context for linking.");
+                await msg.Channel.SendMessageAsync("❌ Could not detect server.");
                 return;
             }
 
-            var parts = content.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (parts.Length < 2)
             {
-                await msg.Channel.SendMessageAsync("Usage: `!link CODE`");
+                await msg.Channel.SendMessageAsync("Usage: `!link WEK6N5`");
                 return;
             }
 
             var code = NormalizeCode(parts[1]);
-            if (!LooksLikeLinkCode(code))
+            if (code.Length != 6 || !code.All(char.IsLetterOrDigit))
             {
                 await msg.Channel.SendMessageAsync("❌ Invalid code. Example: `!link WEK6N5`");
                 return;
@@ -201,16 +183,38 @@ internal static class Program
                 return;
             }
 
-            await msg.Channel.SendMessageAsync($"✅ Linked code `{code}` to this server.\nNow return to the ELD and finish linking (Claim).");
+            await msg.Channel.SendMessageAsync($"✅ Linked `{code}` to this server. Now return to ELD and Claim.");
         }
         catch (Exception ex)
         {
             _lastError = ex.Message;
-            Console.WriteLine("🔥 Message handler error:");
+            Console.WriteLine("🔥 link handler error:");
             Console.WriteLine(ex);
             try { await msg.Channel.SendMessageAsync("❌ Error while linking. Check bot logs."); } catch { }
         }
     }
 
- 
+    private static string NormalizeCode(string s)
+    {
+        s = (s ?? "").Trim().ToUpperInvariant();
+        return new string(s.Where(char.IsLetterOrDigit).ToArray());
+    }
 
+    private static string? Env(params string[] keys)
+    {
+        foreach (var k in keys)
+        {
+            var v = Environment.GetEnvironmentVariable(k);
+            if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
+        }
+        return null;
+    }
+
+    private sealed class ConfirmLinkReq
+    {
+        public string Code { get; set; } = "";
+        public string GuildId { get; set; } = "";
+        public string? GuildName { get; set; }
+        public string? LinkedByUserId { get; set; }
+    }
+}
