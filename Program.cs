@@ -13,32 +13,41 @@ using Microsoft.Extensions.Hosting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// -----------------------------
-// Config / env
-// -----------------------------
-var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-var hubBase =
-    (Environment.GetEnvironmentVariable("HUB_BASE_URL") ?? "https://overwatcheld-saas-production.up.railway.app")
-    .Trim()
-    .TrimEnd('/');
+// ---------------------------
+// ENVIRONMENT CONFIG
+// ---------------------------
 
-// Bind to Railway PORT
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+
+var hubBaseRaw = Environment.GetEnvironmentVariable("HUB_BASE_URL");
+var hubBase = string.IsNullOrWhiteSpace(hubBaseRaw)
+    ? "https://overwatcheld-saas-production.up.railway.app"
+    : hubBaseRaw.Trim();
+
+if (!hubBase.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+    !hubBase.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+{
+    hubBase = "https://" + hubBase;
+}
+
+hubBase = hubBase.TrimEnd('/');
+
+// Bind Railway port
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-// Shared HttpClient for proxying
 builder.Services.AddSingleton(new HttpClient
 {
     Timeout = TimeSpan.FromSeconds(15)
 });
 
-// Discord bot runs as hosted service (safe, won’t break web server)
-builder.Services.AddHostedService(sp => new DiscordBotHostedService());
+builder.Services.AddHostedService<DiscordBotHostedService>();
 
 var app = builder.Build();
 
-// -----------------------------
-// Routes
-// -----------------------------
+// ---------------------------
+// ROUTES
+// ---------------------------
+
 app.MapGet("/health", () => Results.Json(new { ok = true }));
 
 app.MapGet("/api/messages", async (HttpRequest req, HttpContext ctx, HttpClient http) =>
@@ -58,6 +67,7 @@ app.MapGet("/api/messages", async (HttpRequest req, HttpContext ctx, HttpClient 
     try
     {
         var target = BuildTargetUrl($"{hubBase}/api/messages", req.QueryString.Value, guildId!);
+
         using var resp = await http.GetAsync(target);
         var body = await resp.Content.ReadAsStringAsync();
 
@@ -70,7 +80,6 @@ app.MapGet("/api/messages", async (HttpRequest req, HttpContext ctx, HttpClient 
     }
     catch (Exception ex)
     {
-        // Never crash the endpoint—return a clean error
         return Results.Json(new
         {
             error = "ProxyFailed",
@@ -129,20 +138,21 @@ Console.WriteLine($"🏷 DEFAULT_GUILD_ID = {Environment.GetEnvironmentVariable(
 
 app.Run();
 
+// ---------------------------
+// HELPERS
+// ---------------------------
+
 static string? ResolveGuildId(HttpRequest req)
 {
-    // 1) query ?guildId=
     var q = req.Query["guildId"].ToString();
     if (!string.IsNullOrWhiteSpace(q)) return q.Trim();
 
-    // 2) header X-Guild-Id
     if (req.Headers.TryGetValue("X-Guild-Id", out var h))
     {
         var hv = h.ToString();
         if (!string.IsNullOrWhiteSpace(hv)) return hv.Trim();
     }
 
-    // 3) env DEFAULT_GUILD_ID (Railway)
     var env = Environment.GetEnvironmentVariable("DEFAULT_GUILD_ID");
     if (!string.IsNullOrWhiteSpace(env)) return env.Trim();
 
@@ -151,25 +161,24 @@ static string? ResolveGuildId(HttpRequest req)
 
 static string BuildTargetUrl(string basePath, string? qs, string guildId)
 {
-    qs = qs ?? "";
+    basePath = basePath.TrimEnd('/');
 
     if (string.IsNullOrWhiteSpace(qs))
         return $"{basePath}?guildId={Uri.EscapeDataString(guildId)}";
 
-    // If caller already provided guildId, keep it
-    if (qs.IndexOf("guildId=", StringComparison.OrdinalIgnoreCase) >= 0)
+    if (!qs.StartsWith("?"))
+        qs = "?" + qs;
+
+    if (qs.Contains("guildId=", StringComparison.OrdinalIgnoreCase))
         return $"{basePath}{qs}";
 
-    // Append guildId to existing query string
-    if (qs.StartsWith("?"))
-        return $"{basePath}{qs}&guildId={Uri.EscapeDataString(guildId)}";
-
-    return $"{basePath}?{qs}&guildId={Uri.EscapeDataString(guildId)}";
+    return $"{basePath}{qs}&guildId={Uri.EscapeDataString(guildId)}";
 }
 
-// -----------------------------
-// Discord hosted service
-// -----------------------------
+// ---------------------------
+// DISCORD HOSTED SERVICE
+// ---------------------------
+
 sealed class DiscordBotHostedService : BackgroundService
 {
     private DiscordSocketClient? _client;
@@ -181,14 +190,12 @@ sealed class DiscordBotHostedService : BackgroundService
 
         if (string.IsNullOrWhiteSpace(token))
         {
-            Console.WriteLine("⚠️ DISCORD_TOKEN/BOT_TOKEN not set. Running HTTP API only.");
+            Console.WriteLine("⚠️ No Discord token. HTTP API only.");
             return;
         }
 
-        var socketConfig = new DiscordSocketConfig
+        var config = new DiscordSocketConfig
         {
-            LogLevel = LogSeverity.Info,
-            MessageCacheSize = 50,
             GatewayIntents =
                 GatewayIntents.Guilds |
                 GatewayIntents.GuildMessages |
@@ -196,62 +203,32 @@ sealed class DiscordBotHostedService : BackgroundService
                 GatewayIntents.MessageContent
         };
 
-        _client = new DiscordSocketClient(socketConfig);
-        _client.Log += m => { Console.WriteLine(m.ToString()); return Task.CompletedTask; };
-        _client.Ready += () =>
+        _client = new DiscordSocketClient(config);
+
+        _client.Log += m =>
         {
-            Console.WriteLine($"✅ Discord READY as {_client.CurrentUser} (id: {_client.CurrentUser.Id})");
+            Console.WriteLine(m.ToString());
             return Task.CompletedTask;
         };
 
-        _client.MessageReceived += HandleDiscordMessageAsync;
+        _client.Ready += () =>
+        {
+            Console.WriteLine($"✅ Discord READY as {_client.CurrentUser}");
+            return Task.CompletedTask;
+        };
+
+        _client.MessageReceived += async msg =>
+        {
+            if (msg.Author.IsBot) return;
+            if (!msg.Content.StartsWith("!")) return;
+
+            if (msg.Content.Equals("!ping", StringComparison.OrdinalIgnoreCase))
+                await msg.Channel.SendMessageAsync("pong ✅");
+        };
 
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
 
-        Console.WriteLine("🤖 Discord bot started.");
-
-        // Keep alive until shutdown
-        try
-        {
-            await Task.Delay(Timeout.Infinite, stoppingToken);
-        }
-        catch { }
-
-        try { await _client.StopAsync(); } catch { }
-        try { await _client.LogoutAsync(); } catch { }
-    }
-
-    private static async Task HandleDiscordMessageAsync(SocketMessage raw)
-    {
-        if (raw is not SocketUserMessage msg) return;
-        if (msg.Author.IsBot) return;
-
-        var content = (msg.Content ?? "").Trim();
-        if (!content.StartsWith("!")) return;
-
-        var body = content.Substring(1).Trim();
-        if (string.IsNullOrWhiteSpace(body)) return;
-
-        if (body.Equals("ping", StringComparison.OrdinalIgnoreCase))
-        {
-            await msg.Channel.SendMessageAsync("pong ✅");
-            return;
-        }
-
-        if (body.StartsWith("link", StringComparison.OrdinalIgnoreCase))
-        {
-            var code = body.Length > 4 ? body.Substring(4).Trim() : "";
-            if (string.IsNullOrWhiteSpace(code))
-            {
-                await msg.Channel.SendMessageAsync("Usage: `!link YOURCODE`");
-                return;
-            }
-
-            await msg.Channel.SendMessageAsync($"✅ Link received for **{msg.Author.Username}**: `{code}`");
-            return;
-        }
-
-        await msg.Channel.SendMessageAsync("Commands: `!ping`, `!link CODE`");
+        await Task.Delay(Timeout.Infinite, stoppingToken);
     }
 }
