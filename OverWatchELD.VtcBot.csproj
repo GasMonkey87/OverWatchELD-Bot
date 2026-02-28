@@ -4,7 +4,12 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Exclude old Discord bot files for API-only deployment -->
+    <Compile Remove="RosterStore.cs" />
+    <Compile Remove="VtcRosterEnricher.cs" />
+  </ItemGroup>
 
 </Project>
