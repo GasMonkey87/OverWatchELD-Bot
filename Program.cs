@@ -1,165 +1,118 @@
-using System;
-using System.Linq;
-using System.Net.Http;
-using System.Net.Http.Json;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using Discord;
-using Discord.WebSocket;
+using System.Collections.Concurrent;
+using Microsoft.AspNetCore.HttpOverrides;
 
-internal static class Program
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
 {
-    private static DiscordSocketClient? _client;
-    private static string? _hubBaseUrl;
-    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+});
 
-    public static async Task Main(string[] args)
+var app = builder.Build();
+app.UseForwardedHeaders();
+
+var messagesByGuild = new ConcurrentDictionary<string, List<MessageDto>>(StringComparer.OrdinalIgnoreCase);
+
+static string? GetGuildId(HttpRequest req)
+{
+    var q = req.Query["guildId"].ToString();
+    if (!string.IsNullOrWhiteSpace(q)) return q.Trim();
+
+    if (req.Headers.TryGetValue("X-Guild-Id", out var h))
     {
-        var token = Env("DISCORD_TOKEN", "BOT_TOKEN");
-        _hubBaseUrl = (Env("HUB_BASE_URL") ?? "").Trim().TrimEnd('/');
-
-        Log("OverWatchELD.VtcBot starting (worker bot, SaaS-style)...");
-        Log($"Token={(string.IsNullOrWhiteSpace(token) ? "MISSING" : "OK")}");
-        Log($"HUB_BASE_URL={(string.IsNullOrWhiteSpace(_hubBaseUrl) ? "MISSING" : _hubBaseUrl)}");
-
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            Log("❌ DISCORD_TOKEN/BOT_TOKEN is missing. Set it in Railway Variables.");
-            await Task.Delay(Timeout.InfiniteTimeSpan);
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(_hubBaseUrl))
-        {
-            Log("❌ HUB_BASE_URL is missing. Set it in Railway Variables.");
-            await Task.Delay(Timeout.InfiniteTimeSpan);
-            return;
-        }
-
-        _client = new DiscordSocketClient(new DiscordSocketConfig
-        {
-            GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildMessages | GatewayIntents.MessageContent
-        });
-
-        _client.Log += m =>
-        {
-            Log($"{m.Severity} {m.Source}: {m.Message}");
-            if (m.Exception != null) Log(m.Exception.ToString());
-            return Task.CompletedTask;
-        };
-
-        _client.Ready += () =>
-        {
-            Log($"✅ Discord READY as {_client.CurrentUser}. Guilds={_client.Guilds.Count}");
-            return Task.CompletedTask;
-        };
-
-        _client.MessageReceived += HandleMessageAsync;
-
-        await _client.LoginAsync(TokenType.Bot, token);
-        await _client.StartAsync();
-
-        // Keep alive
-        await Task.Delay(Timeout.InfiniteTimeSpan);
+        var v = h.ToString();
+        if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
     }
 
-    private static async Task HandleMessageAsync(SocketMessage msg)
+    var env = Environment.GetEnvironmentVariable("DEFAULT_GUILD_ID");
+    if (!string.IsNullOrWhiteSpace(env)) return env.Trim();
+
+    return null;
+}
+
+static IResult MissingGuildId()
+{
+    return Results.BadRequest(new
     {
-        try
-        {
-            if (msg.Author.IsBot) return;
+        error = "MissingGuildId",
+        traceId = Guid.NewGuid().ToString("N"),
+        hint = "Provide ?guildId=YOUR_SERVER_ID (or header X-Guild-Id), or set DEFAULT_GUILD_ID in Railway."
+    });
+}
 
-            var content = (msg.Content ?? "").Trim();
-            if (!content.StartsWith("!link", StringComparison.OrdinalIgnoreCase)) return;
+// ✅ Force bind to Railway PORT (prevents “failed to respond”)
+var portStr = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(portStr) && int.TryParse(portStr, out var p) && p > 0)
+{
+    app.Urls.Clear();
+    app.Urls.Add($"http://0.0.0.0:{p}");
+}
 
-            // Block DMs (SaaS requirement)
-            if (msg.Channel is IDMChannel)
-            {
-                await msg.Channel.SendMessageAsync("❌ Run `!link CODE` inside your Discord server (not DMs).");
-                return;
-            }
-
-            if (msg.Channel is not SocketGuildChannel gch)
-            {
-                await msg.Channel.SendMessageAsync("❌ Could not detect server context.");
-                return;
-            }
-
-            var parts = content.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (parts.Length < 2)
-            {
-                await msg.Channel.SendMessageAsync("Usage: `!link WEK6N5`");
-                return;
-            }
-
-            var code = NormalizeCode(parts[1]);
-            if (!LooksLikeLinkCode(code))
-            {
-                await msg.Channel.SendMessageAsync("❌ Invalid code. Example: `!link WEK6N5` (6 chars).");
-                return;
-            }
-
-            var url = $"{_hubBaseUrl}/api/link/confirm";
-
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-
-            var payload = new ConfirmLinkReq
-            {
-                Code = code,
-                GuildId = gch.Guild.Id.ToString(),
-                GuildName = gch.Guild.Name,
-                LinkedByUserId = msg.Author.Id.ToString()
-            };
-
-            var resp = await http.PostAsJsonAsync(url, payload, JsonOpts);
-            var body = await resp.Content.ReadAsStringAsync();
-
-            if (!resp.IsSuccessStatusCode)
-            {
-                await msg.Channel.SendMessageAsync($"❌ Hub confirm failed: {(int)resp.StatusCode} {resp.ReasonPhrase}\n```{body}```");
-                return;
-            }
-
-            await msg.Channel.SendMessageAsync($"✅ Linked `{code}` to this server.\nNow go back to the ELD and finish linking (Claim).");
-        }
-        catch (Exception ex)
-        {
-            Log("🔥 link handler error:");
-            Log(ex.ToString());
-            try { await msg.Channel.SendMessageAsync("❌ Error while linking. Check bot logs."); } catch { }
-        }
-    }
-
-    private static bool LooksLikeLinkCode(string code)
+app.MapGet("/", () => Results.Ok(new
+{
+    ok = true,
+    name = "OverWatchELD Bot API",
+    endpoints = new[]
     {
-        // Your setup uses 6-char codes like WEK6N5
-        return code.Length == 6 && code.All(char.IsLetterOrDigit);
+        "/health",
+        "/api/messages?guildId=123",
+        "/api/messages/send?guildId=123"
     }
+}));
 
-    private static string NormalizeCode(string s)
+app.MapGet("/health", () => Results.Ok(new { ok = true }));
+
+app.MapGet("/api/messages", (HttpRequest http, string? driverName) =>
+{
+    var guildId = GetGuildId(http);
+    if (string.IsNullOrWhiteSpace(guildId)) return MissingGuildId();
+
+    messagesByGuild.TryGetValue(guildId, out var list);
+    list ??= new List<MessageDto>();
+
+    if (!string.IsNullOrWhiteSpace(driverName))
+        list = list.Where(m => string.Equals(m.DriverName, driverName, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    return Results.Ok(new { ok = true, guildId, items = list.OrderByDescending(x => x.CreatedUtc).Take(200) });
+});
+
+app.MapPost("/api/messages/send", (HttpRequest http, SendMessageReq req) =>
+{
+    var guildId = GetGuildId(http);
+    if (string.IsNullOrWhiteSpace(guildId)) return MissingGuildId();
+    if (string.IsNullOrWhiteSpace(req.Text)) return Results.BadRequest(new { error = "EmptyMessage" });
+
+    var msg = new MessageDto
     {
-        s = (s ?? "").Trim().ToUpperInvariant();
-        return new string(s.Where(char.IsLetterOrDigit).ToArray());
-    }
+        Id = Guid.NewGuid().ToString("N"),
+        GuildId = guildId,
+        DriverName = (req.DriverName ?? "").Trim(),
+        Text = req.Text.Trim(),
+        Source = (req.Source ?? "eld").Trim(),
+        CreatedUtc = DateTimeOffset.UtcNow
+    };
 
-    private static string? Env(params string[] keys)
-    {
-        foreach (var k in keys)
-        {
-            var v = Environment.GetEnvironmentVariable(k);
-            if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
-        }
-        return null;
-    }
+    var bucket = messagesByGuild.GetOrAdd(guildId, _ => new List<MessageDto>());
+    lock (bucket) bucket.Add(msg);
 
-    private static void Log(string s) => Console.WriteLine($"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] {s}");
+    return Results.Ok(new { ok = true, id = msg.Id });
+});
 
-    private sealed class ConfirmLinkReq
-    {
-        public string Code { get; set; } = "";
-        public string GuildId { get; set; } = "";
-        public string? GuildName { get; set; }
-        public string? LinkedByUserId { get; set; }
-    }
+app.Run();
+
+sealed class SendMessageReq
+{
+    public string? DriverName { get; set; }
+    public string Text { get; set; } = "";
+    public string? Source { get; set; }
+}
+
+sealed class MessageDto
+{
+    public string Id { get; set; } = "";
+    public string GuildId { get; set; } = "";
+    public string DriverName { get; set; } = "";
+    public string Text { get; set; } = "";
+    public string Source { get; set; } = "";
+    public DateTimeOffset CreatedUtc { get; set; }
 }
