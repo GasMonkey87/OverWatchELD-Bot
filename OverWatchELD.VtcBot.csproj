@@ -1,19 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
+
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-	<PropertyGroup>
-		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-	</PropertyGroup>
+
+  <!-- IMPORTANT:
+       Since this .csproj sits at repo root, the default glob can pick up .cs files in subfolders.
+       We must ensure Hub files are NOT compiled into the bot. -->
   <ItemGroup>
-    <PackageReference Include="Discord.Net" Version="3.16.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.0" />
+    <Compile Remove="OverWatchELD.Hub\**\*.cs" />
   </ItemGroup>
-<ItemGroup>
-  <!-- IMPORTANT: bot project must NOT compile the Hub project files -->
-  <Compile Remove="OverWatchELD.Hub\**\*.cs" />
-</ItemGroup>
+
+  <ItemGroup>
+    <!-- Discord.Net (Socket client) -->
+    <PackageReference Include="Discord.Net" Version="3.16.0" />
+  </ItemGroup>
+
 </Project>
