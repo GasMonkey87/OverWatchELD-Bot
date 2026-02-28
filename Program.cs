@@ -58,10 +58,9 @@ internal static class Program
         });
 
         var app = builder.Build();
-
         app.UseForwardedHeaders();
 
-        // ✅ Root path returns JSON so it's not confusing (no more 404 at /)
+        // Root path returns JSON (so you know it’s alive)
         app.MapGet("/", () => Results.Ok(new
         {
             ok = true,
@@ -141,6 +140,7 @@ internal static class Program
             return Results.Ok(new { ok = true, id = msg.Id });
         });
 
+        // Bind to Railway port
         app.Urls.Clear();
         app.Urls.Add($"http://0.0.0.0:{port}");
 
@@ -172,5 +172,25 @@ internal static class Program
             error = "MissingGuildId",
             hint = "Provide ?guildId=YOUR_SERVER_ID (or header X-Guild-Id), or set DEFAULT_GUILD_ID in Railway."
         });
+    }
+
+    // ----------------------------
+    // ✅ DTOs (kept local to VtcBot)
+    // ----------------------------
+    private sealed class SendMessageReq
+    {
+        public string? DriverName { get; set; }
+        public string Text { get; set; } = "";
+        public string? Source { get; set; }
+    }
+
+    private sealed class MessageDto
+    {
+        public string Id { get; set; } = "";
+        public string GuildId { get; set; } = "";
+        public string DriverName { get; set; } = "";
+        public string Text { get; set; } = "";
+        public string Source { get; set; } = "";
+        public DateTimeOffset CreatedUtc { get; set; }
     }
 }
