@@ -78,8 +78,8 @@ internal static class Program
             var rel = path.TrimStart('/') + qs;
 
             // inject default guildId for endpoints that need it
-            if (path.StartsWithSegments("/api/messages", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWithSegments("/api/vtc", StringComparison.OrdinalIgnoreCase))
+            if (path.StartsWith("/api/messages", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/vtc", StringComparison.OrdinalIgnoreCase))
             {
                 rel = WithDefaultGuildId(rel, defaultGuildId);
             }
@@ -100,8 +100,8 @@ internal static class Program
             var qs = req.QueryString.HasValue ? req.QueryString.Value! : "";
             var rel = path.TrimStart('/') + qs;
 
-            if (path.StartsWithSegments("/api/messages", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWithSegments("/api/vtc", StringComparison.OrdinalIgnoreCase))
+            if (path.StartsWith("/api/messages", StringComparison.OrdinalIgnoreCase) ||
+                path.StartsWith("/api/vtc", StringComparison.OrdinalIgnoreCase))
             {
                 rel = WithDefaultGuildId(rel, defaultGuildId);
             }
