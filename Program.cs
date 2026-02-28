@@ -28,7 +28,7 @@ internal static class Program
 
         if (string.IsNullOrWhiteSpace(token))
         {
-            Console.WriteLine("❌ Missing DISCORD_TOKEN (or BOT_TOKEN). ");
+            Console.WriteLine("❌ Missing DISCORD_TOKEN (or BOT_TOKEN).");
             return;
         }
 
@@ -44,14 +44,15 @@ internal static class Program
         var hubBase = (Environment.GetEnvironmentVariable("HUB_BASE_URL") ?? DefaultHubBase).Trim();
         hubBase = NormalizeAbsoluteBaseUrl(hubBase);
 
-        // ✅ Fix ProxyFailed / invalid request URI:
-        // Always set BaseAddress and proxy with RELATIVE paths.
+        // ✅ Critical: BaseAddress must be set so proxy calls can use relative URIs
         HubHttp.BaseAddress = new Uri(hubBase + "/", UriKind.Absolute);
 
         var defaultGuildId = (Environment.GetEnvironmentVariable("DEFAULT_GUILD_ID") ?? "").Trim();
 
         var app = builder.Build();
 
+        // Root + health (helps Railway checks)
+        app.MapGet("/", () => Results.Ok(new { ok = true, service = "OverWatchELD.VtcBot" }));
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
 
         // -----------------------------
@@ -61,56 +62,44 @@ internal static class Program
         {
             if (string.IsNullOrWhiteSpace(defaultGuildId)) return pathAndQuery;
 
-            // already has guildId?
             if (pathAndQuery.Contains("guildId=", StringComparison.OrdinalIgnoreCase))
                 return pathAndQuery;
 
-            // add guildId
             return pathAndQuery.Contains("?")
                 ? pathAndQuery + "&guildId=" + Uri.EscapeDataString(defaultGuildId)
                 : pathAndQuery + "?guildId=" + Uri.EscapeDataString(defaultGuildId);
         }
 
-        async Task<IResult> ProxyGet(HttpRequest req)
+        async Task<IResult> Proxy(HttpRequest req)
         {
             var path = req.Path.HasValue ? req.Path.Value! : "/";
             var qs = req.QueryString.HasValue ? req.QueryString.Value! : "";
+
+            // Build RELATIVE uri for HubHttp (BaseAddress is set)
             var rel = path.TrimStart('/') + qs;
 
-            // inject default guildId for endpoints that need it
+            // Inject default guildId for endpoints that need it
             if (path.StartsWith("/api/messages", StringComparison.OrdinalIgnoreCase) ||
                 path.StartsWith("/api/vtc", StringComparison.OrdinalIgnoreCase))
             {
                 rel = WithDefaultGuildId(rel, defaultGuildId);
             }
 
-            using var resp = await HubHttp.GetAsync(rel);
-            var body = await resp.Content.ReadAsStringAsync();
+            HttpResponseMessage resp;
 
-            return Results.Content(
-                body,
-                resp.Content.Headers.ContentType?.ToString() ?? "application/json",
-                Encoding.UTF8,
-                (int)resp.StatusCode);
-        }
-
-        async Task<IResult> ProxyPost(HttpRequest req)
-        {
-            var path = req.Path.HasValue ? req.Path.Value! : "/";
-            var qs = req.QueryString.HasValue ? req.QueryString.Value! : "";
-            var rel = path.TrimStart('/') + qs;
-
-            if (path.StartsWith("/api/messages", StringComparison.OrdinalIgnoreCase) ||
-                path.StartsWith("/api/vtc", StringComparison.OrdinalIgnoreCase))
+            if (HttpMethods.IsPost(req.Method) || HttpMethods.IsPut(req.Method) || HttpMethods.IsPatch(req.Method))
             {
-                rel = WithDefaultGuildId(rel, defaultGuildId);
+                using var reader = new StreamReader(req.Body);
+                var bodyJson = await reader.ReadToEndAsync();
+
+                using var content = new StringContent(bodyJson, Encoding.UTF8, req.ContentType ?? "application/json");
+                resp = await HubHttp.SendAsync(new HttpRequestMessage(new HttpMethod(req.Method), rel) { Content = content });
+            }
+            else
+            {
+                resp = await HubHttp.SendAsync(new HttpRequestMessage(new HttpMethod(req.Method), rel));
             }
 
-            using var reader = new StreamReader(req.Body);
-            var json = await reader.ReadToEndAsync();
-
-            using var content = new StringContent(json, Encoding.UTF8, req.ContentType ?? "application/json");
-            using var resp = await HubHttp.PostAsync(rel, content);
             var body = await resp.Content.ReadAsStringAsync();
 
             return Results.Content(
@@ -121,15 +110,17 @@ internal static class Program
         }
 
         // -----------------------------
-        // Proxied endpoints (ELD expects these)
+        // ✅ Bulletproof route matching (prevents random 404s)
         // -----------------------------
-        app.MapGet("/api/messages", ProxyGet);
-        app.MapPost("/api/messages/send", ProxyPost);
+        // Catch /api/messages AND anything under it (/api/messages/, /api/messages/latest, etc.)
+        app.MapMethods("/api/messages", new[] { "GET", "POST" }, Proxy);
+        app.MapMethods("/api/messages/{**rest}", new[] { "GET", "POST" }, Proxy);
 
-        // ✅ Proxy all VTC endpoints (name, roster, servers, announcements, pair/claim, etc.)
-        app.MapGet("/api/vtc/{**rest}", ProxyGet);
-        app.MapPost("/api/vtc/{**rest}", ProxyPost);
+        // Catch /api/vtc AND anything under it
+        app.MapMethods("/api/vtc", new[] { "GET", "POST" }, Proxy);
+        app.MapMethods("/api/vtc/{**rest}", new[] { "GET", "POST" }, Proxy);
 
+        // Start web host
         _ = Task.Run(() => app.RunAsync());
         Console.WriteLine($"🌐 HTTP API listening on 0.0.0.0:{port}");
         Console.WriteLine($"🔁 Proxying to hub: {hubBase}");
@@ -185,8 +176,6 @@ internal static class Program
             return;
         }
 
-        // Keep !link (the hub will handle the pairing flow via /api/vtc/pair/*).
-        // This bot message is just a user-friendly acknowledgement.
         if (body.StartsWith("link", StringComparison.OrdinalIgnoreCase))
         {
             var code = body.Length > 4 ? body.Substring(4).Trim() : "";
