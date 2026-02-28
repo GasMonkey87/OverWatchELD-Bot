@@ -11,81 +11,69 @@ using Discord.WebSocket;
 internal static class Program
 {
     private static DiscordSocketClient? _client;
-    private static string _state = "starting";
-    private static string? _lastError;
-
-    private static string _hubBaseUrl = "";
+    private static string? _hubBaseUrl;
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     public static async Task Main(string[] args)
     {
-        var token = Env("DISCORD_TOKEN", "BOT_TOKEN") ?? "";
+        var token = Env("DISCORD_TOKEN", "BOT_TOKEN");
         _hubBaseUrl = (Env("HUB_BASE_URL") ?? "").Trim().TrimEnd('/');
 
-        Console.WriteLine("OverWatchELD.VtcBot starting...");
-        Console.WriteLine($"Token={(string.IsNullOrWhiteSpace(token) ? "MISSING" : "OK")}");
-        Console.WriteLine($"Hub={(string.IsNullOrWhiteSpace(_hubBaseUrl) ? "MISSING" : _hubBaseUrl)}");
+        Log("OverWatchELD.VtcBot starting (worker bot, SaaS-style)...");
+        Log($"Token={(string.IsNullOrWhiteSpace(token) ? "MISSING" : "OK")}");
+        Log($"HUB_BASE_URL={(string.IsNullOrWhiteSpace(_hubBaseUrl) ? "MISSING" : _hubBaseUrl)}");
 
-        await RunDiscordAsync(token);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            Log("❌ DISCORD_TOKEN/BOT_TOKEN is missing. Set it in Railway Variables.");
+            await Task.Delay(Timeout.InfiniteTimeSpan);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_hubBaseUrl))
+        {
+            Log("❌ HUB_BASE_URL is missing. Set it in Railway Variables.");
+            await Task.Delay(Timeout.InfiniteTimeSpan);
+            return;
+        }
+
+        _client = new DiscordSocketClient(new DiscordSocketConfig
+        {
+            GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildMessages | GatewayIntents.MessageContent
+        });
+
+        _client.Log += m =>
+        {
+            Log($"{m.Severity} {m.Source}: {m.Message}");
+            if (m.Exception != null) Log(m.Exception.ToString());
+            return Task.CompletedTask;
+        };
+
+        _client.Ready += () =>
+        {
+            Log($"✅ Discord READY as {_client.CurrentUser}. Guilds={_client.Guilds.Count}");
+            return Task.CompletedTask;
+        };
+
+        _client.MessageReceived += HandleMessageAsync;
+
+        await _client.LoginAsync(TokenType.Bot, token);
+        await _client.StartAsync();
+
+        // Keep alive
+        await Task.Delay(Timeout.InfiniteTimeSpan);
     }
 
-    private static async Task RunDiscordAsync(string token)
-    {
-        try
-        {
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                _state = "no-token";
-                Console.WriteLine("No DISCORD_TOKEN/BOT_TOKEN set. Sleeping...");
-                await Task.Delay(Timeout.InfiniteTimeSpan);
-                return;
-            }
-
-            _client = new DiscordSocketClient(new DiscordSocketConfig
-            {
-                GatewayIntents = GatewayIntents.Guilds | GatewayIntents.GuildMessages | GatewayIntents.MessageContent
-            });
-
-            _client.Log += m =>
-            {
-                Console.WriteLine($"[{DateTimeOffset.Now:HH:mm:ss}] {m.Severity} {m.Source}: {m.Message}");
-                if (m.Exception != null) Console.WriteLine(m.Exception);
-                return Task.CompletedTask;
-            };
-
-            _client.Ready += () =>
-            {
-                _state = "ready";
-                Console.WriteLine($"✅ READY as {_client.CurrentUser}. Guilds={_client.Guilds.Count}");
-                return Task.CompletedTask;
-            };
-
-            _client.MessageReceived += OnMessageAsync;
-
-            await _client.LoginAsync(TokenType.Bot, token);
-            await _client.StartAsync();
-
-            _state = "running";
-            await Task.Delay(Timeout.InfiniteTimeSpan);
-        }
-        catch (Exception ex)
-        {
-            _state = "crashed";
-            _lastError = ex.Message;
-            Console.WriteLine("🔥 Bot crashed:");
-            Console.WriteLine(ex);
-            await Task.Delay(Timeout.InfiniteTimeSpan);
-        }
-    }
-
-    private static async Task OnMessageAsync(SocketMessage msg)
+    private static async Task HandleMessageAsync(SocketMessage msg)
     {
         try
         {
             if (msg.Author.IsBot) return;
 
-            var text = (msg.Content ?? "").Trim();
-            if (!text.StartsWith("!link", StringComparison.OrdinalIgnoreCase)) return;
+            var content = (msg.Content ?? "").Trim();
+            if (!content.StartsWith("!link", StringComparison.OrdinalIgnoreCase)) return;
 
+            // Block DMs (SaaS requirement)
             if (msg.Channel is IDMChannel)
             {
                 await msg.Channel.SendMessageAsync("❌ Run `!link CODE` inside your Discord server (not DMs).");
@@ -94,11 +82,11 @@ internal static class Program
 
             if (msg.Channel is not SocketGuildChannel gch)
             {
-                await msg.Channel.SendMessageAsync("❌ Could not detect server.");
+                await msg.Channel.SendMessageAsync("❌ Could not detect server context.");
                 return;
             }
 
-            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var parts = content.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (parts.Length < 2)
             {
                 await msg.Channel.SendMessageAsync("Usage: `!link WEK6N5`");
@@ -106,20 +94,15 @@ internal static class Program
             }
 
             var code = NormalizeCode(parts[1]);
-            if (code.Length != 6)
+            if (!LooksLikeLinkCode(code))
             {
-                await msg.Channel.SendMessageAsync("❌ Invalid code. Example: `!link WEK6N5`");
+                await msg.Channel.SendMessageAsync("❌ Invalid code. Example: `!link WEK6N5` (6 chars).");
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(_hubBaseUrl))
-            {
-                await msg.Channel.SendMessageAsync("❌ Hub not configured. Set `HUB_BASE_URL` in Railway variables.");
-                return;
-            }
+            var url = $"{_hubBaseUrl}/api/link/confirm";
 
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            var url = $"{_hubBaseUrl}/api/link/confirm";
 
             var payload = new ConfirmLinkReq
             {
@@ -129,7 +112,7 @@ internal static class Program
                 LinkedByUserId = msg.Author.Id.ToString()
             };
 
-            var resp = await http.PostAsJsonAsync(url, payload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            var resp = await http.PostAsJsonAsync(url, payload, JsonOpts);
             var body = await resp.Content.ReadAsStringAsync();
 
             if (!resp.IsSuccessStatusCode)
@@ -138,15 +121,20 @@ internal static class Program
                 return;
             }
 
-            await msg.Channel.SendMessageAsync($"✅ Linked `{code}` to this server. Now return to ELD and Claim.");
+            await msg.Channel.SendMessageAsync($"✅ Linked `{code}` to this server.\nNow go back to the ELD and finish linking (Claim).");
         }
         catch (Exception ex)
         {
-            _lastError = ex.Message;
-            Console.WriteLine("🔥 link handler error:");
-            Console.WriteLine(ex);
+            Log("🔥 link handler error:");
+            Log(ex.ToString());
             try { await msg.Channel.SendMessageAsync("❌ Error while linking. Check bot logs."); } catch { }
         }
+    }
+
+    private static bool LooksLikeLinkCode(string code)
+    {
+        // Your setup uses 6-char codes like WEK6N5
+        return code.Length == 6 && code.All(char.IsLetterOrDigit);
     }
 
     private static string NormalizeCode(string s)
@@ -164,6 +152,8 @@ internal static class Program
         }
         return null;
     }
+
+    private static void Log(string s) => Console.WriteLine($"[{DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss}] {s}");
 
     private sealed class ConfirmLinkReq
     {
