@@ -212,21 +212,5 @@ internal static class Program
         }
     }
 
-    private static string? Env(params string[] keys)
-    {
-        foreach (var k in keys)
-        {
-            var v = Environment.GetEnvironmentVariable(k);
-            if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
-        }
-        return null;
-    }
+ 
 
-    private sealed class ConfirmLinkReq
-    {
-        public string Code { get; set; } = "";
-        public string GuildId { get; set; } = "";
-        public string? GuildName { get; set; }
-        public string? LinkedByUserId { get; set; }
-    }
-}
