@@ -18,6 +18,7 @@ var builder = WebApplication.CreateBuilder(args);
 // ---------------------------
 var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
 
+// Hub base (for /api/messages proxy)
 var hubBaseRaw = Environment.GetEnvironmentVariable("HUB_BASE_URL");
 var hubBase = string.IsNullOrWhiteSpace(hubBaseRaw)
     ? "https://overwatcheld-saas-production.up.railway.app"
@@ -30,9 +31,14 @@ if (!hubBase.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
 }
 hubBase = hubBase.TrimEnd('/');
 
-builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+// Optional server display name (public-safe, set by server owner)
+var vtcNameEnv = (Environment.GetEnvironmentVariable("VTC_NAME") ?? "").Trim();
 
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 builder.Services.AddSingleton(new HttpClient { Timeout = TimeSpan.FromSeconds(15) });
+
+// Discord state so we can return server name + guild list reliably
+builder.Services.AddSingleton<DiscordState>();
 builder.Services.AddHostedService<DiscordBotHostedService>();
 
 var app = builder.Build();
@@ -42,7 +48,70 @@ var app = builder.Build();
 // ---------------------------
 app.MapGet("/health", () => Results.Json(new { ok = true }));
 
-// ✅ your working messages proxy
+// ✅ VTC identity endpoints used by ELD UI
+// Public-safe: never returns a person's Discord name
+app.MapGet("/api/vtc/name", (HttpRequest req, DiscordState st) =>
+{
+    var gid = ResolveGuildId(req) ?? st.DefaultGuildId;
+
+    // Prefer: Discord guild name (server name)
+    var serverName = st.ResolveGuildName(gid);
+
+    // Else: env VTC_NAME (server owner configured)
+    if (string.IsNullOrWhiteSpace(serverName))
+        serverName = vtcNameEnv;
+
+    // Else: generic safe default
+    if (string.IsNullOrWhiteSpace(serverName))
+        serverName = "OverWatch ELD";
+
+    return Results.Json(new { ok = true, guildId = gid, name = serverName });
+});
+
+app.MapGet("/api/vtc/status", (HttpRequest req, DiscordState st) =>
+{
+    var gid = ResolveGuildId(req) ?? st.DefaultGuildId;
+
+    var serverName = st.ResolveGuildName(gid);
+    if (string.IsNullOrWhiteSpace(serverName))
+        serverName = vtcNameEnv;
+    if (string.IsNullOrWhiteSpace(serverName))
+        serverName = "OverWatch ELD";
+
+    var connected = !string.IsNullOrWhiteSpace(gid);
+    var ready = connected && st.DiscordReady;
+
+    return Results.Json(new
+    {
+        ok = true,
+        connected,
+        ready,
+        guildId = gid,
+        serverName
+    });
+});
+
+// Aliases some builds call
+app.MapGet("/api/vtc", (HttpRequest req, DiscordState st) =>
+{
+    var gid = ResolveGuildId(req) ?? st.DefaultGuildId;
+
+    var serverName = st.ResolveGuildName(gid);
+    if (string.IsNullOrWhiteSpace(serverName))
+        serverName = vtcNameEnv;
+    if (string.IsNullOrWhiteSpace(serverName))
+        serverName = "OverWatch ELD";
+
+    return Results.Json(new { ok = true, enabled = true, guildId = gid, name = serverName });
+});
+
+// Guild list endpoints (for dropdown; still public-safe: server names only)
+app.MapGet("/api/discord/guilds", (DiscordState st) => Results.Json(new { ok = true, items = st.GetGuildItems() }));
+app.MapGet("/api/guilds", (DiscordState st) => Results.Json(new { ok = true, items = st.GetGuildItems() }));
+app.MapGet("/api/servers", (DiscordState st) => Results.Json(new { ok = true, items = st.GetGuildItems() }));
+app.MapGet("/api/discord/servers", (DiscordState st) => Results.Json(new { ok = true, items = st.GetGuildItems() }));
+
+// ✅ Messages proxy to Hub (your working flow)
 app.MapGet("/api/messages", async (HttpRequest req, HttpContext ctx, HttpClient http) =>
 {
     var guildId = ResolveGuildId(req);
@@ -108,23 +177,30 @@ app.MapPost("/api/messages/send", async (HttpRequest req, HttpContext ctx, HttpC
     }
 });
 
-// ✅ IMPORTANT: Stop ELD from ever seeing 404 on any /api/* route
-// If ELD calls something we don't implement, return ok:true instead of 404.
-app.MapMethods("/api/{*path}", new[] { "GET", "POST", "PUT", "DELETE" }, (HttpRequest req) =>
+// ✅ Public-safe fallback: prevents ELD from failing due to missing endpoints
+app.MapMethods("/api/{*path}", new[] { "GET", "POST", "PUT", "DELETE" }, (HttpRequest req, DiscordState st) =>
 {
-    var gid = ResolveGuildId(req);
+    var gid = ResolveGuildId(req) ?? st.DefaultGuildId;
+
+    var serverName = st.ResolveGuildName(gid);
+    if (string.IsNullOrWhiteSpace(serverName))
+        serverName = vtcNameEnv;
+    if (string.IsNullOrWhiteSpace(serverName))
+        serverName = "OverWatch ELD";
+
     return Results.Json(new
     {
         ok = true,
         note = "Fallback endpoint (unknown route).",
-        guildId = gid
+        guildId = gid,
+        serverName
     });
 });
 
 Console.WriteLine($"🌐 Bot API listening on 0.0.0.0:{port}");
 Console.WriteLine($"🔁 HUB_BASE_URL = {hubBase}");
 Console.WriteLine($"🏷 DEFAULT_GUILD_ID = {Environment.GetEnvironmentVariable("DEFAULT_GUILD_ID") ?? "(null)"}");
-
+Console.WriteLine($"🏷 VTC_NAME = {(string.IsNullOrWhiteSpace(vtcNameEnv) ? "(not set)" : "(set)")}");
 app.Run();
 
 // ---------------------------
@@ -164,11 +240,56 @@ static string BuildTargetUrl(string basePath, string? qs, string guildId)
 }
 
 // ---------------------------
-// DISCORD HOSTED SERVICE
+// DISCORD STATE + HOSTED SERVICE
 // ---------------------------
+sealed class DiscordState
+{
+    private readonly object _lock = new();
+    private GuildItem[] _guilds = Array.Empty<GuildItem>();
+
+    public bool DiscordReady { get; set; }
+
+    public string? DefaultGuildId { get; set; } =
+        (Environment.GetEnvironmentVariable("DEFAULT_GUILD_ID") ?? "").Trim();
+
+    public void SetGuilds(GuildItem[] items)
+    {
+        lock (_lock) { _guilds = items; }
+    }
+
+    public GuildItem[] GetGuildItems()
+    {
+        lock (_lock) { return _guilds; }
+    }
+
+    public string? ResolveGuildName(string? guildId)
+    {
+        if (string.IsNullOrWhiteSpace(guildId)) return null;
+        var gid = guildId.Trim();
+
+        lock (_lock)
+        {
+            foreach (var g in _guilds)
+                if (string.Equals(g.Id, gid, StringComparison.OrdinalIgnoreCase))
+                    return g.Name;
+        }
+
+        return null;
+    }
+
+    public sealed class GuildItem
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+    }
+}
+
 sealed class DiscordBotHostedService : BackgroundService
 {
+    private readonly DiscordState _state;
     private DiscordSocketClient? _client;
+
+    public DiscordBotHostedService(DiscordState state) => _state = state;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -196,10 +317,32 @@ sealed class DiscordBotHostedService : BackgroundService
 
         _client.Ready += () =>
         {
-            Console.WriteLine($"✅ Discord READY as {_client.CurrentUser}");
+            _state.DiscordReady = true;
+
+            try
+            {
+                var guilds = _client.Guilds;
+                var items = new DiscordState.GuildItem[guilds.Count];
+                var i = 0;
+
+                foreach (var g in guilds)
+                    items[i++] = new DiscordState.GuildItem { Id = g.Id.ToString(), Name = g.Name };
+
+                _state.SetGuilds(items);
+
+                if (string.IsNullOrWhiteSpace(_state.DefaultGuildId) && items.Length > 0)
+                    _state.DefaultGuildId = items[0].Id;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Guild cache error: " + ex.Message);
+            }
+
+            Console.WriteLine("✅ Discord READY");
             return Task.CompletedTask;
         };
 
+        // Public-safe commands (no usernames echoed)
         _client.MessageReceived += async raw =>
         {
             if (raw is not SocketUserMessage msg) return;
@@ -210,6 +353,12 @@ sealed class DiscordBotHostedService : BackgroundService
 
             var body = content.Substring(1).Trim();
 
+            if (body.Equals("ping", StringComparison.OrdinalIgnoreCase))
+            {
+                await msg.Channel.SendMessageAsync("pong ✅");
+                return;
+            }
+
             if (body.StartsWith("link", StringComparison.OrdinalIgnoreCase))
             {
                 var code = body.Length > 4 ? body.Substring(4).Trim() : "";
@@ -219,15 +368,12 @@ sealed class DiscordBotHostedService : BackgroundService
                     return;
                 }
 
-                await msg.Channel.SendMessageAsync($"✅ Link received for **{msg.Author.Username}**: `{code}`");
+                // ✅ Public-safe response
+                await msg.Channel.SendMessageAsync("✅ Link code received. Open your ELD app to confirm it linked.");
                 return;
             }
 
-            if (body.Equals("ping", StringComparison.OrdinalIgnoreCase))
-            {
-                await msg.Channel.SendMessageAsync("pong ✅");
-                return;
-            }
+            await msg.Channel.SendMessageAsync("Commands: `!ping`, `!link 123456`");
         };
 
         await _client.LoginAsync(TokenType.Bot, token);
