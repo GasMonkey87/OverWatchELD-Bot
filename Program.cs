@@ -1,3 +1,10 @@
+// Program.cs ✅ FULL COPY/REPLACE (OverWatchELD.VtcBot)
+// ✅ Adds /build stamp endpoint (public-safe)
+// ✅ Keeps /health
+// ✅ Catches ALL /api/messages/* and /api/vtc/* (prevents 404 drift)
+// ✅ DOES NOT hardcode any guild ID
+// ✅ DOES NOT print personal Discord names
+
 using System;
 using System.IO;
 using System.Net.Http;
@@ -13,7 +20,7 @@ internal static class Program
 {
     private static DiscordSocketClient? _client;
 
-    // ✅ Public release safe: Hub is environment-configurable (no guild locked)
+    // ✅ Public release safe: hub is environment-configurable
     private const string DefaultHubBase = "https://overwatcheld-saas-production.up.railway.app";
 
     private static readonly HttpClient HubHttp = new HttpClient
@@ -40,7 +47,7 @@ internal static class Program
         var builder = WebApplication.CreateBuilder(args);
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-        // ✅ Resolve hub base URL (no guild pin)
+        // ✅ Resolve hub base URL
         var hubBase = (Environment.GetEnvironmentVariable("HUB_BASE_URL") ?? DefaultHubBase).Trim();
         hubBase = NormalizeAbsoluteBaseUrl(hubBase);
 
@@ -52,6 +59,9 @@ internal static class Program
         // Root + health
         app.MapGet("/", () => Results.Ok(new { ok = true, service = "OverWatchELD.VtcBot" }));
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
+
+        // ✅ Build stamp (PROVES what code is deployed)
+        app.MapGet("/build", () => Results.Ok(new { ok = true, build = "VtcBot-2026-02-28a" }));
 
         static bool HasGuildId(HttpRequest req)
         {
