@@ -1,129 +1,187 @@
-// Program.cs ✅ FULL COPY/REPLACE (BOT SERVICE)
-// - HTTP API for ELD + proxy to Hub
-// - Fixes MissingGuildId using query/header/DEFAULT_GUILD_ID
-// - Discord bot included (no HasCharPrefix extension usage)
-// - Railway friendly: binds to PORT
-
 using System;
 using System.IO;
 using System.Net.Http;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Discord;
 using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-internal static class Program
+var builder = WebApplication.CreateBuilder(args);
+
+// -----------------------------
+// Config / env
+// -----------------------------
+var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+var hubBase =
+    (Environment.GetEnvironmentVariable("HUB_BASE_URL") ?? "https://overwatcheld-saas-production.up.railway.app")
+    .Trim()
+    .TrimEnd('/');
+
+// Bind to Railway PORT
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
+// Shared HttpClient for proxying
+builder.Services.AddSingleton(new HttpClient
 {
-    private static DiscordSocketClient? _client;
+    Timeout = TimeSpan.FromSeconds(15)
+});
 
-    // You can set HUB_BASE_URL in Railway to override
-    // Example: https://overwatcheld-saas-production.up.railway.app
-    private static readonly string HubBase =
-        (Environment.GetEnvironmentVariable("HUB_BASE_URL") ?? "https://overwatcheld-saas-production.up.railway.app")
-        .Trim()
-        .TrimEnd('/');
+// Discord bot runs as hosted service (safe, won’t break web server)
+builder.Services.AddHostedService(sp => new DiscordBotHostedService());
 
-    private static readonly HttpClient ProxyHttp = new HttpClient
+var app = builder.Build();
+
+// -----------------------------
+// Routes
+// -----------------------------
+app.MapGet("/health", () => Results.Json(new { ok = true }));
+
+app.MapGet("/api/messages", async (HttpRequest req, HttpContext ctx, HttpClient http) =>
+{
+    var guildId = ResolveGuildId(req);
+
+    if (string.IsNullOrWhiteSpace(guildId))
     {
-        Timeout = TimeSpan.FromSeconds(15)
-    };
+        return Results.Json(new
+        {
+            error = "MissingGuildId",
+            traceId = ctx.TraceIdentifier,
+            hint = "Provide ?guildId=YOUR_SERVER_ID (or header X-Guild-Id), or set DEFAULT_GUILD_ID in Railway."
+        }, statusCode: 400);
+    }
 
-    public static async Task Main(string[] args)
+    try
     {
-        // -----------------------------
-        // HTTP API (Railway)
-        // -----------------------------
-        var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+        var target = BuildTargetUrl($"{hubBase}/api/messages", req.QueryString.Value, guildId!);
+        using var resp = await http.GetAsync(target);
+        var body = await resp.Content.ReadAsStringAsync();
 
-        var builder = WebApplication.CreateBuilder(args);
-        builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
-
-        var app = builder.Build();
-
-        app.MapGet("/health", () => Results.Json(new { ok = true }));
-
-        // GET /api/messages  -> proxy to HUB /api/messages (adds guildId if needed)
-        app.MapGet("/api/messages", async (HttpRequest req, HttpContext ctx) =>
+        return Results.Content(
+            body,
+            resp.Content.Headers.ContentType?.ToString() ?? "application/json",
+            Encoding.UTF8,
+            (int)resp.StatusCode
+        );
+    }
+    catch (Exception ex)
+    {
+        // Never crash the endpoint—return a clean error
+        return Results.Json(new
         {
-            var guildId = ResolveGuildId(req);
+            error = "ProxyFailed",
+            traceId = ctx.TraceIdentifier,
+            message = ex.Message
+        }, statusCode: 502);
+    }
+});
 
-            if (string.IsNullOrWhiteSpace(guildId))
-            {
-                return Results.Json(new
-                {
-                    error = "MissingGuildId",
-                    traceId = ctx.TraceIdentifier,
-                    hint = "Provide ?guildId=YOUR_SERVER_ID (or header X-Guild-Id), or set DEFAULT_GUILD_ID in Railway."
-                }, statusCode: 400);
-            }
+app.MapPost("/api/messages/send", async (HttpRequest req, HttpContext ctx, HttpClient http) =>
+{
+    var guildId = ResolveGuildId(req);
 
-            // Preserve any caller query params; ensure guildId exists
-            var qs = req.QueryString.HasValue ? req.QueryString.Value! : "";
-            var target = BuildTargetUrl($"{HubBase}/api/messages", qs, guildId!);
-
-            using var resp = await ProxyHttp.GetAsync(target);
-            var body = await resp.Content.ReadAsStringAsync();
-
-            return Results.Content(
-                body,
-                resp.Content.Headers.ContentType?.ToString() ?? "application/json",
-                Encoding.UTF8,
-                (int)resp.StatusCode
-            );
-        });
-
-        // POST /api/messages/send -> proxy to HUB /api/messages/send (adds guildId if needed)
-        app.MapPost("/api/messages/send", async (HttpRequest req, HttpContext ctx) =>
+    if (string.IsNullOrWhiteSpace(guildId))
+    {
+        return Results.Json(new
         {
-            var guildId = ResolveGuildId(req);
+            error = "MissingGuildId",
+            traceId = ctx.TraceIdentifier,
+            hint = "Provide ?guildId=YOUR_SERVER_ID (or header X-Guild-Id), or set DEFAULT_GUILD_ID in Railway."
+        }, statusCode: 400);
+    }
 
-            if (string.IsNullOrWhiteSpace(guildId))
-            {
-                return Results.Json(new
-                {
-                    error = "MissingGuildId",
-                    traceId = ctx.TraceIdentifier,
-                    hint = "Provide ?guildId=YOUR_SERVER_ID (or header X-Guild-Id), or set DEFAULT_GUILD_ID in Railway."
-                }, statusCode: 400);
-            }
+    try
+    {
+        var target = BuildTargetUrl($"{hubBase}/api/messages/send", req.QueryString.Value, guildId!);
 
-            var qs = req.QueryString.HasValue ? req.QueryString.Value! : "";
-            var target = BuildTargetUrl($"{HubBase}/api/messages/send", qs, guildId!);
+        using var reader = new StreamReader(req.Body);
+        var json = await reader.ReadToEndAsync();
 
-            // Read raw JSON body and forward
-            using var reader = new StreamReader(req.Body);
-            var json = await reader.ReadToEndAsync();
+        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+        using var resp = await http.PostAsync(target, content);
+        var body = await resp.Content.ReadAsStringAsync();
 
-            using var content = new StringContent(json, Encoding.UTF8, "application/json");
-            using var resp = await ProxyHttp.PostAsync(target, content);
-            var body = await resp.Content.ReadAsStringAsync();
+        return Results.Content(
+            body,
+            resp.Content.Headers.ContentType?.ToString() ?? "application/json",
+            Encoding.UTF8,
+            (int)resp.StatusCode
+        );
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            error = "ProxyFailed",
+            traceId = ctx.TraceIdentifier,
+            message = ex.Message
+        }, statusCode: 502);
+    }
+});
 
-            return Results.Content(
-                body,
-                resp.Content.Headers.ContentType?.ToString() ?? "application/json",
-                Encoding.UTF8,
-                (int)resp.StatusCode
-            );
-        });
+Console.WriteLine($"🌐 Bot API listening on 0.0.0.0:{port}");
+Console.WriteLine($"🔁 HUB_BASE_URL = {hubBase}");
+Console.WriteLine($"🏷 DEFAULT_GUILD_ID = {Environment.GetEnvironmentVariable("DEFAULT_GUILD_ID") ?? "(null)"}");
 
-        // Start web server in background so Discord bot can run too
-        _ = Task.Run(() => app.RunAsync());
-        Console.WriteLine($"🌐 HTTP API listening on 0.0.0.0:{port}");
-        Console.WriteLine($"🔁 Proxy HUB_BASE_URL = {HubBase}");
+app.Run();
 
-        // -----------------------------
-        // Discord bot
-        // -----------------------------
+static string? ResolveGuildId(HttpRequest req)
+{
+    // 1) query ?guildId=
+    var q = req.Query["guildId"].ToString();
+    if (!string.IsNullOrWhiteSpace(q)) return q.Trim();
+
+    // 2) header X-Guild-Id
+    if (req.Headers.TryGetValue("X-Guild-Id", out var h))
+    {
+        var hv = h.ToString();
+        if (!string.IsNullOrWhiteSpace(hv)) return hv.Trim();
+    }
+
+    // 3) env DEFAULT_GUILD_ID (Railway)
+    var env = Environment.GetEnvironmentVariable("DEFAULT_GUILD_ID");
+    if (!string.IsNullOrWhiteSpace(env)) return env.Trim();
+
+    return null;
+}
+
+static string BuildTargetUrl(string basePath, string? qs, string guildId)
+{
+    qs = qs ?? "";
+
+    if (string.IsNullOrWhiteSpace(qs))
+        return $"{basePath}?guildId={Uri.EscapeDataString(guildId)}";
+
+    // If caller already provided guildId, keep it
+    if (qs.IndexOf("guildId=", StringComparison.OrdinalIgnoreCase) >= 0)
+        return $"{basePath}{qs}";
+
+    // Append guildId to existing query string
+    if (qs.StartsWith("?"))
+        return $"{basePath}{qs}&guildId={Uri.EscapeDataString(guildId)}";
+
+    return $"{basePath}?{qs}&guildId={Uri.EscapeDataString(guildId)}";
+}
+
+// -----------------------------
+// Discord hosted service
+// -----------------------------
+sealed class DiscordBotHostedService : BackgroundService
+{
+    private DiscordSocketClient? _client;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         var token = Environment.GetEnvironmentVariable("DISCORD_TOKEN")
                     ?? Environment.GetEnvironmentVariable("BOT_TOKEN");
 
         if (string.IsNullOrWhiteSpace(token))
         {
-            Console.WriteLine("⚠️ DISCORD_TOKEN/BOT_TOKEN not set. HTTP API will still run.");
-            await Task.Delay(-1);
+            Console.WriteLine("⚠️ DISCORD_TOKEN/BOT_TOKEN not set. Running HTTP API only.");
             return;
         }
 
@@ -152,46 +210,16 @@ internal static class Program
         await _client.StartAsync();
 
         Console.WriteLine("🤖 Discord bot started.");
-        await Task.Delay(-1);
-    }
 
-    // -------- Helpers --------
-
-    private static string? ResolveGuildId(HttpRequest req)
-    {
-        // 1) query ?guildId=
-        var q = req.Query["guildId"].ToString();
-        if (!string.IsNullOrWhiteSpace(q)) return q.Trim();
-
-        // 2) header X-Guild-Id
-        if (req.Headers.TryGetValue("X-Guild-Id", out var h))
+        // Keep alive until shutdown
+        try
         {
-            var hv = h.ToString();
-            if (!string.IsNullOrWhiteSpace(hv)) return hv.Trim();
+            await Task.Delay(Timeout.Infinite, stoppingToken);
         }
+        catch { }
 
-        // 3) env DEFAULT_GUILD_ID
-        var env = Environment.GetEnvironmentVariable("DEFAULT_GUILD_ID");
-        if (!string.IsNullOrWhiteSpace(env)) return env.Trim();
-
-        return null;
-    }
-
-    private static string BuildTargetUrl(string basePath, string qs, string guildId)
-    {
-        // Ensure guildId is included even if client didn't send it
-        if (string.IsNullOrWhiteSpace(qs))
-            return $"{basePath}?guildId={Uri.EscapeDataString(guildId)}";
-
-        // If caller already provided guildId, keep it
-        if (qs.IndexOf("guildId=", StringComparison.OrdinalIgnoreCase) >= 0)
-            return $"{basePath}{qs}";
-
-        // Append guildId to existing query string
-        if (qs.StartsWith("?"))
-            return $"{basePath}{qs}&guildId={Uri.EscapeDataString(guildId)}";
-
-        return $"{basePath}?{qs}&guildId={Uri.EscapeDataString(guildId)}";
+        try { await _client.StopAsync(); } catch { }
+        try { await _client.LogoutAsync(); } catch { }
     }
 
     private static async Task HandleDiscordMessageAsync(SocketMessage raw)
@@ -220,7 +248,6 @@ internal static class Program
                 return;
             }
 
-            // If you already have linking storage logic elsewhere, call it here.
             await msg.Channel.SendMessageAsync($"✅ Link received for **{msg.Author.Username}**: `{code}`");
             return;
         }
