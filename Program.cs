@@ -7,16 +7,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using Discord;
 using Discord.WebSocket;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.HttpOverrides;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 internal static class Program
 {
     private static DiscordSocketClient? _client;
-    private static string _discordState = "starting";
-    private static string _discordUser = "";
+    private static string _state = "starting";
     private static string? _lastError;
 
     private static string _hubBaseUrl = "";
@@ -26,50 +21,11 @@ internal static class Program
         var token = Env("DISCORD_TOKEN", "BOT_TOKEN") ?? "";
         _hubBaseUrl = (Env("HUB_BASE_URL") ?? "").Trim().TrimEnd('/');
 
-        var port = 8080;
-        if (int.TryParse(Env("PORT"), out var p) && p > 0) port = p;
+        Console.WriteLine("OverWatchELD.VtcBot starting...");
+        Console.WriteLine($"Token={(string.IsNullOrWhiteSpace(token) ? "MISSING" : "OK")}");
+        Console.WriteLine($"Hub={(string.IsNullOrWhiteSpace(_hubBaseUrl) ? "MISSING" : _hubBaseUrl)}");
 
-        var web = RunWebAsync(port);
-        var bot = RunDiscordAsync(token);
-
-        await Task.WhenAll(web, bot);
-    }
-
-    private static async Task RunWebAsync(int port)
-    {
-        var builder = WebApplication.CreateBuilder();
-
-        builder.Services.Configure<ForwardedHeadersOptions>(o =>
-        {
-            o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
-        });
-
-        builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
-
-        var app = builder.Build();
-        app.UseForwardedHeaders();
-
-        app.MapGet("/", () => Results.Ok(new { ok = true, service = "OverWatchELD.VtcBot", endpoint = "/health" }));
-
-        app.MapGet("/health", () => Results.Ok(new
-        {
-            ok = true,
-            service = "OverWatchELD.VtcBot",
-            discord = new
-            {
-                state = _discordState,
-                user = _discordUser,
-                guilds = _client?.Guilds.Count ?? 0
-            },
-            hub = new
-            {
-                baseUrl = _hubBaseUrl,
-                configured = !string.IsNullOrWhiteSpace(_hubBaseUrl)
-            },
-            lastError = _lastError ?? ""
-        }));
-
-        await app.RunAsync();
+        await RunDiscordAsync(token);
     }
 
     private static async Task RunDiscordAsync(string token)
@@ -78,8 +34,8 @@ internal static class Program
         {
             if (string.IsNullOrWhiteSpace(token))
             {
-                _discordState = "no-token";
-                Console.WriteLine("⚠️ No DISCORD_TOKEN/BOT_TOKEN set; bot will not connect to Discord.");
+                _state = "no-token";
+                Console.WriteLine("No DISCORD_TOKEN/BOT_TOKEN set. Sleeping...");
                 await Task.Delay(Timeout.InfiniteTimeSpan);
                 return;
             }
@@ -98,9 +54,8 @@ internal static class Program
 
             _client.Ready += () =>
             {
-                _discordState = "ready";
-                _discordUser = _client.CurrentUser?.ToString() ?? "";
-                Console.WriteLine($"✅ Discord READY as {_discordUser}. Guilds={_client.Guilds.Count}");
+                _state = "ready";
+                Console.WriteLine($"✅ READY as {_client.CurrentUser}. Guilds={_client.Guilds.Count}");
                 return Task.CompletedTask;
             };
 
@@ -109,14 +64,14 @@ internal static class Program
             await _client.LoginAsync(TokenType.Bot, token);
             await _client.StartAsync();
 
-            _discordState = "running";
+            _state = "running";
             await Task.Delay(Timeout.InfiniteTimeSpan);
         }
         catch (Exception ex)
         {
-            _discordState = "crashed";
+            _state = "crashed";
             _lastError = ex.Message;
-            Console.WriteLine("🔥 Discord bot crashed:");
+            Console.WriteLine("🔥 Bot crashed:");
             Console.WriteLine(ex);
             await Task.Delay(Timeout.InfiniteTimeSpan);
         }
@@ -151,7 +106,7 @@ internal static class Program
             }
 
             var code = NormalizeCode(parts[1]);
-            if (code.Length != 6 || !code.All(char.IsLetterOrDigit))
+            if (code.Length != 6)
             {
                 await msg.Channel.SendMessageAsync("❌ Invalid code. Example: `!link WEK6N5`");
                 return;
@@ -163,9 +118,9 @@ internal static class Program
                 return;
             }
 
+            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             var url = $"{_hubBaseUrl}/api/link/confirm";
 
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
             var payload = new ConfirmLinkReq
             {
                 Code = code,
