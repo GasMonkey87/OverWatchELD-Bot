@@ -140,6 +140,13 @@ internal static class Program
                 GatewayIntents.GuildMembers // helps resolve users for thread invites
         });
 
+        _client.Ready += () =>
+{
+    _discordReady = true;
+    Console.WriteLine("✅ Discord client READY (guild cache loaded).");
+    return Task.CompletedTask;
+};
+        
         _client.Log += msg =>
         {
             Console.WriteLine($"{DateTimeOffset.Now:HH:mm:ss} {msg.Severity,-7} {msg.Source,-12} {msg.Message}");
