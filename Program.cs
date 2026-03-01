@@ -1,19 +1,7 @@
 // Program.cs ✅ FULL COPY/REPLACE (OverWatchELD.VtcBot)
 // ✅ Public-release safe: NO guild hardcoding, NO personal Discord name output
-// ✅ Commands: !ping, !link CODE, !setdispatchchannel, !setupdispatch, !setwebhook <url>
-// ✅ Thread-safe: !setdispatchchannel works in threads (saves parent channel)
-// ✅ Webhook URL fix: RestWebhook may not expose .Url -> build url from Id + Token
-// ✅ HTTP API:
-//    /health, /build
-//    /api/vtc/servers
-//    /api/vtc/name?guildId=...
-//    /api/vtc/roster?guildId=...
-//    /api/vtc/pair/claim?code=...
-// ✅ Dispatch messaging for Dispatch Window:
-//    GET  /api/messages?guildId=...
-//    POST /api/messages/send?guildId=...
-// ✅ Sender fix: ELD can send discordUserId so Discord shows real driver name (not "Driver")
-// ✅ NEW: Option A auto-thread per user under dispatch channel
+// ✅ Commands: !ping, !setdispatchchannel
+// ✅ NEW: Option A auto-thread per user under dispatch channel (via /api/messages/send)
 // ✅ NEW: Option B manual override: !linkthread (run inside thread)
 
 using System;
@@ -26,7 +14,6 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Discord;
-using Discord.Rest;
 using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -49,10 +36,10 @@ internal static class Program
         WriteIndented = false
     };
 
-    // Thread map store (guild-safe)
+    // Thread map store (key-based: "{guildId}:{discordUserId}" -> threadId)
     private static ThreadMapStore? _threadStore;
 
-    // Pairing codes captured from Discord `!link CODE`
+    // Pairing codes captured from Discord `!link CODE` (left intact even if not used in this excerpt)
     private sealed record PendingPair(
         string GuildId,
         string VtcName,
@@ -138,16 +125,6 @@ internal static class Program
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
 
-        // Option B manual thread override
-if (_client != null && _threadStore != null)
-{
-    if (raw is Discord.WebSocket.SocketUserMessage um)
-    {
-        var handled = await OverWatchELD.VtcBot.Threads.LinkThreadCommand.TryHandleAsync(um, _client, _threadStore);
-        if (handled) return;
-    }
-}
-        
         // Load configs
         LoadGuildCfgs();
 
@@ -169,7 +146,7 @@ if (_client != null && _threadStore != null)
         });
 
         // -----------------------------
-        // VTC APIs (unchanged)
+        // VTC APIs (kept minimal here)
         // -----------------------------
         app.MapGet("/api/vtc/servers", () =>
         {
@@ -192,12 +169,9 @@ if (_client != null && _threadStore != null)
             return Results.Json(new { ok = true, guildId, vtcName = cfg.VtcName ?? "" }, JsonWriteOpts);
         });
 
-        // (Your roster endpoints and pairing endpoints remain as-is in your repo;
-        // keeping this Program.cs focused on messaging/thread routing.)
-
         // -----------------------------
         // Dispatch: GET /api/messages?guildId=...
-        // (unchanged: reads recent messages from dispatch channel)
+        // Reads recent messages from parent dispatch channel
         // -----------------------------
         app.MapGet("/api/messages", async (HttpRequest req) =>
         {
@@ -224,7 +198,6 @@ if (_client != null && _threadStore != null)
             if (chan == null)
                 return Results.Json(new { ok = false, error = "DispatchChannelNotFound" }, statusCode: 404);
 
-            // Read last 50 messages (parent channel)
             var msgs = await chan.GetMessagesAsync(limit: 50).FlattenAsync();
 
             var items = msgs
@@ -243,7 +216,7 @@ if (_client != null && _threadStore != null)
 
         // -----------------------------
         // Dispatch: POST /api/messages/send?guildId=...
-        // ✅ NOW routes to per-user thread (Option A)
+        // ✅ Routes to per-user thread (Option A)
         // -----------------------------
         app.MapPost("/api/messages/send", async (HttpRequest req) =>
         {
@@ -291,7 +264,6 @@ if (_client != null && _threadStore != null)
             // Build router for this guild's dispatch channel
             var router = new DiscordThreadRouter(_client, _threadStore, dispatchChanId);
 
-            // Send directly into the user's thread (Option A)
             try
             {
                 await router.SendToUserThreadAsync(guildId, discordUserId, text);
@@ -313,10 +285,19 @@ if (_client != null && _threadStore != null)
     // -----------------------------
     // Discord commands
     // -----------------------------
-    private static async Task HandleMessageAsync(SocketMessage raw)
+    private static async Task HandleMessageAsync(SocketMessage socketMsg)
     {
-        if (raw is not SocketUserMessage msg) return;
+        if (_client == null) return;
+        if (socketMsg is not SocketUserMessage msg) return;
         if (msg.Author.IsBot) return;
+
+        // ✅ Option B: manual override for routing (run inside thread)
+        // This is handled FIRST and does not require "!" prefix if your LinkThreadCommand checks it.
+        if (_threadStore != null)
+        {
+            var handled = await OverWatchELD.VtcBot.Threads.LinkThreadCommand.TryHandleAsync(msg, _client, _threadStore);
+            if (handled) return;
+        }
 
         var content = (msg.Content ?? "").Trim();
         if (!content.StartsWith("!")) return;
@@ -330,38 +311,7 @@ if (_client != null && _threadStore != null)
             return;
         }
 
-        // ✅ Option B: manual override for routing
-        // Run INSIDE a thread: !linkthread (links yourself)
-        // or !linkthread @User (links mentioned user)
-        if (body.StartsWith("linkthread", StringComparison.OrdinalIgnoreCase))
-        {
-            if (_client == null || _threadStore == null)
-            {
-                await msg.Channel.SendMessageAsync("❌ Thread routing is not initialized.");
-                return;
-            }
-
-            if (msg.Channel is not SocketThreadChannel thread)
-            {
-                await msg.Channel.SendMessageAsync("Run **!linkthread** inside a thread.");
-                return;
-            }
-
-            var guild = thread.Guild;
-            if (guild == null)
-            {
-                await msg.Channel.SendMessageAsync("❌ Could not resolve guild.");
-                return;
-            }
-
-            var targetUserId = msg.MentionedUsers.FirstOrDefault()?.Id ?? msg.Author.Id;
-
-            _threadStore.SetThread(guild.Id.ToString(), targetUserId.ToString(), thread.Id);
-            await msg.Channel.SendMessageAsync($"✅ Linked this thread to <@{targetUserId}> for ELD routing.");
-            return;
-        }
-
-        // ✅ Thread-safe: works in channel OR thread (thread saves parent channel)
+        // Thread-safe: works in channel OR thread (thread saves parent channel)
         if (body.Equals("setdispatchchannel", StringComparison.OrdinalIgnoreCase))
         {
             SocketGuild? guild = null;
@@ -377,7 +327,6 @@ if (_client != null && _threadStore != null)
             else if (msg.Channel is SocketThreadChannel th)
             {
                 guild = th.Guild;
-                // Save parent channel for thread context
                 channelId = th.ParentChannel?.Id;
                 channelLabel = th.ParentChannel != null ? $"#{th.ParentChannel.Name} (parent of thread)" : "(parent unknown)";
             }
@@ -395,9 +344,6 @@ if (_client != null && _threadStore != null)
             await msg.Channel.SendMessageAsync($"✅ Dispatch channel saved: {channelLabel}");
             return;
         }
-
-        // Other commands in your original repo remain unchanged.
-        // If you need me to wire additional command blocks, paste them and I’ll integrate safely.
     }
 
     // -----------------------------
@@ -407,7 +353,6 @@ if (_client != null && _threadStore != null)
     {
         guildId = (guildId ?? "").Trim();
         if (string.IsNullOrWhiteSpace(guildId)) guildId = "unknown";
-
         return GuildCfgs.GetOrAdd(guildId, id => new GuildCfg { GuildId = id });
     }
 
