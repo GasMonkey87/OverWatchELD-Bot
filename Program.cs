@@ -33,7 +33,7 @@ internal static class Program
     private const string DefaultHubBase = "https://overwatcheld-saas-production.up.railway.app";
     private static readonly HttpClient HubHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
 
-    // ✅ Pairing codes captured from Discord `!link CODE` (NOW includes Discord user identity)
+    // ✅ Pairing codes captured from Discord `!link CODE` (includes Discord user identity)
     private sealed record PendingPair(
         string GuildId,
         string VtcName,
@@ -105,13 +105,11 @@ internal static class Program
             LogLevel = LogSeverity.Info,
             MessageCacheSize = 50,
             GatewayIntents =
-    GatewayIntents.Guilds |
-    GatewayIntents.GuildMembers |      // ✅ REQUIRED for full roster
-    GatewayIntents.GuildMessages |
-    GatewayIntents.DirectMessages |
-    GatewayIntents.MessageContent
-                // If you want full roster from Discord members, enable this in dev portal + add:
-                // | GatewayIntents.GuildMembers
+                GatewayIntents.Guilds |
+                GatewayIntents.GuildMembers |   // ✅ REQUIRED for full roster (also enable in Dev Portal)
+                GatewayIntents.GuildMessages |
+                GatewayIntents.DirectMessages |
+                GatewayIntents.MessageContent
         };
 
         _client = new DiscordSocketClient(socketConfig);
@@ -172,13 +170,8 @@ internal static class Program
 
             var g = _client.GetGuild(gid);
             if (g == null) return Results.NotFound(new { error = "GuildNotFound" });
-            // Force full member download (requires Server Members Intent enabled)
-                try
-            {
-            await g.DownloadUsersAsync();
-            }
-            catch { }
-            // ✅ Public release safe: returns server (guild) name, not user name
+
+            // ✅ Public release safe: returns server (guild) name
             return Results.Ok(new { ok = true, guildId = guildId, vtcName = g.Name ?? "" });
         });
 
@@ -262,9 +255,11 @@ internal static class Program
             var g = _client.GetGuild(gid);
             if (g == null) return Results.NotFound(new { error = "GuildNotFound" });
 
+            // ✅ Optional but recommended: force full member download (needs Server Members Intent enabled)
+            try { await g.DownloadUsersAsync(); } catch { }
+
             CleanupOldLiveStates();
 
-            // Base list from Discord (works if bot can see members; may be partial without GuildMembers intent)
             var users = g.Users
                 .Where(u => !u.IsBot)
                 .Select(u =>
@@ -282,7 +277,6 @@ internal static class Program
                     var duty = live?.DutyStatus ?? "";
                     var lastSeenUtc = live?.LastSeenUtc ?? DateTimeOffset.MinValue;
 
-                    // Prefer heartbeat username if present (ELD might send a normalized value)
                     var hbName = live?.DiscordUsername ?? "";
                     if (!string.IsNullOrWhiteSpace(hbName))
                         username = hbName;
@@ -290,8 +284,8 @@ internal static class Program
                     return new
                     {
                         discordUserId = uid,
-                        discordUsername = username, // ✅ what you asked for
-                        displayName = display,      // optional, useful in UI
+                        discordUsername = username,
+                        displayName = display,
                         truck = truck,
                         city = city,
                         state = state,
@@ -303,7 +297,6 @@ internal static class Program
                 .Take(250)
                 .ToList();
 
-            await Task.CompletedTask;
             return Results.Json(new { ok = true, guildId, drivers = users }, JsonWriteOpts);
         });
 
@@ -319,9 +312,6 @@ internal static class Program
             var g = _client.GetGuild(gid);
             if (g == null) return Results.NotFound(new { error = "GuildNotFound" });
 
-            // ✅ Configure announcements channel id via env:
-            // ANNOUNCEMENTS_CHANNEL_ID_<GUILDID> = 123...
-            // or ANNOUNCEMENTS_CHANNEL_ID = 123...
             var key1 = "ANNOUNCEMENTS_CHANNEL_ID_" + guildId;
             var chanStr = (Environment.GetEnvironmentVariable(key1) ??
                            Environment.GetEnvironmentVariable("ANNOUNCEMENTS_CHANNEL_ID") ??
@@ -334,7 +324,6 @@ internal static class Program
             if (chan == null)
                 return Results.Ok(new { ok = true, guildId, items = Array.Empty<object>() });
 
-            // Pull last 25 messages (requires Read Message History permission)
             var msgs = await chan.GetMessagesAsync(25).FlattenAsync();
 
             var items = msgs
@@ -362,7 +351,6 @@ internal static class Program
             if (!PendingPairs.TryRemove(code, out var p))
                 return Results.Json(new { ok = false, error = "InvalidOrExpiredCode" }, statusCode: 404);
 
-            // ✅ NOW returns discordUserId + discordUsername so ELD can store pairing reliably
             return Results.Ok(new
             {
                 ok = true,
@@ -437,7 +425,6 @@ internal static class Program
                 return;
             }
 
-            // Determine guild
             var guildId = "";
             var vtcName = "";
 
@@ -453,7 +440,6 @@ internal static class Program
                 return;
             }
 
-            // ✅ Capture Discord identity for pairing (ELD can store this reliably)
             var discordUserId = msg.Author.Id.ToString();
             var discordUsername = msg.Author.Username ?? "";
 
@@ -483,7 +469,6 @@ internal static class Program
 
     private static void CleanupOldLiveStates()
     {
-        // Drop states not seen in last 2 hours
         var cutoff = DateTimeOffset.UtcNow.AddHours(-2);
         foreach (var kv in Live)
         {
