@@ -1,0 +1,33 @@
+using System;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+namespace OverWatchELD.VtcBot.Services
+{
+    public sealed class WebhookPoster
+    {
+        private static readonly HttpClient _http = new();
+
+        public async Task<bool> PostAsync(string webhookUrl, string content)
+        {
+            try
+            {
+                // Discord webhook expects JSON: { "content": "..." }
+                var payload = JsonSerializer.Serialize(new { content });
+                using var req = new HttpRequestMessage(HttpMethod.Post, webhookUrl)
+                {
+                    Content = new StringContent(payload, Encoding.UTF8, "application/json")
+                };
+
+                using var res = await _http.SendAsync(req);
+                return res.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+}
