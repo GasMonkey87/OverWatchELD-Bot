@@ -7,6 +7,7 @@
 // ✅ NEW: Admin-only persistent announcement channel: !announcement
 // ✅ NEW: Admin-only persistent roster: !adddriver <Name> <Role...>  and  !remove <Name>
 // ✅ FIX: DiscordNotReady guard for /api/vtc/servers (prevents empty server list at startup)
+// ✅ FIX: Roster remove uses StringComparison (fixes CS0176)
 
 using System;
 using System.Collections.Concurrent;
@@ -693,7 +694,10 @@ internal static class Program
                     else
                     {
                         var before = list.Count;
-                        list.RemoveAll(d => d.Name.Equals(name, StringComparer.OrdinalIgnoreCase));
+
+                        // ✅ FIX: use StringComparison (NOT StringComparer) to avoid CS0176
+                        list.RemoveAll(d => string.Equals(d?.Name, name, StringComparison.OrdinalIgnoreCase));
+
                         removed = list.Count != before;
                         if (removed) SaveDriversUnsafe();
                     }
