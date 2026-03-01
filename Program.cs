@@ -426,8 +426,8 @@ internal static class Program
 
                     return new
                     {
-                        id = (long)m.Id,
-                        createdUnix = createdUnix,
+                        id = m.Id.ToString(),                 // ✅ string (ELD requires)
+                        createdUnix = createdUnix.ToString(), // ✅ extra-safe for strict parsers
                         sentUtc = m.Timestamp.UtcDateTime.ToString("o"),
 
                         fromName = "Dispatch",
