@@ -9,7 +9,7 @@
 // ✅ FIX: /api/vtc/name falls back to the real Discord guild name when VtcName is blank (stops "server name empty")
 // ✅ NEW: Endpoint for ELD to fetch per-user thread messages:
 //     GET /api/messages/thread?guildId=...&discordUserId=...   (aliases: userId)
-// ✅ FIX: CS0176/compare safety (use StringComparison)
+// ✅ FIX: Discord.Net GetActiveThreadsAsync() signature compatibility (returns IReadOnlyCollection<RestThreadChannel>)
 
 using System;
 using System.Collections.Concurrent;
@@ -21,6 +21,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Discord;
+using Discord.Rest;
 using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -178,9 +179,6 @@ internal static class Program
         // -----------------------------
         // VTC APIs
         // -----------------------------
-
-        // ✅ ELDs vary wildly. Keep /api/vtc/servers as a wrapper object (safe) OR array depending on your UI.
-        // You already validated JSON contains names; the ELD label issue was /api/vtc/name.
         app.MapGet("/api/vtc/servers", () =>
         {
             var client = _client;
@@ -196,8 +194,7 @@ internal static class Program
             return Results.Json(new { ok = true, servers }, JsonWriteOpts);
         });
 
-        // ✅ FIX: /api/vtc/name must return a non-empty vtcName.
-        // If config VtcName is blank, fall back to Discord guild name.
+        // ✅ FIX: /api/vtc/name must return a non-empty vtcName
         app.MapGet("/api/vtc/name", (HttpRequest req) =>
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
@@ -315,10 +312,10 @@ internal static class Program
                 }, statusCode: 409);
             }
 
-            // Resolve thread channel
-            var threadChan = _client.GetChannel(threadId.Value) as SocketThreadChannel;
+            // Resolve thread channel from cache
+            SocketThreadChannel? threadChan = _client.GetChannel(threadId.Value) as SocketThreadChannel;
 
-            // If not in cache, try to fetch from active threads under the dispatch channel
+            // If not in cache, try to find it among ACTIVE threads under the dispatch channel (Discord.Net signature compatible)
             if (threadChan == null)
             {
                 try
@@ -329,8 +326,14 @@ internal static class Program
                         var parent = guild.GetTextChannel(dispatchChanId);
                         if (parent != null)
                         {
+                            // Discord.Net version: returns IReadOnlyCollection<RestThreadChannel>
                             var active = await parent.GetActiveThreadsAsync();
-                            threadChan = active?.Threads?.FirstOrDefault(t => t.Id == threadId.Value) as SocketThreadChannel;
+                            var rest = active?.FirstOrDefault(t => t != null && t.Id == threadId.Value);
+
+                            if (rest != null)
+                            {
+                                threadChan = _client.GetChannel(rest.Id) as SocketThreadChannel;
+                            }
                         }
                     }
                 }
