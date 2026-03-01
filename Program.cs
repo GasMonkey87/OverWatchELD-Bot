@@ -181,49 +181,84 @@ internal static class Program
         // - Waits up to 10s for Ready + guild cache
         // - Returns classic shape: { ok:true, servers:[{guildId,name}] }
         app.MapGet("/api/vtc/servers", async () =>
+{
+    var client = _client;
+
+    // Never hard-fail (ELD may cache failure and stay blank)
+    if (client == null)
+    {
+        var emptyPayload = new Dictionary<string, object?>
         {
-            var client = _client;
+            ["ok"] = true,
+            ["servers"] = Array.Empty<object>(),
+            ["Servers"] = Array.Empty<object>(),
+            ["retryAfterMs"] = 2000
+        };
 
-            // Never hard-fail here; ask caller to retry
-            if (client == null)
-                return Results.Json(new { ok = true, servers = Array.Empty<object>(), retryAfterMs = 2000 }, JsonWriteOpts);
+        var emptyJson = JsonSerializer.Serialize(emptyPayload, new JsonSerializerOptions { WriteIndented = false });
+        return Results.Text(emptyJson, "application/json");
+    }
 
-            var start = DateTime.UtcNow;
+    // Wait a bit for guild cache
+    var start = DateTime.UtcNow;
+    while ((DateTime.UtcNow - start) < TimeSpan.FromSeconds(10))
+    {
+        try
+        {
+            if (_discordReady && client.Guilds.Count > 0) break;
+        }
+        catch { }
+        await Task.Delay(250);
+    }
 
-            while ((DateTime.UtcNow - start) < TimeSpan.FromSeconds(10))
+    // Build item list WITH BOTH PascalCase + camelCase keys
+    var items = new List<Dictionary<string, object?>>();
+    try
+    {
+        foreach (var g in client.Guilds)
+        {
+            var nm = (g?.Name ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(nm)) nm = "Discord Server";
+
+            var gid = g.Id.ToString();
+
+            items.Add(new Dictionary<string, object?>
             {
-                try
-                {
-                    if (_discordReady && client.Guilds.Count > 0)
-                        break;
-                }
-                catch { }
+                ["guildId"] = gid,
+                ["GuildId"] = gid,
+                ["id"] = gid,
+                ["Id"] = gid,
 
-                await Task.Delay(250);
-            }
+                ["name"] = nm,
+                ["Name"] = nm,
+                ["serverName"] = nm,
+                ["ServerName"] = nm
+            });
+        }
+    }
+    catch { }
 
-            object[] servers;
-            try
-            {
-                servers = client.Guilds
-                    .Select(g => new
-                    {
-                        guildId = g.Id.ToString(),
-                        name = string.IsNullOrWhiteSpace(g.Name) ? "Discord Server" : g.Name
-                    })
-                    .Cast<object>()
-                    .ToArray();
-            }
-            catch
-            {
-                servers = Array.Empty<object>();
-            }
+    // Top-level payload WITH BOTH Servers + servers
+    var payload = new Dictionary<string, object?>
+    {
+        ["ok"] = true,
+        ["servers"] = items,
+        ["Servers"] = items,
+        ["guilds"] = items,
+        ["Guilds"] = items,
+        ["items"] = items,
+        ["Items"] = items,
+        ["serverCount"] = items.Count,
+        ["ServerCount"] = items.Count
+    };
 
-            if (servers.Length == 0)
-                return Results.Json(new { ok = true, servers, retryAfterMs = 2000 }, JsonWriteOpts);
+    if (items.Count == 0)
+        payload["retryAfterMs"] = 2000;
 
-            return Results.Json(new { ok = true, servers }, JsonWriteOpts);
-        });
+    // IMPORTANT: serialize with NO naming policy so keys are preserved exactly
+    var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = false });
+    return Results.Text(json, "application/json");
+});
 
         app.MapGet("/api/vtc/name", (HttpRequest req) =>
         {
