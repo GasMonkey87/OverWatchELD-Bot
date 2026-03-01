@@ -475,12 +475,7 @@ internal static class Program
                 })
                 .ToList();
 
-            // Optional filter: driverName (if ELD passes it)
-            if (!string.IsNullOrWhiteSpace(driverName))
-            {
-                var dn = driverName.Trim();
-                items = items.Where(x => x.DisplayName.Equals(dn, StringComparison.OrdinalIgnoreCase)).ToList();
-            }
+           
 
             return Results.Json(new MessagesResponse { Ok = true, GuildId = guild.Id.ToString(), Items = items }, JsonWriteOpts);
         });
