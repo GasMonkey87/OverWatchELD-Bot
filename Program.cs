@@ -1,32 +1,36 @@
 // Program.cs ✅ FULL COPY/REPLACE (OverWatchELD.VtcBot)
-// ✅ FIXES “messages not going through” for your current ELD build:
-//    - Implements endpoints ELD actually calls (BotApiService.cs):
-//        GET  /api/messages
-//        POST /api/messages/send
-//        GET  /api/messages/thread/byuser
-//        POST /api/messages/thread/send/byuser
-//        POST /api/messages/thread/sendform/byuser
-//        DELETE /api/messages/delete (+ bulk)  (already used by ELD)
-// ✅ Thread-based Dispatch: Discord private thread per driver (mapped by guildId+discordUserId)
-// ✅ Admin commands (Discord):
+// ✅ WORKS WITH YOUR CURRENT ELD ZIP (BotApiService.cs)
+// ✅ ELD endpoints implemented:
+//    - GET  /api/messages
+//    - POST /api/messages/send
+//    - GET  /api/messages/thread/byuser
+//    - POST /api/messages/thread/send/byuser
+//    - POST /api/messages/thread/sendform/byuser
+//    - POST /api/messages/markread/bulk
+//    - DELETE /api/messages/delete/bulk
+// ✅ FIX: If ELD is NOT linked (discordUserId missing), bot FALLS BACK to dispatch channel/webhook.
+// ✅ Discord commands:
+//    - !setupdispatch #channel        (creates + saves dispatch webhook)
 //    - !setdispatchchannel #channel
-//    - !setupdispatch #channel              (creates webhook URL safely, no RestWebhook.Url)
 //    - !setdispatchwebhook <url>
-//    - !announcement #channel               (creates + saves ANNOUNCEMENTS webhook)
+//    - !announcement #channel         (creates + saves announcements webhook)  <-- requested
 //    - !setannouncementwebhook <url>
-// ✅ ELD Announcements:
-//    - GET  /api/vtc/announcements?guildId=...
-//    - POST /api/vtc/announcements/post     (ELD -> Discord announcements via webhook)
-// ✅ IMPORTANT: Webhook-authored messages are NO LONGER ignored.
-//    (We ignore only our own bot user id, not msg.Author.IsBot)
+//    - !ping, !help
+// ✅ Announcements endpoints:
+//    - GET  /api/vtc/announcements?guildId=...&limit=25
+//    - POST /api/vtc/announcements/post  (optional: ELD -> Discord announcements via webhook)
+//
+// IMPORTANT:
+// - Webhook-authored messages are NOT ignored (we ignore only our own bot user id).
 
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Discord;
 using Discord.Rest;
@@ -41,8 +45,6 @@ using OverWatchELD.VtcBot.Threads;
 internal static class Program
 {
     private static DiscordSocketClient? _client;
-
-    // ✅ Gate API calls until Discord gateway cache is ready
     private static volatile bool _discordReady = false;
 
     private static readonly JsonSerializerOptions JsonReadOpts = new() { PropertyNameCaseInsensitive = true };
@@ -54,107 +56,21 @@ internal static class Program
 
     private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
 
-    // Storage folder (Railway container-safe)
     private static readonly string DataDir = Path.Combine(AppContext.BaseDirectory, "data");
 
-    // Thread map store (key-based: "{guildId}:{discordUserId}" -> threadId)
     private static ThreadMapStore? _threadStore;
     private static readonly string ThreadMapPath = Path.Combine(DataDir, "thread_map.json");
 
-    // If ThreadMapStore doesn't expose get/set APIs in your build, we still link using this fallback:
-    private static readonly string ThreadMapFallbackPath = Path.Combine(DataDir, "thread_map_fallback.json");
-
-    // Dispatch + Announcement settings
     private static readonly string DispatchCfgPath = Path.Combine(DataDir, "dispatch_settings.json");
     private static DispatchSettingsStore? _dispatchStore;
 
-    // -----------------------------
-    // HTTP payload models (ELD expects these shapes)
-    // -----------------------------
-    private sealed class MessagesResponse
-    {
-        public bool Ok { get; set; }
-        public string? GuildId { get; set; }
-        public List<MessageDto>? Items { get; set; }
-    }
-
-    private sealed class MessageDto
-    {
-        public string Id { get; set; } = "";
-        public string GuildId { get; set; } = "";
-        public string DriverName { get; set; } = "";
-        public string Text { get; set; } = "";
-        public string Source { get; set; } = "";
-        public DateTimeOffset CreatedUtc { get; set; }
-    }
-
-    private sealed class SendMessageReq
-    {
-        public string? DriverName { get; set; }
-        public string? DiscordUserId { get; set; }
-        public string? DiscordUsername { get; set; }
-        public string Text { get; set; } = "";
-        public string? Source { get; set; }
-    }
-
-    private sealed class ThreadMessagesResponse
-    {
-        public bool Ok { get; set; }
-        public string? GuildId { get; set; }
-        public string? ThreadId { get; set; }
-        public List<ThreadMessageDto>? Items { get; set; }
-    }
-
-    private sealed class ThreadMessageDto
-    {
-        public string Id { get; set; } = "";
-        public string From { get; set; } = "";
-        public string Text { get; set; } = "";
-        public DateTimeOffset CreatedUtc { get; set; }
-        public List<string>? Attachments { get; set; }
-    }
-
-    private sealed class MarkReq
-    {
-        public string? ChannelId { get; set; }
-        public string? MessageId { get; set; }
-    }
-
-    private sealed class MarkBulkReq
-    {
-        public string? ChannelId { get; set; }
-        public List<string>? MessageIds { get; set; }
-    }
-
-    private sealed class DeleteReq
-    {
-        public string? ChannelId { get; set; }
-        public string? MessageId { get; set; }
-    }
-
-    private sealed class DeleteBulkReq
-    {
-        public string? ChannelId { get; set; }
-        public List<string>? MessageIds { get; set; }
-    }
-
-    private sealed class VtcAnnouncementPostReq
-    {
-        public string? GuildId { get; set; }
-        public string? Text { get; set; }
-        public string? Author { get; set; }
-    }
-
-    // -----------------------------
-    // Settings store (guild-scoped)
-    // -----------------------------
     private sealed class DispatchSettings
     {
         public string GuildId { get; set; } = "";
-        public string? DispatchChannelId { get; set; }        // text channel id
-        public string? DispatchWebhookUrl { get; set; }       // optional
-        public string? AnnouncementChannelId { get; set; }    // text channel id
-        public string? AnnouncementWebhookUrl { get; set; }   // for ELD -> Discord announcements mirroring
+        public string? DispatchChannelId { get; set; }
+        public string? DispatchWebhookUrl { get; set; }
+        public string? AnnouncementChannelId { get; set; }
+        public string? AnnouncementWebhookUrl { get; set; }
     }
 
     private sealed class DispatchSettingsStore
@@ -240,81 +156,85 @@ internal static class Program
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(_path) ?? DataDir);
-                var json = JsonSerializer.Serialize(_byGuild, JsonWriteOpts);
-                File.WriteAllText(_path, json);
+                File.WriteAllText(_path, JsonSerializer.Serialize(_byGuild, JsonWriteOpts));
             }
             catch { }
         }
     }
 
     // -----------------------------
-    // Thread map fallback store (guild+user -> threadId)
+    // Models matching ELD payloads
     // -----------------------------
-    private sealed class ThreadMapFallback
+    private sealed class SendMessageReq
     {
-        private readonly string _path;
-        private readonly object _lock = new();
-        private Dictionary<string, string> _map = new(); // key: "{guildId}:{userId}" => threadId string
+        [JsonPropertyName("driverName")]
+        public string? DriverName { get; set; }  // ELD sends "driverName"
 
-        public ThreadMapFallback(string path)
-        {
-            _path = path;
-            Load();
-        }
-
-        public ulong TryGet(ulong guildId, ulong userId)
-        {
-            lock (_lock)
-            {
-                var key = $"{guildId}:{userId}";
-                if (_map.TryGetValue(key, out var v) && ulong.TryParse(v, out var tid) && tid != 0)
-                    return tid;
-                return 0;
-            }
-        }
-
-        public void Set(ulong guildId, ulong userId, ulong threadId)
-        {
-            lock (_lock)
-            {
-                var key = $"{guildId}:{userId}";
-                _map[key] = threadId.ToString();
-                Save();
-            }
-        }
-
-        private void Load()
-        {
-            try
-            {
-                if (!File.Exists(_path)) { _map = new(); return; }
-                var json = File.ReadAllText(_path);
-                var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonReadOpts);
-                _map = dict ?? new();
-            }
-            catch { _map = new(); }
-        }
-
-        private void Save()
-        {
-            try
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(_path) ?? DataDir);
-                var json = JsonSerializer.Serialize(_map, JsonWriteOpts);
-                File.WriteAllText(_path, json);
-            }
-            catch { }
-        }
+        public string? DiscordUserId { get; set; }
+        public string? DiscordUsername { get; set; }
+        public string Text { get; set; } = "";
+        public string? Source { get; set; }
     }
 
-    private static ThreadMapFallback? _threadFallback;
+    private sealed class ThreadMessagesResponse
+    {
+        public bool Ok { get; set; }
+        public string? GuildId { get; set; }
+        public string? ThreadId { get; set; }
+        public List<ThreadMessageDto>? Items { get; set; }
+    }
+
+    private sealed class ThreadMessageDto
+    {
+        public string Id { get; set; } = "";
+        public string From { get; set; } = "";
+        public string Text { get; set; } = "";
+        public DateTimeOffset CreatedUtc { get; set; }
+        public List<string>? Attachments { get; set; }
+    }
+
+    private sealed class MessagesResponse
+    {
+        public bool Ok { get; set; }
+        public string? GuildId { get; set; }
+        public List<MessageDto>? Items { get; set; }
+    }
+
+    private sealed class MessageDto
+    {
+        public string Id { get; set; } = "";
+        public string GuildId { get; set; } = "";
+        [JsonPropertyName("driverName")]
+        public string DriverName { get; set; } = "";
+        public string Text { get; set; } = "";
+        public string Source { get; set; } = "";
+        public DateTimeOffset CreatedUtc { get; set; }
+    }
+
+    private sealed class MarkBulkReq
+    {
+        public string? ChannelId { get; set; }
+        public List<string>? MessageIds { get; set; }
+    }
+
+    private sealed class DeleteBulkReq
+    {
+        public string? ChannelId { get; set; }
+        public List<string>? MessageIds { get; set; }
+    }
+
+    private sealed class AnnouncementPostReq
+    {
+        public string? GuildId { get; set; }
+        public string? Text { get; set; }
+        public string? Author { get; set; }
+    }
 
     public static async Task Main()
     {
         Directory.CreateDirectory(DataDir);
 
         _threadStore = new ThreadMapStore(ThreadMapPath);
-        _threadFallback = new ThreadMapFallback(ThreadMapFallbackPath);
         _dispatchStore = new DispatchSettingsStore(DispatchCfgPath);
 
         var token = (Environment.GetEnvironmentVariable("DISCORD_TOKEN") ?? "").Trim();
@@ -336,7 +256,7 @@ internal static class Program
         _client.Ready += () =>
         {
             _discordReady = true;
-            Console.WriteLine("✅ Discord client READY (guild cache loaded).");
+            Console.WriteLine("✅ Discord READY");
             return Task.CompletedTask;
         };
 
@@ -352,9 +272,6 @@ internal static class Program
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
 
-        // -----------------------------
-        // HTTP server (Minimal API)
-        // -----------------------------
         var portStr = (Environment.GetEnvironmentVariable("PORT") ?? "8080").Trim();
         if (!int.TryParse(portStr, out var port)) port = 8080;
 
@@ -363,253 +280,142 @@ internal static class Program
         var app = builder.Build();
 
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
-        app.MapGet("/build", () =>
-        {
-            var sha = (Environment.GetEnvironmentVariable("RAILWAY_GIT_COMMIT_SHA") ?? "").Trim();
-            return Results.Ok(new { ok = true, sha });
-        });
-
-        // -----------------------------
-        // Servers list
-        // -----------------------------
         app.MapGet("/api/vtc/servers", () =>
         {
-            var client = _client;
-            if (client == null || !_discordReady)
+            if (_client == null || !_discordReady)
                 return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
 
-            var servers = client.Guilds.Select(g => new
-            {
-                guildId = g.Id.ToString(),
-                name = g.Name,
-                serverName = g.Name
-            }).ToArray();
-
-            return Results.Json(new { ok = true, servers, serverCount = servers.Length }, JsonWriteOpts);
-        });
-
-        // Compatibility aliases
-        app.MapGet("/api/servers", () => Results.Redirect("/api/vtc/servers", permanent: false));
-        app.MapGet("/api/discord/servers", () => Results.Redirect("/api/vtc/servers", permanent: false));
-        app.MapGet("/api/vtc/guilds", () => Results.Redirect("/api/vtc/servers", permanent: false));
-
-        app.MapGet("/api/vtc/status", () => Results.Json(new
-        {
-            ok = _client != null && _discordReady,
-            discordReady = _discordReady,
-            guildCount = _client?.Guilds.Count ?? 0
-        }, JsonWriteOpts));
-
-        app.MapGet("/api/status", () => Results.Redirect("/api/vtc/status", permanent: false));
-        app.MapGet("/api/discord/status", () => Results.Redirect("/api/vtc/status", permanent: false));
-
-        app.MapGet("/api/vtc/name", (HttpRequest req) =>
-        {
-            if (_client == null) return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
-
-            var guildIdStr = (req.Query["guildId"].ToString() ?? "").Trim();
-            SocketGuild? g = null;
-
-            if (!string.IsNullOrWhiteSpace(guildIdStr) && ulong.TryParse(guildIdStr, out var gid))
-                g = _client.Guilds.FirstOrDefault(x => x.Id == gid);
-
-            g ??= _client.Guilds.FirstOrDefault();
-
-            return Results.Json(new
-            {
-                ok = g != null,
-                guildId = g?.Id.ToString() ?? "",
-                name = g?.Name ?? "Not Connected",
-                vtcName = g?.Name ?? "Not Connected"
-            }, JsonWriteOpts);
+            var servers = _client.Guilds.Select(g => new { guildId = g.Id.ToString(), name = g.Name }).ToArray();
+            return Results.Json(new { ok = true, servers }, JsonWriteOpts);
         });
 
         // -----------------------------
-        // ✅ ELD Announcements: GET (Discord -> ELD polling)
-        // Endpoint used by ELD: /api/vtc/announcements?guildId=...
-        // Returns: { ok:true, announcements:[{ text, author, createdUtc, attachments }] }
+        // ✅ Announcements -> ELD (poll)
         // -----------------------------
         app.MapGet("/api/vtc/announcements", async (HttpRequest req) =>
         {
+            if (_client == null || !_discordReady)
+                return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+
             var guildIdStr = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (!ulong.TryParse(guildIdStr, out var gid) || gid == 0)
+                return Results.Json(new { ok = false, error = "MissingOrBadGuildId" }, statusCode: 400);
+
             var limitStr = (req.Query["limit"].ToString() ?? "25").Trim();
             if (!int.TryParse(limitStr, out var limit)) limit = 25;
             limit = Math.Clamp(limit, 1, 100);
 
-            if (_client == null || !_discordReady)
-                return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
-
-            if (string.IsNullOrWhiteSpace(guildIdStr) || !ulong.TryParse(guildIdStr, out var guildId) || guildId == 0)
-                return Results.Json(new { ok = false, error = "MissingOrBadGuildId" }, statusCode: 400);
-
-            var guild = _client.Guilds.FirstOrDefault(g => g.Id == guildId);
-            if (guild == null)
-                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+            var guild = _client.Guilds.FirstOrDefault(g => g.Id == gid);
+            if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
 
             var settings = _dispatchStore?.Get(guildIdStr);
-            if (settings == null || !ulong.TryParse(settings.AnnouncementChannelId, out var annChannelId) || annChannelId == 0)
+            if (settings == null || !ulong.TryParse(settings.AnnouncementChannelId, out var annChId) || annChId == 0)
                 return Results.Json(new { ok = false, error = "AnnouncementChannelNotSet" }, statusCode: 400);
 
-            var chan = guild.GetTextChannel(annChannelId);
-            if (chan == null)
-                return Results.Json(new { ok = false, error = "AnnouncementChannelNotFound" }, statusCode: 404);
+            var ch = guild.GetTextChannel(annChId);
+            if (ch == null) return Results.Json(new { ok = false, error = "AnnouncementChannelNotFound" }, statusCode: 404);
 
-            var msgs = await chan.GetMessagesAsync(limit: limit).FlattenAsync();
-
-            var announcements = msgs
-                .OrderByDescending(m => m.Timestamp)
-                .Select(m =>
+            var msgs = await ch.GetMessagesAsync(limit: limit).FlattenAsync();
+            var announcements = msgs.OrderByDescending(m => m.Timestamp).Select(m =>
+            {
+                var atts = new List<string>();
+                try
                 {
-                    var attachments = new List<string>();
-                    try
-                    {
-                        foreach (var a in m.Attachments)
-                            if (!string.IsNullOrWhiteSpace(a?.Url))
-                                attachments.Add(a.Url);
+                    foreach (var a in m.Attachments) if (!string.IsNullOrWhiteSpace(a?.Url)) atts.Add(a.Url);
+                    foreach (var e in m.Embeds) if (!string.IsNullOrWhiteSpace(e?.Url)) atts.Add(e.Url);
+                }
+                catch { }
 
-                        foreach (var e in m.Embeds)
-                            if (!string.IsNullOrWhiteSpace(e?.Url))
-                                attachments.Add(e.Url);
-                    }
-                    catch { }
-
-                    return new
-                    {
-                        text = (m.Content ?? "").Trim(),
-                        author = (m.Author?.Username ?? "Announcements").Trim(),
-                        createdUtc = m.Timestamp.UtcDateTime,
-                        attachments
-                    };
-                })
-                .ToArray();
+                return new
+                {
+                    text = (m.Content ?? "").Trim(),
+                    author = (m.Author?.Username ?? "Announcements").Trim(),
+                    createdUtc = m.Timestamp.UtcDateTime,
+                    attachments = atts
+                };
+            }).ToArray();
 
             return Results.Json(new { ok = true, guildId = guildIdStr, announcements }, JsonWriteOpts);
         });
 
-        // Aliases (safe)
-        app.MapGet("/api/announcements", () => Results.Redirect("/api/vtc/announcements", permanent: false));
-        app.MapGet("/api/messages/announcements", () => Results.Redirect("/api/vtc/announcements", permanent: false));
-        app.MapGet("/api/eld/announcements", () => Results.Redirect("/api/vtc/announcements", permanent: false));
-
         // -----------------------------
-        // ✅ ELD Announcements: POST (ELD -> Discord via webhook)
-        // ELD local dashboard posts to /api/vtc/announcements/post in its own host;
-        // but your ELD can also call THIS bot endpoint to mirror to Discord.
-        // Body: { guildId, text, author }
+        // ✅ Announcements webhook post (optional)
         // -----------------------------
         app.MapPost("/api/vtc/announcements/post", async (HttpRequest req) =>
         {
-            VtcAnnouncementPostReq? payload;
-            try { payload = await JsonSerializer.DeserializeAsync<VtcAnnouncementPostReq>(req.Body, JsonReadOpts); }
+            AnnouncementPostReq? payload;
+            try { payload = await JsonSerializer.DeserializeAsync<AnnouncementPostReq>(req.Body, JsonReadOpts); }
             catch { payload = null; }
 
             var guildIdStr = (payload?.GuildId ?? "").Trim();
             var text = (payload?.Text ?? "").Trim();
             var author = (payload?.Author ?? "").Trim();
 
-            if (string.IsNullOrWhiteSpace(guildIdStr))
-                guildIdStr = (req.Query["guildId"].ToString() ?? "").Trim();
-
-            if (string.IsNullOrWhiteSpace(guildIdStr))
-                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
-
-            if (string.IsNullOrWhiteSpace(text))
-                return Results.Json(new { ok = false, error = "EmptyAnnouncement" }, statusCode: 400);
+            if (string.IsNullOrWhiteSpace(guildIdStr)) return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+            if (string.IsNullOrWhiteSpace(text)) return Results.Json(new { ok = false, error = "EmptyText" }, statusCode: 400);
 
             var settings = _dispatchStore?.Get(guildIdStr);
             var hookUrl = (settings?.AnnouncementWebhookUrl ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(hookUrl)) return Results.Json(new { ok = false, error = "AnnouncementWebhookNotSet" }, statusCode: 400);
 
-            if (string.IsNullOrWhiteSpace(hookUrl))
-                return Results.Json(new { ok = false, error = "AnnouncementWebhookNotSet" }, statusCode: 400);
+            var content = string.IsNullOrWhiteSpace(author) ? text : $"**{author}:** {text}";
+            var json = JsonSerializer.Serialize(new { username = "OverWatch ELD", content }, JsonWriteOpts);
 
-            // Send to Discord webhook (incoming)
-            try
-            {
-                var content = string.IsNullOrWhiteSpace(author) ? text : $"**{author}:** {text}";
-                var webhookPayload = new
-                {
-                    username = "OverWatch ELD",
-                    content
-                };
+            using var resp = await _http.PostAsync(hookUrl, new StringContent(json, Encoding.UTF8, "application/json"));
+            var respText = await resp.Content.ReadAsStringAsync();
+            if (!resp.IsSuccessStatusCode)
+                return Results.Json(new { ok = false, error = "WebhookSendFailed", status = (int)resp.StatusCode, body = respText }, statusCode: 502);
 
-                var json = JsonSerializer.Serialize(webhookPayload, JsonWriteOpts);
-                using var sc = new StringContent(json, Encoding.UTF8, "application/json");
-                using var resp = await _http.PostAsync(hookUrl, sc);
-
-                var respBody = await resp.Content.ReadAsStringAsync();
-                if (!resp.IsSuccessStatusCode)
-                    return Results.Json(new { ok = false, error = "WebhookSendFailed", status = (int)resp.StatusCode, body = respBody }, statusCode: 502);
-
-                return Results.Json(new { ok = true }, JsonWriteOpts);
-            }
-            catch (Exception ex)
-            {
-                return Results.Json(new { ok = false, error = "WebhookSendException", message = ex.Message }, statusCode: 500);
-            }
+            return Results.Json(new { ok = true }, JsonWriteOpts);
         });
 
         // -----------------------------
-        // ✅ Messages list (legacy) — ELD may call this; keep it non-breaking.
-        // GET /api/messages?guildId=...&driverName=...
-        // We return a minimal stream of recent thread messages for the linked driver (if linked).
+        // ✅ GET /api/messages (legacy)
+        // FALLBACK: return dispatch channel messages (works even if not linked)
         // -----------------------------
         app.MapGet("/api/messages", async (HttpRequest req) =>
         {
-            var guildIdStr = (req.Query["guildId"].ToString() ?? "").Trim();
-            var driverName = (req.Query["driverName"].ToString() ?? "").Trim();
-            var discordUserId = (req.Query["discordUserId"].ToString() ?? "").Trim(); // optional
-
             if (_client == null || !_discordReady)
                 return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
 
-            if (string.IsNullOrWhiteSpace(guildIdStr))
+            var guildIdStr = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (!ulong.TryParse(guildIdStr, out var gid) || gid == 0)
             {
-                // allow older single-server builds (pick first)
-                var g0 = _client.Guilds.FirstOrDefault();
-                guildIdStr = g0?.Id.ToString() ?? "";
+                // older builds: use first guild
+                gid = _client.Guilds.FirstOrDefault()?.Id ?? 0;
+                guildIdStr = gid.ToString();
             }
 
-            if (string.IsNullOrWhiteSpace(guildIdStr) || !ulong.TryParse(guildIdStr, out var guildId) || guildId == 0)
-                return Results.Json(new { ok = false, error = "MissingOrBadGuildId" }, statusCode: 400);
+            if (gid == 0) return Results.Json(new { ok = false, error = "NoGuild" }, statusCode: 500);
 
-            // If discordUserId provided, try thread; otherwise return empty list.
-            var items = new List<MessageDto>();
+            var guild = _client.Guilds.FirstOrDefault(g => g.Id == gid);
+            if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
 
-            if (ulong.TryParse(discordUserId, out var duid) && duid != 0)
+            var settings = _dispatchStore?.Get(guildIdStr);
+            if (settings == null || !ulong.TryParse(settings.DispatchChannelId, out var dispatchChId) || dispatchChId == 0)
+                return Results.Json(new MessagesResponse { Ok = true, GuildId = guildIdStr, Items = new List<MessageDto>() }, JsonWriteOpts);
+
+            var ch = guild.GetTextChannel(dispatchChId);
+            if (ch == null)
+                return Results.Json(new MessagesResponse { Ok = true, GuildId = guildIdStr, Items = new List<MessageDto>() }, JsonWriteOpts);
+
+            var msgs = await ch.GetMessagesAsync(limit: 25).FlattenAsync();
+            var items = msgs.OrderByDescending(m => m.Timestamp).Select(m => new MessageDto
             {
-                var tid = ThreadStoreTryGet(guildId, duid);
-                if (tid != 0)
-                {
-                    var chan = await ResolveChannelAsync(tid);
-                    if (chan != null)
-                    {
-                        await EnsureThreadOpenAsync(chan);
-                        var msgs = await chan.GetMessagesAsync(limit: 25).FlattenAsync();
+                Id = m.Id.ToString(),
+                GuildId = guildIdStr,
+                DriverName = m.Author?.Username ?? "Dispatch",
+                Text = m.Content ?? "",
+                Source = "discord",
+                CreatedUtc = m.Timestamp.UtcDateTime
+            }).ToList();
 
-                        foreach (var m in msgs.OrderByDescending(x => x.Timestamp))
-                        {
-                            items.Add(new MessageDto
-                            {
-                                Id = m.Id.ToString(),
-                                GuildId = guildIdStr,
-                                DriverName = string.IsNullOrWhiteSpace(driverName) ? (m.Author?.Username ?? "Dispatch") : driverName,
-                                Text = m.Content ?? "",
-                                Source = "discord",
-                                CreatedUtc = m.Timestamp.UtcDateTime
-                            });
-                        }
-                    }
-                }
-            }
-
-            var respObj = new MessagesResponse { Ok = true, GuildId = guildIdStr, Items = items };
-            return Results.Json(respObj, JsonWriteOpts);
+            return Results.Json(new MessagesResponse { Ok = true, GuildId = guildIdStr, Items = items }, JsonWriteOpts);
         });
 
         // -----------------------------
-        // ✅ ELD -> Bot send (THIS is what your ELD calls)
-        // POST /api/messages/send?guildId=...
-        // body: { driverName, discordUserId, discordUsername, text, source }
+        // ✅ POST /api/messages/send (ELD -> Discord)
+        // If discordUserId missing => FALLBACK to dispatch channel/webhook so it STILL WORKS.
         // -----------------------------
         app.MapPost("/api/messages/send", async (HttpRequest req) =>
         {
@@ -626,62 +432,83 @@ internal static class Program
                 return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
 
             var text = payload.Text.Trim();
-            var discordUserIdStr = (payload.DiscordUserId ?? "").Trim();
             var driverName = (payload.DriverName ?? "").Trim();
+            var discordUserIdStr = (payload.DiscordUserId ?? "").Trim();
             var discordUsername = (payload.DiscordUsername ?? "").Trim();
 
             if (string.IsNullOrWhiteSpace(guildIdStr))
             {
-                // allow older single-server ELD builds
                 var g0 = _client.Guilds.FirstOrDefault();
                 guildIdStr = g0?.Id.ToString() ?? "";
             }
 
-            if (!ulong.TryParse(guildIdStr, out var guildId) || guildId == 0)
+            if (!ulong.TryParse(guildIdStr, out var gid) || gid == 0)
                 return Results.Json(new { ok = false, error = "MissingOrBadGuildId" }, statusCode: 400);
 
-            if (!ulong.TryParse(discordUserIdStr, out var discordUserId) || discordUserId == 0)
-                return Results.Json(new { ok = false, error = "MissingOrBadDiscordUserId" }, statusCode: 400);
-
-            // Ensure thread exists (auto-create under dispatch channel if needed)
-            var threadId = ThreadStoreTryGet(guildId, discordUserId);
-            if (threadId == 0)
-            {
-                var created = await EnsureDriverThreadAsync(guildId, discordUserId, discordUsername);
-                if (created == 0)
-                    return Results.Json(new { ok = false, error = "NoDispatchChannelOrThreadCreateFailed" }, statusCode: 500);
-
-                threadId = created;
-            }
-
-            var chan = await ResolveChannelAsync(threadId);
-            if (chan == null)
-                return Results.Json(new { ok = false, error = "ThreadChannelNotFound" }, statusCode: 404);
-
-            await EnsureThreadOpenAsync(chan);
-
-            // Format sender safely (don’t leak personal Discord name; use provided driverName/discordUsername)
             var who = !string.IsNullOrWhiteSpace(driverName) ? driverName :
                       !string.IsNullOrWhiteSpace(discordUsername) ? discordUsername :
                       "Driver";
 
-            var msgText = $"**{who}:** {text}";
-
-            try
+            // ✅ If linked, send to thread-per-driver
+            if (ulong.TryParse(discordUserIdStr, out var duid) && duid != 0)
             {
-                var sent = await chan.SendMessageAsync(msgText);
+                var threadId = ThreadStoreTryGet(gid, duid);
+                if (threadId == 0)
+                {
+                    var created = await EnsureDriverThreadAsync(gid, duid, who);
+                    if (created == 0)
+                        return Results.Json(new { ok = false, error = "ThreadCreateFailedOrDispatchNotSet" }, statusCode: 500);
+                    threadId = created;
+                }
+
+                var chan = await ResolveChannelAsync(threadId);
+                if (chan == null) return Results.Json(new { ok = false, error = "ThreadChannelNotFound" }, statusCode: 404);
+                await EnsureThreadOpenAsync(chan);
+
+                var sent = await chan.SendMessageAsync($"**{who}:** {text}");
+                Console.WriteLine($"[SEND->THREAD] guild={gid} user={duid} thread={threadId} msg={sent.Id}");
                 return Results.Json(new { ok = true, threadId = threadId.ToString(), messageId = sent.Id.ToString() }, JsonWriteOpts);
             }
-            catch (Exception ex)
+
+            // ✅ FALLBACK: NOT LINKED => send to dispatch channel/webhook
+            var settings = _dispatchStore?.Get(guildIdStr);
+            var hookUrl = (settings?.DispatchWebhookUrl ?? "").Trim();
+
+            if (!string.IsNullOrWhiteSpace(hookUrl))
             {
-                Console.WriteLine($"[api/messages/send] ❌ {ex}");
-                return Results.Json(new { ok = false, error = "SendFailed", message = ex.Message }, statusCode: 500);
+                var json = JsonSerializer.Serialize(new
+                {
+                    username = who,
+                    content = text
+                }, JsonWriteOpts);
+
+                using var resp = await _http.PostAsync(hookUrl, new StringContent(json, Encoding.UTF8, "application/json"));
+                var body = await resp.Content.ReadAsStringAsync();
+
+                Console.WriteLine($"[SEND->DISPATCH_WEBHOOK] guild={gid} status={(int)resp.StatusCode}");
+                if (!resp.IsSuccessStatusCode)
+                    return Results.Json(new { ok = false, error = "DispatchWebhookSendFailed", status = (int)resp.StatusCode, body }, statusCode: 502);
+
+                return Results.Json(new { ok = true, mode = "dispatchWebhook" }, JsonWriteOpts);
             }
+
+            // channel fallback
+            var guild = _client.Guilds.FirstOrDefault(g => g.Id == gid);
+            if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            if (settings == null || !ulong.TryParse(settings.DispatchChannelId, out var dispatchChId) || dispatchChId == 0)
+                return Results.Json(new { ok = false, error = "DispatchNotConfigured" }, statusCode: 400);
+
+            var ch2 = guild.GetTextChannel(dispatchChId);
+            if (ch2 == null) return Results.Json(new { ok = false, error = "DispatchChannelNotFound" }, statusCode: 404);
+
+            var sent2 = await ch2.SendMessageAsync($"**{who}:** {text}");
+            Console.WriteLine($"[SEND->DISPATCH_CHANNEL] guild={gid} ch={dispatchChId} msg={sent2.Id}");
+            return Results.Json(new { ok = true, mode = "dispatchChannel", messageId = sent2.Id.ToString() }, JsonWriteOpts);
         });
 
         // -----------------------------
-        // ✅ Thread state by user (THIS is what ELD polls now)
-        // GET /api/messages/thread/byuser?guildId=...&discordUserId=...&limit=50
+        // ✅ GET /api/messages/thread/byuser (ELD poll)
         // -----------------------------
         app.MapGet("/api/messages/thread/byuser", async (HttpRequest req) =>
         {
@@ -690,18 +517,17 @@ internal static class Program
 
             var guildIdStr = (req.Query["guildId"].ToString() ?? "").Trim();
             var discordUserIdStr = (req.Query["discordUserId"].ToString() ?? "").Trim();
-            var limitStr = (req.Query["limit"].ToString() ?? "50").Trim();
 
-            if (!int.TryParse(limitStr, out var limit)) limit = 50;
-            limit = Math.Clamp(limit, 1, 100);
-
-            if (!ulong.TryParse(guildIdStr, out var guildId) || guildId == 0)
+            if (!ulong.TryParse(guildIdStr, out var gid) || gid == 0)
                 return Results.Json(new { ok = false, error = "MissingOrBadGuildId" }, statusCode: 400);
 
-            if (!ulong.TryParse(discordUserIdStr, out var discordUserId) || discordUserId == 0)
-                return Results.Json(new { ok = false, error = "MissingOrBadDiscordUserId" }, statusCode: 400);
+            if (!ulong.TryParse(discordUserIdStr, out var duid) || duid == 0)
+            {
+                // Not linked => return empty but OK (prevents “dead” UX)
+                return Results.Json(new ThreadMessagesResponse { Ok = true, GuildId = guildIdStr, ThreadId = "", Items = new List<ThreadMessageDto>() }, JsonWriteOpts);
+            }
 
-            var threadId = ThreadStoreTryGet(guildId, discordUserId);
+            var threadId = ThreadStoreTryGet(gid, duid);
             if (threadId == 0)
                 return Results.Json(new ThreadMessagesResponse { Ok = true, GuildId = guildIdStr, ThreadId = "", Items = new List<ThreadMessageDto>() }, JsonWriteOpts);
 
@@ -711,51 +537,32 @@ internal static class Program
 
             await EnsureThreadOpenAsync(chan);
 
-            var msgs = await chan.GetMessagesAsync(limit: limit).FlattenAsync();
-
-            var items = msgs
-                .OrderBy(m => m.Timestamp)
-                .Select(m =>
-                {
-                    var attachments = new List<string>();
-                    try
-                    {
-                        foreach (var a in m.Attachments)
-                            if (!string.IsNullOrWhiteSpace(a?.Url))
-                                attachments.Add(a.Url);
-
-                        foreach (var e in m.Embeds)
-                            if (!string.IsNullOrWhiteSpace(e?.Url))
-                                attachments.Add(e.Url);
-                    }
-                    catch { }
-
-                    return new ThreadMessageDto
-                    {
-                        Id = m.Id.ToString(),
-                        From = string.IsNullOrWhiteSpace(m.Author?.Username) ? "Dispatch" : m.Author!.Username,
-                        Text = m.Content ?? "",
-                        CreatedUtc = m.Timestamp.UtcDateTime,
-                        Attachments = attachments
-                    };
-                })
-                .ToList();
-
-            var respObj = new ThreadMessagesResponse
+            var msgs = await chan.GetMessagesAsync(limit: 75).FlattenAsync();
+            var items = msgs.OrderBy(m => m.Timestamp).Select(m =>
             {
-                Ok = true,
-                GuildId = guildIdStr,
-                ThreadId = threadId.ToString(),
-                Items = items
-            };
+                var atts = new List<string>();
+                try
+                {
+                    foreach (var a in m.Attachments) if (!string.IsNullOrWhiteSpace(a?.Url)) atts.Add(a.Url);
+                    foreach (var e in m.Embeds) if (!string.IsNullOrWhiteSpace(e?.Url)) atts.Add(e.Url);
+                }
+                catch { }
 
-            return Results.Json(respObj, JsonWriteOpts);
+                return new ThreadMessageDto
+                {
+                    Id = m.Id.ToString(),
+                    From = m.Author?.Username ?? "Dispatch",
+                    Text = m.Content ?? "",
+                    CreatedUtc = m.Timestamp.UtcDateTime,
+                    Attachments = atts
+                };
+            }).ToList();
+
+            return Results.Json(new ThreadMessagesResponse { Ok = true, GuildId = guildIdStr, ThreadId = threadId.ToString(), Items = items }, JsonWriteOpts);
         });
 
         // -----------------------------
-        // ✅ Send thread message by user
-        // POST /api/messages/thread/send/byuser?guildId=...
-        // body: { discordUserId, text }
+        // ✅ POST /api/messages/thread/send/byuser (ELD -> thread)
         // -----------------------------
         app.MapPost("/api/messages/thread/send/byuser", async (HttpRequest req) =>
         {
@@ -763,16 +570,14 @@ internal static class Program
                 return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
 
             var guildIdStr = (req.Query["guildId"].ToString() ?? "").Trim();
-            if (!ulong.TryParse(guildIdStr, out var guildId) || guildId == 0)
+            if (!ulong.TryParse(guildIdStr, out var gid) || gid == 0)
                 return Results.Json(new { ok = false, error = "MissingOrBadGuildId" }, statusCode: 400);
 
             string raw;
-            using (var reader = new StreamReader(req.Body))
-                raw = await reader.ReadToEndAsync();
+            using (var r = new StreamReader(req.Body)) raw = await r.ReadToEndAsync();
 
             string discordUserIdStr = "";
             string text = "";
-
             try
             {
                 using var doc = JsonDocument.Parse(raw);
@@ -782,45 +587,29 @@ internal static class Program
             }
             catch { }
 
-            discordUserIdStr = (discordUserIdStr ?? "").Trim();
-            text = (text ?? "").Trim();
-
-            if (!ulong.TryParse(discordUserIdStr, out var discordUserId) || discordUserId == 0)
+            if (!ulong.TryParse(discordUserIdStr, out var duid) || duid == 0)
                 return Results.Json(new { ok = false, error = "MissingOrBadDiscordUserId" }, statusCode: 400);
-
             if (string.IsNullOrWhiteSpace(text))
                 return Results.Json(new { ok = false, error = "EmptyText" }, statusCode: 400);
 
-            var threadId = ThreadStoreTryGet(guildId, discordUserId);
+            var threadId = ThreadStoreTryGet(gid, duid);
             if (threadId == 0)
             {
-                var created = await EnsureDriverThreadAsync(guildId, discordUserId, "");
-                if (created == 0)
-                    return Results.Json(new { ok = false, error = "NoDispatchChannelOrThreadCreateFailed" }, statusCode: 500);
+                var created = await EnsureDriverThreadAsync(gid, duid, "Driver");
+                if (created == 0) return Results.Json(new { ok = false, error = "ThreadCreateFailedOrDispatchNotSet" }, statusCode: 500);
                 threadId = created;
             }
 
             var chan = await ResolveChannelAsync(threadId);
-            if (chan == null)
-                return Results.Json(new { ok = false, error = "ThreadChannelNotFound" }, statusCode: 404);
-
+            if (chan == null) return Results.Json(new { ok = false, error = "ThreadChannelNotFound" }, statusCode: 404);
             await EnsureThreadOpenAsync(chan);
 
-            try
-            {
-                var sent = await chan.SendMessageAsync(text);
-                return Results.Json(new { ok = true, threadId = threadId.ToString(), messageId = sent.Id.ToString() }, JsonWriteOpts);
-            }
-            catch (Exception ex)
-            {
-                return Results.Json(new { ok = false, error = "SendFailed", message = ex.Message }, statusCode: 500);
-            }
+            var sent = await chan.SendMessageAsync(text.Trim());
+            return Results.Json(new { ok = true, threadId = threadId.ToString(), messageId = sent.Id.ToString() }, JsonWriteOpts);
         });
 
         // -----------------------------
-        // ✅ Send thread message by user with files (multipart)
-        // POST /api/messages/thread/sendform/byuser?guildId=...
-        // form-data: discordUserId=... , text=... , files[]=...
+        // ✅ sendform/byuser (files)
         // -----------------------------
         app.MapPost("/api/messages/thread/sendform/byuser", async (HttpRequest req) =>
         {
@@ -828,7 +617,7 @@ internal static class Program
                 return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
 
             var guildIdStr = (req.Query["guildId"].ToString() ?? "").Trim();
-            if (!ulong.TryParse(guildIdStr, out var guildId) || guildId == 0)
+            if (!ulong.TryParse(guildIdStr, out var gid) || gid == 0)
                 return Results.Json(new { ok = false, error = "MissingOrBadGuildId" }, statusCode: 400);
 
             if (!req.HasFormContentType)
@@ -838,92 +627,51 @@ internal static class Program
             var discordUserIdStr = (form["discordUserId"].ToString() ?? "").Trim();
             var text = (form["text"].ToString() ?? "").Trim();
 
-            if (!ulong.TryParse(discordUserIdStr, out var discordUserId) || discordUserId == 0)
+            if (!ulong.TryParse(discordUserIdStr, out var duid) || duid == 0)
                 return Results.Json(new { ok = false, error = "MissingOrBadDiscordUserId" }, statusCode: 400);
 
-            var threadId = ThreadStoreTryGet(guildId, discordUserId);
+            var threadId = ThreadStoreTryGet(gid, duid);
             if (threadId == 0)
             {
-                var created = await EnsureDriverThreadAsync(guildId, discordUserId, "");
-                if (created == 0)
-                    return Results.Json(new { ok = false, error = "NoDispatchChannelOrThreadCreateFailed" }, statusCode: 500);
+                var created = await EnsureDriverThreadAsync(gid, duid, "Driver");
+                if (created == 0) return Results.Json(new { ok = false, error = "ThreadCreateFailedOrDispatchNotSet" }, statusCode: 500);
                 threadId = created;
             }
 
             var chan = await ResolveChannelAsync(threadId);
-            if (chan == null)
-                return Results.Json(new { ok = false, error = "ThreadChannelNotFound" }, statusCode: 404);
-
+            if (chan == null) return Results.Json(new { ok = false, error = "ThreadChannelNotFound" }, statusCode: 404);
             await EnsureThreadOpenAsync(chan);
 
-            try
+            var files = new List<FileAttachment>();
+            foreach (var f in form.Files)
             {
-                var files = new List<FileAttachment>();
+                if (f == null || f.Length <= 0) continue;
+                if (f.Length > 24 * 1024 * 1024)
+                    return Results.Json(new { ok = false, error = "FileTooLarge", file = f.FileName }, statusCode: 413);
 
-                foreach (var f in form.Files)
-                {
-                    if (f == null || f.Length <= 0) continue;
-
-                    if (f.Length > 24 * 1024 * 1024)
-                        return Results.Json(new { ok = false, error = "FileTooLarge", file = f.FileName }, statusCode: 413);
-
-                    var ms = new MemoryStream();
-                    await f.CopyToAsync(ms);
-                    ms.Position = 0;
-
-                    files.Add(new FileAttachment(ms, f.FileName));
-                }
-
-                IUserMessage sent;
-
-                if (files.Count > 0)
-                {
-                    sent = await chan.SendFilesAsync(files, text: text);
-
-                    foreach (var fa in files)
-                        try { fa.Stream.Dispose(); } catch { }
-                }
-                else
-                {
-                    sent = await chan.SendMessageAsync(text);
-                }
-
-                return Results.Json(new { ok = true, threadId = threadId.ToString(), messageId = sent.Id.ToString() }, JsonWriteOpts);
+                var ms = new MemoryStream();
+                await f.CopyToAsync(ms);
+                ms.Position = 0;
+                files.Add(new FileAttachment(ms, f.FileName));
             }
-            catch (Exception ex)
+
+            IUserMessage sent;
+            if (files.Count > 0)
             {
-                return Results.Json(new { ok = false, error = "SendFailed", message = ex.Message }, statusCode: 500);
+                sent = await chan.SendFilesAsync(files, text: text);
+                foreach (var fa in files) try { fa.Stream.Dispose(); } catch { }
             }
+            else
+            {
+                sent = await chan.SendMessageAsync(text);
+            }
+
+            return Results.Json(new { ok = true, threadId = threadId.ToString(), messageId = sent.Id.ToString() }, JsonWriteOpts);
         });
 
         // -----------------------------
-        // ✅ Mark read (adds ✅ reaction)
-        // POST /api/messages/markread  { channelId, messageId }
-        // POST /api/messages/markread/bulk  { channelId, messageIds[] }
+        // markread/bulk + delete/bulk
         // -----------------------------
-        app.MapPost("/api/messages/markread", async (HttpRequest req) =>
-        {
-            if (_client == null) return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
-
-            MarkReq? payload;
-            try { payload = await JsonSerializer.DeserializeAsync<MarkReq>(req.Body, JsonReadOpts); }
-            catch { payload = null; }
-
-            if (payload == null ||
-                !ulong.TryParse(payload.ChannelId, out var channelId) ||
-                !ulong.TryParse(payload.MessageId, out var messageId))
-                return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
-
-            var chan = await ResolveChannelAsync(channelId);
-            if (chan == null) return Results.Json(new { ok = false, error = "ChannelNotFound" }, statusCode: 404);
-
-            var m = await chan.GetMessageAsync(messageId);
-            if (m == null) return Results.Json(new { ok = false, error = "MessageNotFound" }, statusCode: 404);
-
-            await m.AddReactionAsync(new Emoji("✅"));
-            return Results.Json(new { ok = true }, JsonWriteOpts);
-        });
-
         app.MapPost("/api/messages/markread/bulk", async (HttpRequest req) =>
         {
             if (_client == null) return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
@@ -957,31 +705,6 @@ internal static class Program
             return Results.Json(new { ok = true, marked = okCount }, JsonWriteOpts);
         });
 
-        // -----------------------------
-        // ✅ Delete single/bulk
-        // DELETE /api/messages/delete { channelId, messageId }
-        // DELETE /api/messages/delete/bulk { channelId, messageIds[] }
-        // -----------------------------
-        app.MapDelete("/api/messages/delete", async (HttpRequest req) =>
-        {
-            if (_client == null) return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
-
-            DeleteReq? payload;
-            try { payload = await JsonSerializer.DeserializeAsync<DeleteReq>(req.Body, JsonReadOpts); }
-            catch { payload = null; }
-
-            if (payload == null ||
-                !ulong.TryParse(payload.ChannelId, out var channelId) ||
-                !ulong.TryParse(payload.MessageId, out var messageId))
-                return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
-
-            var chan = await ResolveChannelAsync(channelId);
-            if (chan == null) return Results.Json(new { ok = false, error = "ChannelNotFound" }, statusCode: 404);
-
-            await chan.DeleteMessageAsync(messageId);
-            return Results.Json(new { ok = true }, JsonWriteOpts);
-        });
-
         app.MapDelete("/api/messages/delete/bulk", async (HttpRequest req) =>
         {
             if (_client == null) return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
@@ -1002,37 +725,29 @@ internal static class Program
             foreach (var idStr in payload.MessageIds)
             {
                 if (!ulong.TryParse(idStr, out var mid)) continue;
-                try { await chan.DeleteMessageAsync(mid); okCount++; }
-                catch { }
+                try { await chan.DeleteMessageAsync(mid); okCount++; } catch { }
             }
 
             return Results.Json(new { ok = true, deleted = okCount }, JsonWriteOpts);
         });
 
-        // Start HTTP server
         _ = Task.Run(() => app.RunAsync());
         Console.WriteLine($"🌐 HTTP API listening on 0.0.0.0:{port}");
-
         await Task.Delay(-1);
     }
 
     // -----------------------------
-    // Discord command router
+    // Discord commands (admin setup)
     // -----------------------------
     private static async Task HandleMessageAsync(SocketMessage socketMsg)
     {
         if (_client == null) return;
         if (socketMsg is not SocketUserMessage msg) return;
 
-        // ✅ Ignore ONLY our own bot messages (NOT webhooks, NOT other bots if they matter).
-        try
-        {
-            if (_client.CurrentUser != null && msg.Author.Id == _client.CurrentUser.Id)
-                return;
-        }
-        catch { }
+        // Ignore only our own bot
+        try { if (_client.CurrentUser != null && msg.Author.Id == _client.CurrentUser.Id) return; } catch { }
 
-        // ✅ Keep your existing thread-router integration FIRST (if it handles something, stop)
+        // Keep your existing thread-router integration (if it handles something)
         if (_threadStore != null)
         {
             try
@@ -1040,19 +755,18 @@ internal static class Program
                 var handled = await LinkThreadCommand.TryHandleAsync(msg, _client, _threadStore);
                 if (handled) return;
             }
-            catch { /* do not block other commands */ }
+            catch { }
         }
 
         var content = (msg.Content ?? "").Trim();
         if (!content.StartsWith("!")) return;
 
-        // Must be in a server for setup commands
         if (msg.Channel is not SocketGuildChannel guildChan)
         {
             if (content.Equals("!ping", StringComparison.OrdinalIgnoreCase))
                 await msg.Channel.SendMessageAsync("pong ✅");
             else
-                await msg.Channel.SendMessageAsync("This command must be used in a server channel (not DMs).");
+                await msg.Channel.SendMessageAsync("Use setup commands in a server channel.");
             return;
         }
 
@@ -1063,11 +777,9 @@ internal static class Program
         var isAdmin = gu != null && (gu.GuildPermissions.Administrator || gu.GuildPermissions.ManageGuild);
 
         var body = content[1..].Trim();
-        if (string.IsNullOrWhiteSpace(body)) return;
-
-        var firstSpace = body.IndexOf(' ');
-        var cmd = (firstSpace >= 0 ? body[..firstSpace] : body).Trim().ToLowerInvariant();
-        var arg = (firstSpace >= 0 ? body[(firstSpace + 1)..] : "").Trim();
+        var parts = body.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var cmd = (parts.Length > 0 ? parts[0] : "").Trim().ToLowerInvariant();
+        var arg = (parts.Length > 1 ? parts[1] : "").Trim();
 
         if (cmd == "ping")
         {
@@ -1075,27 +787,29 @@ internal static class Program
             return;
         }
 
-        if (cmd == "help" || cmd == "commands")
+        if (cmd == "help")
         {
             await msg.Channel.SendMessageAsync(
                 "Commands:\n" +
-                "• !ping\n" +
-                "• !setdispatchchannel #channel        (admin)\n" +
-                "• !setupdispatch #channel             (admin, creates + saves dispatch webhook)\n" +
-                "• !setdispatchwebhook <url>           (admin)\n" +
-                "• !announcement #channel              (admin, creates + saves announcements webhook)\n" +
-                "• !setannouncementwebhook <url>       (admin)\n" +
-                "• !link / !linkthread                 (driver, creates/links dispatch thread)\n"
+                "• !setupdispatch #channel (admin)\n" +
+                "• !setdispatchchannel #channel (admin)\n" +
+                "• !setdispatchwebhook <url> (admin)\n" +
+                "• !announcement #channel (admin)  ✅ links announcements webhook\n" +
+                "• !setannouncementwebhook <url> (admin)\n"
             );
+            return;
+        }
+
+        if (!isAdmin)
+        {
+            await msg.Channel.SendMessageAsync("❌ Admin only (Manage Server/Admin required).");
             return;
         }
 
         if (cmd == "setdispatchchannel")
         {
-            if (!isAdmin) { await msg.Channel.SendMessageAsync("❌ Admin only (Manage Server / Admin required)."); return; }
             var cid = TryParseChannelIdFromMention(arg);
             if (cid == null) { await msg.Channel.SendMessageAsync("Usage: `!setdispatchchannel #dispatch`"); return; }
-
             _dispatchStore?.SetDispatchChannel(guildIdStr, cid.Value);
             await msg.Channel.SendMessageAsync($"✅ Dispatch channel set to <#{cid.Value}>");
             return;
@@ -1103,13 +817,8 @@ internal static class Program
 
         if (cmd == "setdispatchwebhook")
         {
-            if (!isAdmin) { await msg.Channel.SendMessageAsync("❌ Admin only (Manage Server / Admin required)."); return; }
             if (string.IsNullOrWhiteSpace(arg) || !arg.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-            {
-                await msg.Channel.SendMessageAsync("Usage: `!setdispatchwebhook https://discord.com/api/webhooks/...`");
-                return;
-            }
-
+            { await msg.Channel.SendMessageAsync("Usage: `!setdispatchwebhook https://discord.com/api/webhooks/...`"); return; }
             _dispatchStore?.SetDispatchWebhook(guildIdStr, arg.Trim());
             await msg.Channel.SendMessageAsync("✅ Dispatch webhook saved.");
             return;
@@ -1117,17 +826,14 @@ internal static class Program
 
         if (cmd == "setupdispatch")
         {
-            if (!isAdmin) { await msg.Channel.SendMessageAsync("❌ Admin only (Manage Server / Admin required)."); return; }
-
             var cid = TryParseChannelIdFromMention(arg);
             if (cid == null) { await msg.Channel.SendMessageAsync("Usage: `!setupdispatch #dispatch`"); return; }
 
             var ch = guild.GetTextChannel(cid.Value);
-            if (ch == null) { await msg.Channel.SendMessageAsync("❌ Channel not found (must be a text channel)."); return; }
+            if (ch == null) { await msg.Channel.SendMessageAsync("❌ Must be a text channel."); return; }
 
             try
             {
-                // ✅ FIX: no RestWebhook.Url. Build from Id + Token.
                 var hook = await ch.CreateWebhookAsync("OverWatchELD Dispatch");
                 var url = BuildWebhookUrl(hook);
 
@@ -1136,9 +842,8 @@ internal static class Program
                 if (string.IsNullOrWhiteSpace(url))
                 {
                     await msg.Channel.SendMessageAsync(
-                        "✅ Dispatch channel set, webhook created.\n" +
-                        "⚠️ Token wasn’t returned by this Discord.Net build.\n" +
-                        "Copy the webhook URL from Discord and run: `!setdispatchwebhook <url>`"
+                        "✅ Dispatch channel set. Webhook created but token wasn’t returned.\n" +
+                        "Copy webhook URL from Discord and run `!setdispatchwebhook <url>`"
                     );
                     return;
                 }
@@ -1148,22 +853,19 @@ internal static class Program
             }
             catch (Exception ex)
             {
-                await msg.Channel.SendMessageAsync($"❌ Failed to create webhook. Ensure the bot has **Manage Webhooks**.\n{ex.Message}");
+                await msg.Channel.SendMessageAsync($"❌ Webhook create failed. Bot needs **Manage Webhooks**.\n{ex.Message}");
             }
-
             return;
         }
 
-        // ✅ USER REQUEST: “!Announcement to link webhook” (Discord announcements webhook)
+        // ✅ Your request: !Announcement to link webhook
         if (cmd == "announcement" || cmd == "announcements")
         {
-            if (!isAdmin) { await msg.Channel.SendMessageAsync("❌ Admin only (Manage Server / Admin required)."); return; }
-
             var cid = TryParseChannelIdFromMention(arg);
             if (cid == null) { await msg.Channel.SendMessageAsync("Usage: `!announcement #announcements`"); return; }
 
             var ch = guild.GetTextChannel(cid.Value);
-            if (ch == null) { await msg.Channel.SendMessageAsync("❌ Channel not found (must be a text channel)."); return; }
+            if (ch == null) { await msg.Channel.SendMessageAsync("❌ Must be a text channel."); return; }
 
             try
             {
@@ -1175,9 +877,8 @@ internal static class Program
                 if (string.IsNullOrWhiteSpace(url))
                 {
                     await msg.Channel.SendMessageAsync(
-                        "✅ Announcement channel set, webhook created.\n" +
-                        "⚠️ Token wasn’t returned by this Discord.Net build.\n" +
-                        "Copy the webhook URL from Discord and run: `!setannouncementwebhook <url>`"
+                        "✅ Announcement channel set. Webhook created but token wasn’t returned.\n" +
+                        "Copy webhook URL from Discord and run `!setannouncementwebhook <url>`"
                     );
                     return;
                 }
@@ -1185,119 +886,89 @@ internal static class Program
                 _dispatchStore?.SetAnnouncementWebhook(guildIdStr, url);
 
                 await msg.Channel.SendMessageAsync(
-                    $"✅ Announcements linked.\n" +
-                    $"Channel: <#{ch.Id}>\n" +
-                    $"Webhook: saved.\n" +
-                    $"ELD reads announcements from: `/api/vtc/announcements?guildId={guildIdStr}`"
+                    $"✅ Announcements linked.\nChannel: <#{ch.Id}>\nWebhook: saved.\n" +
+                    $"ELD reads from: `/api/vtc/announcements?guildId={guildIdStr}`"
                 );
             }
             catch (Exception ex)
             {
-                await msg.Channel.SendMessageAsync($"❌ Failed to create announcements webhook. Ensure the bot has **Manage Webhooks**.\n{ex.Message}");
+                await msg.Channel.SendMessageAsync($"❌ Announcements webhook failed. Bot needs **Manage Webhooks**.\n{ex.Message}");
             }
-
             return;
         }
 
         if (cmd == "setannouncementwebhook")
         {
-            if (!isAdmin) { await msg.Channel.SendMessageAsync("❌ Admin only (Manage Server / Admin required)."); return; }
             if (string.IsNullOrWhiteSpace(arg) || !arg.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-            {
-                await msg.Channel.SendMessageAsync("Usage: `!setannouncementwebhook https://discord.com/api/webhooks/...`");
-                return;
-            }
-
+            { await msg.Channel.SendMessageAsync("Usage: `!setannouncementwebhook https://discord.com/api/webhooks/...`"); return; }
             _dispatchStore?.SetAnnouncementWebhook(guildIdStr, arg.Trim());
             await msg.Channel.SendMessageAsync("✅ Announcement webhook saved.");
             return;
         }
 
-        if (cmd == "link" || cmd == "linkthread")
-        {
-            if (_dispatchStore == null) { await msg.Channel.SendMessageAsync("❌ Dispatch store not ready."); return; }
-
-            var settings = _dispatchStore.Get(guildIdStr);
-            if (!ulong.TryParse(settings.DispatchChannelId, out var dispatchChannelId) || dispatchChannelId == 0)
-            {
-                await msg.Channel.SendMessageAsync("❌ Dispatch channel not set. Admin: `!setdispatchchannel #dispatch` or `!setupdispatch #dispatch`");
-                return;
-            }
-
-            var dispatchChannel = guild.GetTextChannel(dispatchChannelId);
-            if (dispatchChannel == null)
-            {
-                await msg.Channel.SendMessageAsync("❌ Dispatch channel saved, but it no longer exists.");
-                return;
-            }
-
-            var userId = msg.Author.Id;
-            var existing = ThreadStoreTryGet(guild.Id, userId);
-            if (existing != 0)
-            {
-                await msg.Channel.SendMessageAsync($"✅ Already linked. Your dispatch thread: <#{existing}>");
-                return;
-            }
-
-            try
-            {
-                var userLabel = string.IsNullOrWhiteSpace(msg.Author.Username) ? "driver" : msg.Author.Username;
-
-                var starter = await dispatchChannel.SendMessageAsync($"📌 Dispatch thread created for **{userLabel}**.");
-                var thread = await dispatchChannel.CreateThreadAsync(
-                    name: $"dispatch-{SanitizeThreadName(userLabel)}",
-                    autoArchiveDuration: ThreadArchiveDuration.OneWeek,
-                    type: ThreadType.PrivateThread,
-                    invitable: false,
-                    message: starter
-                );
-
-                try
-                {
-                    if (msg.Author is IGuildUser igu)
-                        await thread.AddUserAsync(igu);
-                }
-                catch { }
-
-                ThreadStoreSet(guild.Id, userId, thread.Id);
-
-                await msg.Channel.SendMessageAsync($"✅ Linked! Your dispatch thread: <#{thread.Id}>");
-            }
-            catch (Exception ex)
-            {
-                await msg.Channel.SendMessageAsync($"❌ Link failed: {ex.Message}");
-            }
-
-            return;
-        }
-
-        await msg.Channel.SendMessageAsync("❓ Unknown command. Type `!help`.");
+        await msg.Channel.SendMessageAsync("❓ Unknown. Type `!help`.");
     }
 
     // -----------------------------
-    // Create driver thread automatically (used by ELD send if not linked)
+    // Thread mapping helpers
     // -----------------------------
-    private static async Task<ulong> EnsureDriverThreadAsync(ulong guildId, ulong discordUserId, string discordUsername)
+    private static ulong ThreadStoreTryGet(ulong guildId, ulong userId)
+    {
+        try
+        {
+            if (_threadStore == null) return 0;
+            var t = _threadStore.GetType();
+            foreach (var name in new[] { "TryGetThreadId", "GetThreadId", "TryGet", "Get" })
+            {
+                var mi = t.GetMethod(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    binder: null, types: new[] { typeof(ulong), typeof(ulong) }, modifiers: null);
+                if (mi == null) continue;
+                var val = mi.Invoke(_threadStore, new object[] { guildId, userId });
+                if (val is ulong u && u != 0) return u;
+                if (val is string s && ulong.TryParse(s, out var us) && us != 0) return us;
+            }
+        }
+        catch { }
+        return 0;
+    }
+
+    private static void ThreadStoreSet(ulong guildId, ulong userId, ulong threadId)
+    {
+        try
+        {
+            if (_threadStore == null) return;
+            var t = _threadStore.GetType();
+            foreach (var name in new[] { "SetThreadId", "Set", "Put", "Upsert" })
+            {
+                var mi = t.GetMethod(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                    binder: null, types: new[] { typeof(ulong), typeof(ulong), typeof(ulong) }, modifiers: null);
+                if (mi == null) continue;
+                mi.Invoke(_threadStore, new object[] { guildId, userId, threadId });
+                return;
+            }
+        }
+        catch { }
+    }
+
+    private static async Task<ulong> EnsureDriverThreadAsync(ulong guildId, ulong discordUserId, string label)
     {
         try
         {
             if (_client == null || _dispatchStore == null) return 0;
 
-            var g = _client.Guilds.FirstOrDefault(x => x.Id == guildId);
-            if (g == null) return 0;
+            var guild = _client.Guilds.FirstOrDefault(g => g.Id == guildId);
+            if (guild == null) return 0;
 
             var settings = _dispatchStore.Get(guildId.ToString());
-            if (!ulong.TryParse(settings.DispatchChannelId, out var dispatchChannelId) || dispatchChannelId == 0)
+            if (!ulong.TryParse(settings.DispatchChannelId, out var dispatchChId) || dispatchChId == 0)
                 return 0;
 
-            var dispatchChannel = g.GetTextChannel(dispatchChannelId);
+            var dispatchChannel = guild.GetTextChannel(dispatchChId);
             if (dispatchChannel == null) return 0;
 
-            // If already mapped, return it.
             var existing = ThreadStoreTryGet(guildId, discordUserId);
             if (existing != 0) return existing;
 
-            var label = string.IsNullOrWhiteSpace(discordUsername) ? "driver" : discordUsername;
             var starter = await dispatchChannel.SendMessageAsync($"📌 Dispatch thread created for **{label}**.");
             var thread = await dispatchChannel.CreateThreadAsync(
                 name: $"dispatch-{SanitizeThreadName(label)}",
@@ -1307,27 +978,41 @@ internal static class Program
                 message: starter
             );
 
-            // Try to add user
             try
             {
-                var user = g.GetUser(discordUserId);
-                if (user != null)
-                    await thread.AddUserAsync(user);
+                var u = guild.GetUser(discordUserId);
+                if (u != null) await thread.AddUserAsync(u);
             }
             catch { }
 
             ThreadStoreSet(guildId, discordUserId, thread.Id);
+            Console.WriteLine($"[THREAD-CREATE] guild={guildId} user={discordUserId} thread={thread.Id}");
             return thread.Id;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[THREAD-CREATE] ❌ {ex}");
             return 0;
         }
     }
 
-    // -----------------------------
-    // FIX: Build webhook URL from RestWebhook.Id + RestWebhook.Token
-    // -----------------------------
+    private static string SanitizeThreadName(string s)
+    {
+        s = (s ?? "driver").Trim().ToLowerInvariant();
+        if (s.Length > 32) s = s.Substring(0, 32);
+        var safe = new string(s.Where(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_').ToArray());
+        return string.IsNullOrWhiteSpace(safe) ? "driver" : safe;
+    }
+
+    private static ulong? TryParseChannelIdFromMention(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        raw = raw.Trim();
+        if (raw.StartsWith("<#") && raw.EndsWith(">"))
+            raw = raw.Substring(2, raw.Length - 3);
+        return ulong.TryParse(raw, out var id) ? id : null;
+    }
+
     private static string? BuildWebhookUrl(RestWebhook hook)
     {
         try
@@ -1339,88 +1024,6 @@ internal static class Program
         catch { return null; }
     }
 
-    // -----------------------------
-    // Thread map helpers (reflection + fallback)
-    // -----------------------------
-    private static ulong ThreadStoreTryGet(ulong guildId, ulong userId)
-    {
-        try
-        {
-            if (_threadStore != null)
-            {
-                var t = _threadStore.GetType();
-
-                foreach (var name in new[] { "TryGetThreadId", "GetThreadId", "TryGet", "Get" })
-                {
-                    var mi = t.GetMethod(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                        binder: null, types: new[] { typeof(ulong), typeof(ulong) }, modifiers: null);
-                    if (mi != null)
-                    {
-                        var val = mi.Invoke(_threadStore, new object[] { guildId, userId });
-                        if (val is ulong u && u != 0) return u;
-                        if (val is long l && l != 0) return (ulong)l;
-                        if (val is string s && ulong.TryParse(s, out var us) && us != 0) return us;
-                    }
-                }
-            }
-        }
-        catch { }
-
-        try { return _threadFallback?.TryGet(guildId, userId) ?? 0; }
-        catch { return 0; }
-    }
-
-    private static void ThreadStoreSet(ulong guildId, ulong userId, ulong threadId)
-    {
-        try
-        {
-            if (_threadStore != null)
-            {
-                var t = _threadStore.GetType();
-
-                foreach (var name in new[] { "SetThreadId", "Set", "Put", "Upsert" })
-                {
-                    var mi = t.GetMethod(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
-                        binder: null, types: new[] { typeof(ulong), typeof(ulong), typeof(ulong) }, modifiers: null);
-                    if (mi != null)
-                    {
-                        mi.Invoke(_threadStore, new object[] { guildId, userId, threadId });
-                        // also mirror to fallback (harmless) so we never lose mapping
-                        try { _threadFallback?.Set(guildId, userId, threadId); } catch { }
-                        return;
-                    }
-                }
-            }
-        }
-        catch { }
-
-        try { _threadFallback?.Set(guildId, userId, threadId); } catch { }
-    }
-
-    private static string SanitizeThreadName(string s)
-    {
-        s = (s ?? "driver").Trim().ToLowerInvariant();
-        if (s.Length > 32) s = s.Substring(0, 32);
-        var safe = new string(s.Where(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_').ToArray());
-        if (string.IsNullOrWhiteSpace(safe)) safe = "driver";
-        return safe;
-    }
-
-    private static ulong? TryParseChannelIdFromMention(string raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return null;
-        raw = raw.Trim();
-
-        // formats: <#123>, 123
-        if (raw.StartsWith("<#") && raw.EndsWith(">"))
-            raw = raw.Substring(2, raw.Length - 3);
-
-        return ulong.TryParse(raw, out var id) ? id : null;
-    }
-
-    // -----------------------------
-    // Channel resolution (Railway-safe)
-    // -----------------------------
     private static async Task<IMessageChannel?> ResolveChannelAsync(ulong channelId)
     {
         if (_client == null) return null;
