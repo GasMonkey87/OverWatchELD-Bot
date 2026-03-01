@@ -3,15 +3,13 @@
 // ✅ Fetch thread messages (+ attachments), Send replies, Upload files, Mark Read, Delete (single/bulk)
 // ✅ Railway-safe: REST fallback when channel/thread not in socket cache
 // ✅ Public-release safe: NO guild hardcoding, NO personal Discord name output
+// ✅ ADD: Compatibility endpoints to prevent ELD 404s (/api/vtc/name, /api/vtc/status, /api/servers, etc.)
 // ✅ Keeps your existing thread-router integration: ThreadMapStore + DiscordThreadRouter + LinkThreadCommand
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Discord;
@@ -166,6 +164,66 @@ internal static class Program
 
             return Results.Json(new { ok = true, servers, serverCount = servers.Length }, JsonWriteOpts);
         });
+
+        // -----------------------------
+        // ✅ Compatibility endpoints (prevents 404s from older ELD builds)
+        // These DO NOT change your current architecture; they only alias common legacy routes.
+        // -----------------------------
+        object GetStatusPayload()
+        {
+            var client = _client;
+            return new
+            {
+                ok = client != null && _discordReady,
+                discordReady = _discordReady,
+                guildCount = client?.Guilds.Count ?? 0
+            };
+        }
+
+        object GetNamePayload(string? guildIdStr)
+        {
+            var client = _client;
+            if (client == null) return new { ok = false, error = "DiscordNotReady" };
+
+            SocketGuild? g = null;
+
+            if (!string.IsNullOrWhiteSpace(guildIdStr) && ulong.TryParse(guildIdStr, out var gid))
+                g = client.Guilds.FirstOrDefault(x => x.Id == gid);
+
+            // fallback: first guild (for older single-server ELD builds)
+            g ??= client.Guilds.FirstOrDefault();
+
+            return new
+            {
+                ok = g != null,
+                guildId = g?.Id.ToString() ?? "",
+                name = g?.Name ?? "Not Connected",
+                vtcName = g?.Name ?? "Not Connected"
+            };
+        }
+
+        // Legacy: "status" checks
+        app.MapGet("/api/vtc/status", () => Results.Json(GetStatusPayload(), JsonWriteOpts));
+        app.MapGet("/api/status", () => Results.Json(GetStatusPayload(), JsonWriteOpts));
+        app.MapGet("/api/discord/status", () => Results.Json(GetStatusPayload(), JsonWriteOpts));
+
+        // Legacy: "name" / "vtc" checks
+        app.MapGet("/api/vtc/name", (HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            return Results.Json(GetNamePayload(guildId), JsonWriteOpts);
+        });
+
+        app.MapGet("/api/vtc", (HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            return Results.Json(GetNamePayload(guildId), JsonWriteOpts);
+        });
+
+        // Legacy: servers list aliases
+        app.MapGet("/api/servers", () => Results.Redirect("/api/vtc/servers", permanent: false));
+        app.MapGet("/api/discord/servers", () => Results.Redirect("/api/vtc/servers", permanent: false));
+        app.MapGet("/api/vtc/guilds", () => Results.Redirect("/api/vtc/servers", permanent: false));
 
         // -----------------------------
         // ✅ Fetch thread messages (+ attachment URLs)
