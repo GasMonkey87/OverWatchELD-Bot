@@ -179,27 +179,63 @@ internal static class Program
 
         // ✅ FIXED: Wait for Ready + return BOTH name + Name
         app.MapGet("/api/vtc/servers", async () =>
+{
+    var client = _client;
+    if (client == null)
+        return Results.Json(new { ok = false, error = "DiscordClientNull" }, statusCode: 503);
+
+    // ✅ Wait longer + wait for guild list to populate
+    var start = DateTime.UtcNow;
+    while ((!_discordReady || client.Guilds.Count == 0) &&
+           (DateTime.UtcNow - start) < TimeSpan.FromSeconds(20))
+    {
+        await Task.Delay(250);
+    }
+
+    // Build server list (never return blank names)
+    var servers = client.Guilds.Select(g =>
+    {
+        var nm = (g?.Name ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(nm)) nm = "Discord Server";
+
+        return new
         {
-            var client = _client;
-            if (client == null)
-                return Results.Json(new { ok = false, error = "DiscordClientNull" }, statusCode: 503);
+            // ✅ ID aliases
+            guildId = g.Id.ToString(),
+            id = g.Id.ToString(),
+            serverId = g.Id.ToString(),
+            ServerId = g.Id.ToString(),
 
-            var start = DateTime.UtcNow;
-            while (!_discordReady && (DateTime.UtcNow - start) < TimeSpan.FromSeconds(6))
-                await Task.Delay(200);
+            // ✅ NAME aliases (this is the important part)
+            name = nm,
+            Name = nm,
+            serverName = nm,
+            ServerName = nm
+        };
+    }).ToArray();
 
-            if (!_discordReady)
-                return Results.Json(new { ok = false, error = "DiscordNotReady", retryAfterMs = 2000 }, statusCode: 503);
+    // ✅ LIST aliases (some clients look for guilds/items instead of servers)
+    var payload = new
+    {
+        ok = true,
 
-            var servers = client.Guilds.Select(g => new
-            {
-                guildId = g.Id.ToString(),
-                name = g.Name,
-                Name = g.Name
-            }).ToArray();
+        // "servers" (your current contract)
+        servers,
 
-            return Results.Json(new { ok = true, servers }, JsonWriteOpts);
-        });
+        // extra aliases for older/newer ELD builds
+        guilds = servers,
+        items = servers,
+
+        // debug fields (safe)
+        discordReady = _discordReady,
+        serverCount = servers.Length
+    };
+
+    // Optional: log what we returned (helps you verify in Railway logs)
+    try { Console.WriteLine($"[api/vtc/servers] ready={_discordReady} count={servers.Length}"); } catch { }
+
+    return Results.Json(payload, JsonWriteOpts);
+});
 
         app.MapGet("/api/vtc/name", (HttpRequest req) =>
         {
