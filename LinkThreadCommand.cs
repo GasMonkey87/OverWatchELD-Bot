@@ -1,43 +1,43 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
-using Discord;
-using Discord.Interactions;
 using Discord.WebSocket;
 
 namespace OverWatchELD.VtcBot.Threads
 {
-    /// <summary>
-    /// Option B: run inside an existing thread to override routing.
-    /// /linkthread (links yourself)
-    /// /linkthread user:@User (links specified user)
-    /// </summary>
-    public sealed class LinkThreadCommand : InteractionModuleBase<SocketInteractionContext>
+    public static class LinkThreadCommand
     {
-        private readonly DiscordThreadRouter _router;
-
-        public LinkThreadCommand(DiscordThreadRouter router)
+        /// <summary>
+        /// Option B: manual override.
+        /// Run inside a thread: !linkthread OR !linkthread @User
+        /// </summary>
+        public static async Task<bool> TryHandleAsync(SocketUserMessage msg, DiscordSocketClient client, ThreadMapStore store)
         {
-            _router = router;
-        }
+            var content = (msg.Content ?? "").Trim();
+            if (!content.StartsWith("!linkthread", StringComparison.OrdinalIgnoreCase))
+                return false;
 
-        [SlashCommand("linkthread", "Link this Discord thread as your ELD dispatch thread (override)")]
-        public async Task LinkThread([Summary("user", "Optional: link a different user")] SocketGuildUser? user = null)
-        {
-            if (Context.Channel is not SocketThreadChannel thread)
+            if (msg.Channel is not SocketThreadChannel thread)
             {
-                await RespondAsync("Run this command inside a thread.", ephemeral: true);
-                return;
+                await msg.Channel.SendMessageAsync("Run **!linkthread** inside a thread.");
+                return true;
             }
 
-            var target = user ?? (Context.User as SocketGuildUser);
-            if (target == null)
+            var guild = thread.Guild;
+            if (guild == null)
             {
-                await RespondAsync("Unable to resolve user.", ephemeral: true);
-                return;
+                await msg.Channel.SendMessageAsync("❌ Could not resolve guild.");
+                return true;
             }
 
-            await _router.SetThreadOverrideAsync(target.Id.ToString(), thread.Id);
-            await RespondAsync($"✅ Linked this thread to <@{target.Id}>.", ephemeral: true);
+            var target = msg.MentionedUsers.FirstOrDefault();
+            var targetUserId = (target?.Id ?? msg.Author.Id).ToString();
+
+            var key = $"{guild.Id}:{targetUserId}";
+            store.SetThread(key, thread.Id);
+
+            await msg.Channel.SendMessageAsync($"✅ Linked this thread to <@{targetUserId}> for ELD routing.");
+            return true;
         }
     }
 }
