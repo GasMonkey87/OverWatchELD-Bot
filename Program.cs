@@ -105,10 +105,11 @@ internal static class Program
             LogLevel = LogSeverity.Info,
             MessageCacheSize = 50,
             GatewayIntents =
-                GatewayIntents.Guilds |
-                GatewayIntents.GuildMessages |
-                GatewayIntents.DirectMessages |
-                GatewayIntents.MessageContent
+    GatewayIntents.Guilds |
+    GatewayIntents.GuildMembers |      // ✅ REQUIRED for full roster
+    GatewayIntents.GuildMessages |
+    GatewayIntents.DirectMessages |
+    GatewayIntents.MessageContent
                 // If you want full roster from Discord members, enable this in dev portal + add:
                 // | GatewayIntents.GuildMembers
         };
@@ -171,7 +172,12 @@ internal static class Program
 
             var g = _client.GetGuild(gid);
             if (g == null) return Results.NotFound(new { error = "GuildNotFound" });
-
+            // Force full member download (requires Server Members Intent enabled)
+                try
+            {
+            await g.DownloadUsersAsync();
+            }
+            catch { }
             // ✅ Public release safe: returns server (guild) name, not user name
             return Results.Ok(new { ok = true, guildId = guildId, vtcName = g.Name ?? "" });
         });
