@@ -232,14 +232,35 @@ internal static class Program
         });
 
         app.MapGet("/api/vtc/name", (HttpRequest req) =>
-        {
-            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(guildId))
-                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+{
+    var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+    if (string.IsNullOrWhiteSpace(guildId))
+        return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
 
-            var cfg = GetOrCreateGuildCfg(guildId);
-            return Results.Json(new { ok = true, guildId, vtcName = cfg.VtcName ?? "" }, JsonWriteOpts);
-        });
+    // Default to config value if set
+    var cfg = GetOrCreateGuildCfg(guildId);
+    var vtcName = (cfg.VtcName ?? "").Trim();
+
+    // ✅ If blank, fall back to the REAL Discord guild name
+    if (string.IsNullOrWhiteSpace(vtcName))
+    {
+        try
+        {
+            if (_client != null && ulong.TryParse(guildId, out var gid))
+            {
+                var g = _client.GetGuild(gid);
+                if (g != null)
+                    vtcName = (g.Name ?? "").Trim();
+            }
+        }
+        catch { }
+    }
+
+    if (string.IsNullOrWhiteSpace(vtcName))
+        vtcName = "Discord Server";
+
+    return Results.Json(new { ok = true, guildId, vtcName }, JsonWriteOpts);
+});
 
         // -----------------------------
         // Dispatch: GET /api/messages?guildId=...
