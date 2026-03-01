@@ -33,6 +33,9 @@ internal static class Program
     private static DiscordSocketClient? _client;
     private static volatile bool _discordReady = false;
 
+    // ✅ 2-line guard support (prevents duplicate MessageReceived handlers)
+    private static bool _messageHandlerAttached = false;
+
     private static readonly JsonSerializerOptions JsonReadOpts = new() { PropertyNameCaseInsensitive = true };
     private static readonly JsonSerializerOptions JsonWriteOpts = new()
     {
@@ -217,7 +220,12 @@ internal static class Program
             return Task.CompletedTask;
         };
 
-        _client.MessageReceived += HandleMessageAsync;
+        // ✅ 2-line guard (prevents duplicate MessageReceived attaches)
+        if (!_messageHandlerAttached)
+        {
+            _client.MessageReceived += HandleMessageAsync;
+            _messageHandlerAttached = true;
+        }
 
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
@@ -394,43 +402,44 @@ internal static class Program
 
             // Return oldest -> newest
             var arr = msgs
-    .Where(m =>
-    {
-        var txt = (m.Content ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(txt)) return false;
+                .Where(m =>
+                {
+                    var txt = (m.Content ?? "").Trim();
+                    if (string.IsNullOrWhiteSpace(txt)) return false;
 
-        // ✅ don't feed setup/command spam into the ELD
-        if (txt.StartsWith("!", StringComparison.OrdinalIgnoreCase)) return false;
+                    // ✅ don't feed setup/command spam into the ELD
+                    if (txt.StartsWith("!", StringComparison.OrdinalIgnoreCase)) return false;
 
-        return true;
-    })
-    .OrderBy(m => m.Timestamp)
-    .Select(m =>
-    {
-        long createdUnix = 0;
-        try { createdUnix = m.Timestamp.ToUnixTimeSeconds(); } catch { }
+                    return true;
+                })
+                .OrderBy(m => m.Timestamp)
+                .Select(m =>
+                {
+                    long createdUnix = 0;
+                    try { createdUnix = m.Timestamp.ToUnixTimeSeconds(); } catch { }
 
-        var author = (m.Author?.Username ?? "User").Trim();
-        var content = (m.Content ?? "").Trim();
+                    var author = (m.Author?.Username ?? "User").Trim();
+                    var content = (m.Content ?? "").Trim();
 
-        // ✅ Make it appear as "Dispatch" to the ELD
-        var eldText = $"[{author}] {content}";
+                    // ✅ Make it appear as "Dispatch" to the ELD
+                    var eldText = $"[{author}] {content}";
 
-        return new
-        {
-            id = (long)m.Id,
-            createdUnix = createdUnix,
-            sentUtc = m.Timestamp.UtcDateTime.ToString("o"),
+                    return new
+                    {
+                        id = (long)m.Id,
+                        createdUnix = createdUnix,
+                        sentUtc = m.Timestamp.UtcDateTime.ToString("o"),
 
-            fromName = "Dispatch",
-            senderName = "Dispatch",
-            text = eldText,
+                        fromName = "Dispatch",
+                        senderName = "Dispatch",
+                        text = eldText,
 
-            isDispatcher = true,
-            avatarUrl = ""
-        };
-    })
-    .ToArray();
+                        isDispatcher = true,
+                        avatarUrl = ""
+                    };
+                })
+                .ToArray();
+
             return Results.Json(arr, JsonWriteOpts);
         });
 
