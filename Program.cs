@@ -187,15 +187,19 @@ internal static class Program
             return Results.Json(new { ok = true, servers }, JsonWriteOpts);
         });
 
-        app.MapGet("/api/vtc/name", (HttpRequest req) =>
-        {
-            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(guildId))
-                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+        app.MapGet("/api/vtc/servers", () =>
+{
+    if (_client == null || !_discordReady)
+        return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
 
-            var cfg = GetOrCreateGuildCfg(guildId);
-            return Results.Json(new { ok = true, guildId, vtcName = cfg.VtcName ?? "" }, JsonWriteOpts);
-        });
+    var servers = _client.Guilds.Select(g => new
+    {
+        guildId = g.Id.ToString(),
+        name = g.Name
+    }).ToArray();
+
+    return Results.Json(new { ok = true, servers }, JsonWriteOpts);
+});
 
         // -----------------------------
         // Dispatch: GET /api/messages?guildId=...
