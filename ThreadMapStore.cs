@@ -6,8 +6,8 @@ using System.Text.Json;
 namespace OverWatchELD.VtcBot.Threads
 {
     /// <summary>
-    /// Minimal persistent store: discordUserId -> threadChannelId.
-    /// Uses a JSON file on disk (safe for Railway containers).
+    /// Persistent mapping: string key -> threadChannelId
+    /// Key format we use: "{guildId}:{discordUserId}"
     /// </summary>
     public sealed class ThreadMapStore
     {
@@ -20,29 +20,35 @@ namespace OverWatchELD.VtcBot.Threads
             _map = LoadInternal(path);
         }
 
-        public bool TryGetThread(string discordUserId, out ulong threadId)
-            => _map.TryGetValue(Norm(discordUserId), out threadId);
+        public bool TryGetThread(string key, out ulong threadId)
+            => _map.TryGetValue((key ?? "").Trim(), out threadId);
 
-        public void SetThread(string discordUserId, ulong threadId)
+        public void SetThread(string key, ulong threadId)
         {
-            _map[Norm(discordUserId)] = threadId;
+            key = (key ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(key)) return;
+
+            _map[key] = threadId;
             Save();
         }
 
-        public void Remove(string discordUserId)
+        public void Remove(string key)
         {
-            _map.Remove(Norm(discordUserId));
+            key = (key ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(key)) return;
+
+            _map.Remove(key);
             Save();
         }
-
-        public IReadOnlyDictionary<string, ulong> Snapshot() => _map;
 
         private void Save()
         {
             try
             {
                 var dir = Path.GetDirectoryName(_path);
-                if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
+                if (!string.IsNullOrWhiteSpace(dir))
+                    Directory.CreateDirectory(dir);
+
                 var json = JsonSerializer.Serialize(_map, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(_path, json);
             }
@@ -53,17 +59,20 @@ namespace OverWatchELD.VtcBot.Threads
         {
             try
             {
-                if (!File.Exists(path)) return new Dictionary<string, ulong>(StringComparer.Ordinal);
+                if (!File.Exists(path))
+                    return new Dictionary<string, ulong>(StringComparer.Ordinal);
+
                 var json = File.ReadAllText(path);
                 var dict = JsonSerializer.Deserialize<Dictionary<string, ulong>>(json);
-                return dict != null ? new Dictionary<string, ulong>(dict, StringComparer.Ordinal) : new Dictionary<string, ulong>(StringComparer.Ordinal);
+
+                return dict != null
+                    ? new Dictionary<string, ulong>(dict, StringComparer.Ordinal)
+                    : new Dictionary<string, ulong>(StringComparer.Ordinal);
             }
             catch
             {
                 return new Dictionary<string, ulong>(StringComparer.Ordinal);
             }
         }
-
-        private static string Norm(string s) => (s ?? "").Trim();
     }
 }
