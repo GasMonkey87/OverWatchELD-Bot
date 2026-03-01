@@ -391,58 +391,106 @@ internal static class Program
         // POST /api/messages/thread/send?guildId=...&threadId=...
         // body: { "text": "...", "attachmentUrls": ["https://..."] }
         // -----------------------------
-        app.MapPost("/api/messages/thread/send", async (HttpRequest req) =>
+        // ✅ NEW: ELD reply -> Discord thread (no discordUserId required)
+// POST /api/messages/thread/send?guildId=...&threadId=...
+// body: { "text": "...", "attachmentUrls": ["https://..."] }
+app.MapPost("/api/messages/thread/send", async (HttpRequest req) =>
+{
+    var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+    var threadIdStr = (req.Query["threadId"].ToString() ?? "").Trim();
+
+    if (string.IsNullOrWhiteSpace(guildId))
+        return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+    if (!ulong.TryParse(threadIdStr, out var threadId) || threadId == 0)
+        return Results.Json(new { ok = false, error = "MissingOrBadThreadId" }, statusCode: 400);
+
+    if (_client == null)
+        return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+
+    string rawBody;
+    using (var reader = new StreamReader(req.Body))
+        rawBody = await reader.ReadToEndAsync();
+
+    if (string.IsNullOrWhiteSpace(rawBody))
+        return Results.Json(new { ok = false, error = "EmptyBody" }, statusCode: 400);
+
+    ThreadSendReq? payload;
+    try { payload = JsonSerializer.Deserialize<ThreadSendReq>(rawBody, JsonReadOpts); }
+    catch { payload = null; }
+
+    if (payload == null || string.IsNullOrWhiteSpace(payload.Text))
+        return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
+
+    var msgText = payload.Text.Trim();
+    var urls = (payload.AttachmentUrls ?? new List<string>())
+        .Where(u => !string.IsNullOrWhiteSpace(u))
+        .Select(u => u.Trim())
+        .ToList();
+
+    if (urls.Count > 0)
+        msgText += "\n" + string.Join("\n", urls);
+
+    Console.WriteLine($"[thread/send] guildId={guildId} threadId={threadId} textLen={msgText.Length}");
+
+    try
+    {
+        // 1) Try socket cache first
+        IMessageChannel? chan = _client.GetChannel(threadId) as IMessageChannel;
+
+        // 2) If not in cache (common on Railway), fetch via REST
+        if (chan == null)
         {
-            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-            var threadIdStr = (req.Query["threadId"].ToString() ?? "").Trim();
+            var restChan = await _client.Rest.GetChannelAsync(threadId);
+            if (restChan is RestThreadChannel restThread)
+                chan = restThread;
+            else if (restChan is RestTextChannel restText)
+                chan = restText;
+        }
 
-            if (string.IsNullOrWhiteSpace(guildId))
-                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+        if (chan == null)
+        {
+            Console.WriteLine($"[thread/send] ❌ Channel not found for threadId={threadId}");
+            return Results.Json(new { ok = false, error = "ThreadChannelNotFound", threadId = threadIdStr }, statusCode: 404);
+        }
 
-            if (!ulong.TryParse(threadIdStr, out var threadId) || threadId == 0)
-                return Results.Json(new { ok = false, error = "MissingOrBadThreadId" }, statusCode: 400);
-
-            if (_client == null)
-                return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
-
-            using var reader = new StreamReader(req.Body);
-            var body = await reader.ReadToEndAsync();
-
-            if (string.IsNullOrWhiteSpace(body))
-                return Results.Json(new { ok = false, error = "EmptyBody" }, statusCode: 400);
-
-            ThreadSendReq? payload;
-            try { payload = JsonSerializer.Deserialize<ThreadSendReq>(body, JsonReadOpts); }
-            catch { payload = null; }
-
-            if (payload == null || string.IsNullOrWhiteSpace(payload.Text))
-                return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
-
-            var msgText = payload.Text.Trim();
-            var urls = (payload.AttachmentUrls ?? new List<string>())
-                .Where(u => !string.IsNullOrWhiteSpace(u))
-                .Select(u => u.Trim())
-                .ToList();
-
-            if (urls.Count > 0)
-                msgText = msgText + "\n" + string.Join("\n", urls);
-
-            // Try cache
-            var threadChan = _client.GetChannel(threadId) as IMessageChannel;
-
-            if (threadChan == null)
-                return Results.Json(new { ok = false, error = "ThreadChannelNotFound" }, statusCode: 404);
-
-            try
+        // 3) If it’s a thread and archived, unarchive then send
+        if (chan is SocketThreadChannel socketThread)
+        {
+            if (socketThread.IsArchived)
             {
-                var sent = await threadChan.SendMessageAsync(msgText);
-                return Results.Json(new { ok = true, messageId = sent.Id.ToString(), channelId = threadIdStr }, JsonWriteOpts);
+                Console.WriteLine($"[thread/send] thread archived -> unarchiving threadId={threadId}");
+                await socketThread.ModifyAsync(p => p.Archived = false);
             }
-            catch (Exception ex)
+        }
+        else if (chan is RestThreadChannel restThread2)
+        {
+            if (restThread2.IsArchived)
             {
-                return Results.Json(new { ok = false, error = ex.Message }, statusCode: 500);
+                Console.WriteLine($"[thread/send] rest thread archived -> unarchiving threadId={threadId}");
+                await restThread2.ModifyAsync(p => p.Archived = false);
             }
-        });
+        }
+
+        // 4) Send
+        var sent = await chan.SendMessageAsync(msgText);
+
+        Console.WriteLine($"[thread/send] ✅ sent messageId={sent.Id} channelId={threadId}");
+        return Results.Json(new { ok = true, messageId = sent.Id.ToString(), channelId = threadIdStr }, JsonWriteOpts);
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[thread/send] ❌ EX: {ex}");
+        return Results.Json(new
+        {
+            ok = false,
+            error = "SendFailed",
+            message = ex.Message,
+            type = ex.GetType().FullName,
+            threadId = threadIdStr
+        }, statusCode: 500);
+    }
+});
 
         // -----------------------------
         // Dispatch: POST /api/messages/send?guildId=...
