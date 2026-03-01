@@ -3,6 +3,7 @@
 // ✅ Commands: !ping, !setdispatchchannel
 // ✅ NEW: Option A auto-thread per user under dispatch channel (via /api/messages/send)
 // ✅ NEW: Option B manual override: !linkthread (run inside thread)
+// ✅ NEW: Admin-only persistent webhooks (multi-key): !setwebhook / !delwebhook / !listwebhooks / !testwebhook / !setdispatchwebhook
 
 using System;
 using System.Collections.Concurrent;
@@ -65,7 +66,13 @@ internal static class Program
     {
         public string GuildId { get; set; } = "";
         public string DispatchChannelId { get; set; } = "";
+
+        // Legacy single webhook (kept for backwards compatibility)
         public string DispatchWebhookUrl { get; set; } = "";
+
+        // ✅ NEW: Multi-webhook store (key -> url), persisted in guild_cfg.json
+        public Dictionary<string, string> Webhooks { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
         public string VtcName { get; set; } = "";
     }
 
@@ -305,6 +312,163 @@ internal static class Program
         var body = content[1..].Trim();
         if (string.IsNullOrWhiteSpace(body)) return;
 
+        // -----------------------------
+        // ✅ Admin-only webhook commands (persistent)
+        // -----------------------------
+        if (body.StartsWith("setwebhook ", StringComparison.OrdinalIgnoreCase) ||
+            body.StartsWith("delwebhook ", StringComparison.OrdinalIgnoreCase) ||
+            body.Equals("listwebhooks", StringComparison.OrdinalIgnoreCase) ||
+            body.StartsWith("testwebhook ", StringComparison.OrdinalIgnoreCase) ||
+            body.StartsWith("setdispatchwebhook ", StringComparison.OrdinalIgnoreCase))
+        {
+            // Must be in a guild channel/thread and must be admin
+            if (!TryGetGuildId(msg, out var guildId))
+            {
+                await msg.Channel.SendMessageAsync("❌ Run this inside a server channel.");
+                return;
+            }
+
+            if (!IsAdmin(msg.Author))
+            {
+                await msg.Channel.SendMessageAsync("⛔ Admin only.");
+                return;
+            }
+
+            var cfg = GetOrCreateGuildCfg(guildId.ToString());
+            cfg.Webhooks ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            // !setdispatchwebhook <url>  (alias => key "dispatch")
+            if (body.StartsWith("setdispatchwebhook ", StringComparison.OrdinalIgnoreCase))
+            {
+                var url = body["setdispatchwebhook ".Length..].Trim();
+                if (!IsProbablyDiscordWebhook(url))
+                {
+                    await msg.Channel.SendMessageAsync("❌ That doesn't look like a Discord webhook URL.");
+                    return;
+                }
+
+                cfg.Webhooks["dispatch"] = url;
+                cfg.DispatchWebhookUrl = url; // keep legacy field synced
+                SaveGuildCfgs();
+                await msg.Channel.SendMessageAsync("✅ Saved webhook key **dispatch**.");
+                return;
+            }
+
+            // !setwebhook <key> <url>
+            if (body.StartsWith("setwebhook ", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = body.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 3)
+                {
+                    await msg.Channel.SendMessageAsync("Usage: `!setwebhook <key> <url>`");
+                    return;
+                }
+
+                var key = parts[1].Trim();
+                var url = parts[2].Trim();
+
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    await msg.Channel.SendMessageAsync("❌ Missing key. Example: `!setwebhook dispatch <url>`");
+                    return;
+                }
+
+                if (!IsProbablyDiscordWebhook(url))
+                {
+                    await msg.Channel.SendMessageAsync("❌ That doesn't look like a Discord webhook URL.");
+                    return;
+                }
+
+                cfg.Webhooks[key] = url;
+
+                // keep legacy field synced if key is dispatch
+                if (key.Equals("dispatch", StringComparison.OrdinalIgnoreCase))
+                    cfg.DispatchWebhookUrl = url;
+
+                SaveGuildCfgs();
+                await msg.Channel.SendMessageAsync($"✅ Saved webhook key **{key}**.");
+                return;
+            }
+
+            // !delwebhook <key>
+            if (body.StartsWith("delwebhook ", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = body.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 2)
+                {
+                    await msg.Channel.SendMessageAsync("Usage: `!delwebhook <key>`");
+                    return;
+                }
+
+                var key = parts[1].Trim();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    await msg.Channel.SendMessageAsync("❌ Missing key.");
+                    return;
+                }
+
+                var removed = cfg.Webhooks.Remove(key);
+
+                if (key.Equals("dispatch", StringComparison.OrdinalIgnoreCase))
+                    cfg.DispatchWebhookUrl = "";
+
+                SaveGuildCfgs();
+                await msg.Channel.SendMessageAsync(removed ? $"✅ Removed webhook key **{key}**." : $"No webhook key **{key}** found.");
+                return;
+            }
+
+            // !listwebhooks
+            if (body.Equals("listwebhooks", StringComparison.OrdinalIgnoreCase))
+            {
+                if (cfg.Webhooks.Count == 0)
+                {
+                    await msg.Channel.SendMessageAsync("No webhooks saved for this server yet.");
+                    return;
+                }
+
+                var lines = cfg.Webhooks
+                    .OrderBy(k => k.Key)
+                    .Select(kvp => $"- **{kvp.Key}** = `{MaskUrl(kvp.Value)}`");
+
+                await msg.Channel.SendMessageAsync("Saved webhooks:\n" + string.Join("\n", lines));
+                return;
+            }
+
+            // !testwebhook <key> <message...>
+            if (body.StartsWith("testwebhook ", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = body.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length < 3)
+                {
+                    await msg.Channel.SendMessageAsync("Usage: `!testwebhook <key> <message>`");
+                    return;
+                }
+
+                var key = parts[1].Trim();
+                var message = string.Join(' ', parts.Skip(2)).Trim();
+
+                if (!cfg.Webhooks.TryGetValue(key, out var url) || string.IsNullOrWhiteSpace(url))
+                {
+                    await msg.Channel.SendMessageAsync($"No webhook key **{key}** found.");
+                    return;
+                }
+
+                try
+                {
+                    await SendViaWebhookAsync(url, "OverWatch ELD", message);
+                    await msg.Channel.SendMessageAsync($"✅ Sent test message to **{key}**.");
+                }
+                catch
+                {
+                    await msg.Channel.SendMessageAsync($"❌ Failed to post to **{key}**.");
+                }
+                return;
+            }
+        }
+
+        // -----------------------------
+        // Existing commands
+        // -----------------------------
         if (body.Equals("ping", StringComparison.OrdinalIgnoreCase))
         {
             await msg.Channel.SendMessageAsync("pong ✅");
@@ -370,6 +534,14 @@ internal static class Program
                 if (cfg == null) continue;
                 var id = (cfg.GuildId ?? "").Trim();
                 if (string.IsNullOrWhiteSpace(id)) continue;
+
+                // Ensure dictionary exists (older files won't have it)
+                cfg.Webhooks ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                // If legacy field exists but dictionary doesn't have "dispatch", import it
+                if (!string.IsNullOrWhiteSpace(cfg.DispatchWebhookUrl) && !cfg.Webhooks.ContainsKey("dispatch"))
+                    cfg.Webhooks["dispatch"] = cfg.DispatchWebhookUrl;
+
                 GuildCfgs[id] = cfg;
             }
         }
@@ -381,6 +553,15 @@ internal static class Program
         try
         {
             Directory.CreateDirectory(DataDir);
+
+            // keep legacy field synced on save if possible
+            foreach (var cfg in GuildCfgs.Values)
+            {
+                cfg.Webhooks ??= new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                if (cfg.Webhooks.TryGetValue("dispatch", out var durl))
+                    cfg.DispatchWebhookUrl = durl ?? "";
+            }
 
             var list = GuildCfgs.Values
                 .OrderBy(x => x.GuildId)
@@ -410,5 +591,50 @@ internal static class Program
 
         var resp = await http.PostAsync(webhookUrl, sc);
         resp.EnsureSuccessStatusCode();
+    }
+
+    // -----------------------------
+    // Helpers
+    // -----------------------------
+    private static bool TryGetGuildId(SocketUserMessage msg, out ulong guildId)
+    {
+        guildId = 0;
+
+        if (msg.Channel is SocketTextChannel tc)
+        {
+            guildId = tc.Guild.Id;
+            return true;
+        }
+
+        if (msg.Channel is SocketThreadChannel th)
+        {
+            guildId = th.Guild.Id;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsAdmin(SocketUser user)
+    {
+        if (user is not SocketGuildUser gu) return false;
+        var p = gu.GuildPermissions;
+        return p.Administrator || p.ManageGuild;
+    }
+
+    private static bool IsProbablyDiscordWebhook(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return false;
+
+        return url.StartsWith("https://discord.com/api/webhooks/", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("https://ptb.discord.com/api/webhooks/", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("https://canary.discord.com/api/webhooks/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string MaskUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return "";
+        if (url.Length <= 18) return url;
+        return url.Substring(0, 12) + "..." + url.Substring(Math.Max(0, url.Length - 6));
     }
 }
