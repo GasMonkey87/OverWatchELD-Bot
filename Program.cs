@@ -394,30 +394,43 @@ internal static class Program
 
             // Return oldest -> newest
             var arr = msgs
-                .OrderBy(m => m.Timestamp)
-                .Select(m =>
-                {
-                    var createdUnix = 0L;
-                    try { createdUnix = m.Timestamp.ToUnixTimeSeconds(); } catch { }
+    .Where(m =>
+    {
+        var txt = (m.Content ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(txt)) return false;
 
-                    return new
-                    {
-                        id = (long)m.Id,
-                        createdUnix = createdUnix,
-                        sentUtc = m.Timestamp.UtcDateTime.ToString("o"),
+        // ✅ don't feed setup/command spam into the ELD
+        if (txt.StartsWith("!", StringComparison.OrdinalIgnoreCase)) return false;
 
-                        // Names ELD parses:
-                        fromName = (m.Author?.Username ?? "Dispatch"),
-                        senderName = (m.Author?.Username ?? "Dispatch"),
-                        text = (m.Content ?? ""),
+        return true;
+    })
+    .OrderBy(m => m.Timestamp)
+    .Select(m =>
+    {
+        long createdUnix = 0;
+        try { createdUnix = m.Timestamp.ToUnixTimeSeconds(); } catch { }
 
-                        // Optional:
-                        isDispatcher = false,
-                        avatarUrl = ""
-                    };
-                })
-                .ToArray();
+        var author = (m.Author?.Username ?? "User").Trim();
+        var content = (m.Content ?? "").Trim();
 
+        // ✅ Make it appear as "Dispatch" to the ELD
+        var eldText = $"[{author}] {content}";
+
+        return new
+        {
+            id = (long)m.Id,
+            createdUnix = createdUnix,
+            sentUtc = m.Timestamp.UtcDateTime.ToString("o"),
+
+            fromName = "Dispatch",
+            senderName = "Dispatch",
+            text = eldText,
+
+            isDispatcher = true,
+            avatarUrl = ""
+        };
+    })
+    .ToArray();
             return Results.Json(arr, JsonWriteOpts);
         });
 
