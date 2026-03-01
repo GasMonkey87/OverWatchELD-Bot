@@ -138,6 +138,16 @@ internal static class Program
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
 
+        // Option B manual thread override
+if (_client != null && _threadStore != null)
+{
+    if (raw is Discord.WebSocket.SocketUserMessage um)
+    {
+        var handled = await OverWatchELD.VtcBot.Threads.LinkThreadCommand.TryHandleAsync(um, _client, _threadStore);
+        if (handled) return;
+    }
+}
+        
         // Load configs
         LoadGuildCfgs();
 
