@@ -1,21 +1,23 @@
 // Program.cs ✅ FULL COPY/REPLACE (OverWatchELD.VtcBot)
 // ✅ Public-release safe: NO guild hardcoding, NO personal Discord name output
 // ✅ Discord bot works: !ping, !link CODE
-// ✅ Bot serves VTC endpoints (prevents 404 "page not found"):
+// ✅ Bot serves VTC endpoints:
 //    /api/vtc/servers
 //    /api/vtc/name?guildId=...
-//    /api/vtc/roster?guildId=...
+//    /api/vtc/roster?guildId=...         (NOW includes truck/location if heartbeat posted)
 //    /api/vtc/announcements?guildId=...
-//    /api/vtc/pair/claim?code=...
+//    /api/vtc/pair/claim?code=...        (NOW returns discordUserId + discordUsername too)
+// ✅ NEW: Driver telemetry heartbeat to enrich roster:
+//    POST /api/vtc/roster/heartbeat      (ELD posts truck/location/duty per Discord user)
 // ✅ Optional: still proxies /api/messages/* to HUB (if you use it)
 
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Discord;
 using Discord.WebSocket;
@@ -31,10 +33,58 @@ internal static class Program
     private const string DefaultHubBase = "https://overwatcheld-saas-production.up.railway.app";
     private static readonly HttpClient HubHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
 
-    // Pairing codes captured from Discord `!link CODE`
-    private sealed record PendingPair(string GuildId, string VtcName, DateTimeOffset CreatedUtc);
+    // ✅ Pairing codes captured from Discord `!link CODE` (NOW includes Discord user identity)
+    private sealed record PendingPair(
+        string GuildId,
+        string VtcName,
+        string DiscordUserId,
+        string DiscordUsername,
+        DateTimeOffset CreatedUtc
+    );
 
     private static readonly ConcurrentDictionary<string, PendingPair> PendingPairs = new(StringComparer.OrdinalIgnoreCase);
+
+    // ✅ Roster live state (ELD -> Bot telemetry heartbeat)
+    private sealed class DriverLiveState
+    {
+        public string GuildId { get; set; } = "";
+        public string DiscordUserId { get; init; } = "";
+        public string DiscordUsername { get; set; } = "";
+
+        public string Truck { get; set; } = "";
+        public string City { get; set; } = "";
+        public string State { get; set; } = "";
+        public string DutyStatus { get; set; } = "";
+
+        public DateTimeOffset LastSeenUtc { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    // Key: guildId:userId
+    private static readonly ConcurrentDictionary<string, DriverLiveState> Live = new(StringComparer.OrdinalIgnoreCase);
+
+    private static readonly JsonSerializerOptions JsonReadOpts = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
+    private static readonly JsonSerializerOptions JsonWriteOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
+    // Heartbeat payload ELD will POST
+    private sealed class RosterHeartbeat
+    {
+        public string? GuildId { get; set; }
+        public string? DiscordUserId { get; set; }
+        public string? DiscordUsername { get; set; }
+
+        public string? Truck { get; set; }
+        public string? City { get; set; }
+        public string? State { get; set; }
+        public string? DutyStatus { get; set; }
+    }
 
     public static async Task Main(string[] args)
     {
@@ -93,7 +143,7 @@ internal static class Program
 
         app.MapGet("/", () => Results.Ok(new { ok = true, service = "OverWatchELD.VtcBot" }));
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
-        app.MapGet("/build", () => Results.Ok(new { ok = true, build = "VtcBot-2026-02-28-public" }));
+        app.MapGet("/build", () => Results.Ok(new { ok = true, build = "VtcBot-2026-02-28-public+pairing+rosterLive" }));
 
         // -----------------------------
         // VTC endpoints (serve locally on the BOT)
@@ -126,6 +176,74 @@ internal static class Program
             return Results.Ok(new { ok = true, guildId = guildId, vtcName = g.Name ?? "" });
         });
 
+        // ✅ NEW: ELD posts telemetry so roster can show truck + location
+        app.MapPost("/api/vtc/roster/heartbeat", async (HttpRequest req) =>
+        {
+            try
+            {
+                using var reader = new StreamReader(req.Body);
+                var body = await reader.ReadToEndAsync();
+
+                if (string.IsNullOrWhiteSpace(body))
+                    return Results.Json(new { ok = false, error = "EmptyBody" }, statusCode: 400);
+
+                var hb = JsonSerializer.Deserialize<RosterHeartbeat>(body, JsonReadOpts);
+                if (hb == null)
+                    return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
+
+                var guildId = (hb.GuildId ?? "").Trim();
+                var userId = (hb.DiscordUserId ?? "").Trim();
+
+                if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(userId))
+                    return Results.Json(new { ok = false, error = "MissingGuildIdOrUserId" }, statusCode: 400);
+
+                var key = $"{guildId}:{userId}";
+
+                Live.AddOrUpdate(key,
+                    _ => new DriverLiveState
+                    {
+                        GuildId = guildId,
+                        DiscordUserId = userId,
+                        DiscordUsername = (hb.DiscordUsername ?? "").Trim(),
+                        Truck = (hb.Truck ?? "").Trim(),
+                        City = (hb.City ?? "").Trim(),
+                        State = (hb.State ?? "").Trim(),
+                        DutyStatus = (hb.DutyStatus ?? "").Trim(),
+                        LastSeenUtc = DateTimeOffset.UtcNow
+                    },
+                    (_, existing) =>
+                    {
+                        existing.GuildId = guildId;
+
+                        var dn = (hb.DiscordUsername ?? "").Trim();
+                        if (!string.IsNullOrWhiteSpace(dn)) existing.DiscordUsername = dn;
+
+                        var tr = (hb.Truck ?? "").Trim();
+                        if (!string.IsNullOrWhiteSpace(tr)) existing.Truck = tr;
+
+                        var c = (hb.City ?? "").Trim();
+                        if (!string.IsNullOrWhiteSpace(c)) existing.City = c;
+
+                        var s = (hb.State ?? "").Trim();
+                        if (!string.IsNullOrWhiteSpace(s)) existing.State = s;
+
+                        var ds = (hb.DutyStatus ?? "").Trim();
+                        if (!string.IsNullOrWhiteSpace(ds)) existing.DutyStatus = ds;
+
+                        existing.LastSeenUtc = DateTimeOffset.UtcNow;
+                        return existing;
+                    });
+
+                CleanupOldLiveStates();
+                return Results.Ok(new { ok = true });
+            }
+            catch
+            {
+                return Results.Json(new { ok = false, error = "ServerError" }, statusCode: 500);
+            }
+        });
+
+        // ✅ UPDATED: roster now includes discordUsername + truck + location + lastSeenUtc
         app.MapGet("/api/vtc/roster", async (HttpRequest req) =>
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
@@ -138,21 +256,49 @@ internal static class Program
             var g = _client.GetGuild(gid);
             if (g == null) return Results.NotFound(new { error = "GuildNotFound" });
 
-            // NOTE: If you do NOT enable GuildMembers intent, this can be partial.
-            // Still useful for basic display.
+            CleanupOldLiveStates();
+
+            // Base list from Discord (works if bot can see members; may be partial without GuildMembers intent)
             var users = g.Users
                 .Where(u => !u.IsBot)
-                .Select(u => new
+                .Select(u =>
                 {
-                    id = u.Id.ToString(),
-                    name = (u.Nickname ?? u.Username) // ✅ safe: this is a member display name, not YOUR personal name specifically
+                    var uid = u.Id.ToString();
+                    var username = u.Username ?? "";
+                    var display = (u.Nickname ?? u.Username) ?? "";
+
+                    var key = $"{guildId}:{uid}";
+                    Live.TryGetValue(key, out var live);
+
+                    var truck = live?.Truck ?? "";
+                    var city = live?.City ?? "";
+                    var state = live?.State ?? "";
+                    var duty = live?.DutyStatus ?? "";
+                    var lastSeenUtc = live?.LastSeenUtc ?? DateTimeOffset.MinValue;
+
+                    // Prefer heartbeat username if present (ELD might send a normalized value)
+                    var hbName = live?.DiscordUsername ?? "";
+                    if (!string.IsNullOrWhiteSpace(hbName))
+                        username = hbName;
+
+                    return new
+                    {
+                        discordUserId = uid,
+                        discordUsername = username, // ✅ what you asked for
+                        displayName = display,      // optional, useful in UI
+                        truck = truck,
+                        city = city,
+                        state = state,
+                        dutyStatus = duty,
+                        lastSeenUtc = lastSeenUtc == DateTimeOffset.MinValue ? "" : lastSeenUtc.UtcDateTime.ToString("O")
+                    };
                 })
-                .OrderBy(x => x.name)
-                .Take(200)
+                .OrderBy(x => x.discordUsername)
+                .Take(250)
                 .ToList();
 
             await Task.CompletedTask;
-            return Results.Ok(new { ok = true, guildId, drivers = users });
+            return Results.Json(new { ok = true, guildId, drivers = users }, JsonWriteOpts);
         });
 
         app.MapGet("/api/vtc/announcements", async (HttpRequest req) =>
@@ -176,10 +322,7 @@ internal static class Program
                            "").Trim();
 
             if (!ulong.TryParse(chanStr, out var chanId))
-            {
-                // Safe default: no announcements configured
                 return Results.Ok(new { ok = true, guildId, items = Array.Empty<object>() });
-            }
 
             var chan = g.GetTextChannel(chanId);
             if (chan == null)
@@ -213,7 +356,15 @@ internal static class Program
             if (!PendingPairs.TryRemove(code, out var p))
                 return Results.Json(new { ok = false, error = "InvalidOrExpiredCode" }, statusCode: 404);
 
-            return Results.Ok(new { ok = true, guildId = p.GuildId, vtcName = p.VtcName });
+            // ✅ NOW returns discordUserId + discordUsername so ELD can store pairing reliably
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId = p.GuildId,
+                vtcName = p.VtcName,
+                discordUserId = p.DiscordUserId,
+                discordUsername = p.DiscordUsername
+            });
         });
 
         // -----------------------------
@@ -296,8 +447,18 @@ internal static class Program
                 return;
             }
 
+            // ✅ Capture Discord identity for pairing (ELD can store this reliably)
+            var discordUserId = msg.Author.Id.ToString();
+            var discordUsername = msg.Author.Username ?? "";
+
             CleanupExpiredPairs();
-            PendingPairs[code] = new PendingPair(guildId, vtcName, DateTimeOffset.UtcNow);
+            PendingPairs[code] = new PendingPair(
+                guildId,
+                vtcName,
+                discordUserId,
+                discordUsername,
+                DateTimeOffset.UtcNow
+            );
 
             await msg.Channel.SendMessageAsync("✅ Link code received. Paste it into the ELD to complete pairing.");
             return;
@@ -311,6 +472,17 @@ internal static class Program
         {
             if (kv.Value.CreatedUtc < cutoff)
                 PendingPairs.TryRemove(kv.Key, out _);
+        }
+    }
+
+    private static void CleanupOldLiveStates()
+    {
+        // Drop states not seen in last 2 hours
+        var cutoff = DateTimeOffset.UtcNow.AddHours(-2);
+        foreach (var kv in Live)
+        {
+            if (kv.Value.LastSeenUtc < cutoff)
+                Live.TryRemove(kv.Key, out _);
         }
     }
 
