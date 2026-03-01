@@ -6,11 +6,11 @@
 // ✅ Admin setup commands:
 //    - !setdispatchchannel #channel
 //    - !setdispatchwebhook <url>
-//    - !setupdispatch #channel (creates webhook)
+//    - !setupdispatch #channel (creates webhook)  ✅ FIXED: no RestWebhook.Url usage
 //    - !announcement #channel  (sets announcement channel)
 // ✅ Announcement API for ELD (pollable):
 //    - GET /api/announcements?guildId=...&limit=25
-//    - plus aliases: /api/messages/announcements, /api/vtc/announcements, /api/eld/announcements
+//    - aliases: /api/messages/announcements, /api/vtc/announcements, /api/eld/announcements
 // ✅ Keeps your existing thread-router integration: ThreadMapStore + DiscordThreadRouter + LinkThreadCommand
 // ✅ Adds !link / !linkthread that works even if ThreadMapStore API differs (reflection + fallback store)
 
@@ -118,8 +118,8 @@ internal static class Program
     private sealed class DispatchSettings
     {
         public string GuildId { get; set; } = "";
-        public string? DispatchChannelId { get; set; }    // text channel id
-        public string? DispatchWebhookUrl { get; set; }   // optional
+        public string? DispatchChannelId { get; set; }     // text channel id
+        public string? DispatchWebhookUrl { get; set; }    // optional
         public string? AnnouncementChannelId { get; set; } // text channel id
     }
 
@@ -195,7 +195,7 @@ internal static class Program
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+                Directory.CreateDirectory(Path.GetDirectoryName(_path) ?? DataDir);
                 var json = JsonSerializer.Serialize(_byGuild, JsonWriteOpts);
                 File.WriteAllText(_path, json);
             }
@@ -255,7 +255,7 @@ internal static class Program
         {
             try
             {
-                Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+                Directory.CreateDirectory(Path.GetDirectoryName(_path) ?? DataDir);
                 var json = JsonSerializer.Serialize(_map, JsonWriteOpts);
                 File.WriteAllText(_path, json);
             }
@@ -898,10 +898,21 @@ internal static class Program
 
             try
             {
-                // Requires Manage Webhooks permission for the bot in that channel
+                // ✅ FIX: Discord.Net RestWebhook may not expose Url. Build it from Id+Token.
                 var hook = await ch.CreateWebhookAsync("OverWatchELD Dispatch");
+
+                var url = BuildWebhookUrl(hook);
+                if (string.IsNullOrWhiteSpace(url))
+                {
+                    await msg.Channel.SendMessageAsync(
+                        "❌ Webhook created, but the library did not return a token.\n" +
+                        "Use: `!setdispatchwebhook <url>` with the webhook URL from Discord."
+                    );
+                    return;
+                }
+
                 _dispatchStore?.SetDispatchChannel(guildIdStr, ch.Id);
-                _dispatchStore?.SetDispatchWebhook(guildIdStr, hook.Url);
+                _dispatchStore?.SetDispatchWebhook(guildIdStr, url);
 
                 await msg.Channel.SendMessageAsync($"✅ Dispatch configured.\nChannel: <#{ch.Id}>\nWebhook: saved.");
             }
@@ -970,7 +981,7 @@ internal static class Program
                     if (msg.Author is IGuildUser igu)
                         await thread.AddUserAsync(igu);
                 }
-                catch { /* if missing perms to add user, ignore */ }
+                catch { /* ignore missing perms */ }
 
                 ThreadStoreSet(guild.Id, userId, thread.Id);
 
@@ -988,6 +999,20 @@ internal static class Program
     }
 
     // -----------------------------
+    // FIX: Build webhook URL from RestWebhook.Id + RestWebhook.Token
+    // -----------------------------
+    private static string? BuildWebhookUrl(RestWebhook hook)
+    {
+        try
+        {
+            var token = (hook.Token ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(token)) return null;
+            return $"https://discord.com/api/webhooks/{hook.Id}/{token}";
+        }
+        catch { return null; }
+    }
+
+    // -----------------------------
     // Thread map helpers (reflection + fallback)
     // -----------------------------
     private static ulong ThreadStoreTryGet(ulong guildId, ulong userId)
@@ -999,8 +1024,6 @@ internal static class Program
             {
                 var t = _threadStore.GetType();
 
-                // Common method name patterns:
-                // TryGetThreadId(ulong guildId, ulong userId) -> ulong
                 foreach (var name in new[] { "TryGetThreadId", "GetThreadId", "TryGet", "Get" })
                 {
                     var mi = t.GetMethod(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
@@ -1018,10 +1041,7 @@ internal static class Program
         catch { }
 
         // 2) Fallback store
-        try
-        {
-            return _threadFallback?.TryGet(guildId, userId) ?? 0;
-        }
+        try { return _threadFallback?.TryGet(guildId, userId) ?? 0; }
         catch { return 0; }
     }
 
