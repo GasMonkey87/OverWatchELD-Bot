@@ -6,8 +6,10 @@
 // ✅ Admin-only persistent webhooks (multi-key): !setwebhook / !delwebhook / !listwebhooks / !testwebhook / !setdispatchwebhook
 // ✅ Admin-only persistent announcement channel: !announcement
 // ✅ Admin-only persistent roster: !adddriver <Name> <Role...>  and  !remove <Name>
-// ✅ CRITICAL RESTORE: /api/vtc/servers returns a RAW JSON ARRAY (legacy shape) so ELD parsing works again
-// ✅ Fix CS0176: roster remove uses StringComparison (NOT StringComparer)
+// ✅ FIX: /api/vtc/name falls back to the real Discord guild name when VtcName is blank (stops "server name empty")
+// ✅ NEW: Endpoint for ELD to fetch per-user thread messages:
+//     GET /api/messages/thread?guildId=...&discordUserId=...   (aliases: userId)
+// ✅ FIX: CS0176/compare safety (use StringComparison)
 
 using System;
 using System.Collections.Concurrent;
@@ -77,6 +79,7 @@ internal static class Program
         // Announcement channel (persisted)
         public string AnnouncementChannelId { get; set; } = "";
 
+        // Optional override display name
         public string VtcName { get; set; } = "";
     }
 
@@ -176,94 +179,56 @@ internal static class Program
         // VTC APIs
         // -----------------------------
 
-        // ✅ LEGACY SHAPE: RAW ARRAY ONLY (no wrapper object)
-        // This fixes ELD builds that do: Deserialize<List<Server>>(json)
-        app.MapGet("/api/vtc/servers", async () =>
+        // ✅ ELDs vary wildly. Keep /api/vtc/servers as a wrapper object (safe) OR array depending on your UI.
+        // You already validated JSON contains names; the ELD label issue was /api/vtc/name.
+        app.MapGet("/api/vtc/servers", () =>
         {
             var client = _client;
+            if (client == null || !_discordReady)
+                return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
 
-            // Wait up to 10s for Ready + guild cache
-            if (client != null)
+            var servers = client.Guilds.Select(g => new
             {
-                var start = DateTime.UtcNow;
-                while ((DateTime.UtcNow - start) < TimeSpan.FromSeconds(10))
-                {
-                    try
-                    {
-                        if (_discordReady && client.Guilds.Count > 0) break;
-                    }
-                    catch { }
+                guildId = g.Id.ToString(),
+                name = g.Name
+            }).ToArray();
 
-                    await Task.Delay(250);
-                }
-            }
-
-            var list = new List<Dictionary<string, object?>>();
-
-            try
-            {
-                if (client != null)
-                {
-                    foreach (var g in client.Guilds)
-                    {
-                        var gid = g.Id.ToString();
-                        var nm = (g.Name ?? "").Trim();
-                        if (string.IsNullOrWhiteSpace(nm)) nm = "Discord Server";
-
-                        list.Add(new Dictionary<string, object?>
-                        {
-                            ["guildId"] = gid,
-                            ["GuildId"] = gid,
-                            ["id"] = gid,
-                            ["Id"] = gid,
-                            ["name"] = nm,
-                            ["Name"] = nm,
-                            ["serverName"] = nm,
-                            ["ServerName"] = nm
-                        });
-                    }
-                }
-            }
-            catch { }
-
-            // Serialize without naming policy so keys stay exactly as we wrote them
-            var json = JsonSerializer.Serialize(list, new JsonSerializerOptions { WriteIndented = false });
-            return Results.Text(json, "application/json");
+            return Results.Json(new { ok = true, servers }, JsonWriteOpts);
         });
 
+        // ✅ FIX: /api/vtc/name must return a non-empty vtcName.
+        // If config VtcName is blank, fall back to Discord guild name.
         app.MapGet("/api/vtc/name", (HttpRequest req) =>
-{
-    var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-    if (string.IsNullOrWhiteSpace(guildId))
-        return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
-
-    // Default to config value if set
-    var cfg = GetOrCreateGuildCfg(guildId);
-    var vtcName = (cfg.VtcName ?? "").Trim();
-
-    // ✅ If blank, fall back to the REAL Discord guild name
-    if (string.IsNullOrWhiteSpace(vtcName))
-    {
-        try
         {
-            if (_client != null && ulong.TryParse(guildId, out var gid))
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId))
+                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+            var cfg = GetOrCreateGuildCfg(guildId);
+            var vtcName = (cfg.VtcName ?? "").Trim();
+
+            if (string.IsNullOrWhiteSpace(vtcName))
             {
-                var g = _client.GetGuild(gid);
-                if (g != null)
-                    vtcName = (g.Name ?? "").Trim();
+                try
+                {
+                    if (_client != null && ulong.TryParse(guildId, out var gid))
+                    {
+                        var g = _client.GetGuild(gid);
+                        if (g != null) vtcName = (g.Name ?? "").Trim();
+                    }
+                }
+                catch { }
             }
-        }
-        catch { }
-    }
 
-    if (string.IsNullOrWhiteSpace(vtcName))
-        vtcName = "Discord Server";
+            if (string.IsNullOrWhiteSpace(vtcName))
+                vtcName = "Discord Server";
 
-    return Results.Json(new { ok = true, guildId, vtcName }, JsonWriteOpts);
-});
+            return Results.Json(new { ok = true, guildId, vtcName }, JsonWriteOpts);
+        });
 
         // -----------------------------
         // Dispatch: GET /api/messages?guildId=...
+        // Reads recent messages from parent dispatch channel
         // -----------------------------
         app.MapGet("/api/messages", async (HttpRequest req) =>
         {
@@ -304,6 +269,98 @@ internal static class Program
                 .ToArray();
 
             return Results.Json(new { ok = true, guildId, items }, JsonWriteOpts);
+        });
+
+        // -----------------------------
+        // ✅ NEW: Thread messages
+        // GET /api/messages/thread?guildId=...&discordUserId=...
+        // Returns last 50 messages from the mapped dispatch thread for this user.
+        // -----------------------------
+        app.MapGet("/api/messages/thread", async (HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            var discordUserId = (req.Query["discordUserId"].ToString() ?? "").Trim();
+
+            // alias
+            if (string.IsNullOrWhiteSpace(discordUserId))
+                discordUserId = (req.Query["userId"].ToString() ?? "").Trim();
+
+            if (string.IsNullOrWhiteSpace(guildId))
+                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+            if (string.IsNullOrWhiteSpace(discordUserId))
+                return Results.Json(new { ok = false, error = "MissingDiscordUserId" }, statusCode: 400);
+
+            if (_client == null)
+                return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+
+            if (!ulong.TryParse(guildId, out var gid))
+                return Results.Json(new { ok = false, error = "BadGuildId" }, statusCode: 400);
+
+            var guild = _client.GetGuild(gid);
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            // Thread id from persisted thread_map.json
+            var mapKey = $"{guildId}:{discordUserId}";
+            var threadId = TryGetThreadIdFromMapFile(ThreadMapPath, mapKey);
+
+            if (!threadId.HasValue || threadId.Value == 0)
+            {
+                return Results.Json(new
+                {
+                    ok = false,
+                    error = "ThreadNotLinked",
+                    hint = "No thread mapping found yet. Send a message first (ELD -> Discord) so the bot creates/maps the thread."
+                }, statusCode: 409);
+            }
+
+            // Resolve thread channel
+            var threadChan = _client.GetChannel(threadId.Value) as SocketThreadChannel;
+
+            // If not in cache, try to fetch from active threads under the dispatch channel
+            if (threadChan == null)
+            {
+                try
+                {
+                    var cfg = GetOrCreateGuildCfg(guildId);
+                    if (ulong.TryParse(cfg.DispatchChannelId, out var dispatchChanId))
+                    {
+                        var parent = guild.GetTextChannel(dispatchChanId);
+                        if (parent != null)
+                        {
+                            var active = await parent.GetActiveThreadsAsync();
+                            threadChan = active?.Threads?.FirstOrDefault(t => t.Id == threadId.Value) as SocketThreadChannel;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            if (threadChan == null)
+                return Results.Json(new { ok = false, error = "ThreadChannelNotFound" }, statusCode: 404);
+
+            var msgs = await threadChan.GetMessagesAsync(limit: 50).FlattenAsync();
+
+            var items = msgs
+                .OrderBy(m => m.Timestamp)
+                .Select(m => new MsgItem
+                {
+                    Id = m.Id.ToString(),
+                    From = string.IsNullOrWhiteSpace(m.Author?.Username) ? "Dispatch" : m.Author!.Username,
+                    Text = m.Content ?? "",
+                    CreatedUtc = m.Timestamp.UtcDateTime
+                })
+                .ToArray();
+
+            return Results.Json(new
+            {
+                ok = true,
+                guildId,
+                discordUserId,
+                threadId = threadId.Value.ToString(),
+                items
+            }, JsonWriteOpts);
         });
 
         // -----------------------------
@@ -371,6 +428,7 @@ internal static class Program
 
             text = $"{resolvedName}: {text}";
 
+            // Build router for this guild's dispatch channel
             var router = new DiscordThreadRouter(_client, _threadStore, dispatchChanId);
 
             try
@@ -819,6 +877,44 @@ internal static class Program
             File.WriteAllText(DriversPath, json);
         }
         catch { }
+    }
+
+    // Reads thread_map.json and tries to resolve a threadId for the key "guildId:discordUserId"
+    private static ulong? TryGetThreadIdFromMapFile(string path, string key)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+
+            var json = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(json)) return null;
+
+            using var doc = JsonDocument.Parse(json);
+
+            if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                if (doc.RootElement.TryGetProperty(key, out var v))
+                {
+                    if (v.ValueKind == JsonValueKind.Number && v.TryGetUInt64(out var n)) return n;
+                    if (v.ValueKind == JsonValueKind.String && ulong.TryParse(v.GetString(), out var s)) return s;
+                }
+
+                foreach (var propName in new[] { "map", "Map", "threads", "Threads" })
+                {
+                    if (doc.RootElement.TryGetProperty(propName, out var inner) && inner.ValueKind == JsonValueKind.Object)
+                    {
+                        if (inner.TryGetProperty(key, out var iv))
+                        {
+                            if (iv.ValueKind == JsonValueKind.Number && iv.TryGetUInt64(out var n)) return n;
+                            if (iv.ValueKind == JsonValueKind.String && ulong.TryParse(iv.GetString(), out var s)) return s;
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+
+        return null;
     }
 
     // -----------------------------
