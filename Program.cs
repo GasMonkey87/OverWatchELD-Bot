@@ -6,8 +6,8 @@
 // ✅ Admin-only persistent webhooks (multi-key): !setwebhook / !delwebhook / !listwebhooks / !testwebhook / !setdispatchwebhook
 // ✅ Admin-only persistent announcement channel: !announcement
 // ✅ Admin-only persistent roster: !adddriver <Name> <Role...>  and  !remove <Name>
-// ✅ FIX: /api/vtc/servers waits for Discord Ready + returns BOTH name + Name (prevents empty server name)
-// ✅ FIX: roster remove uses StringComparison (fixes CS0176)
+// ✅ RESTORE WORKING BEHAVIOR: /api/vtc/servers NEVER 503, waits for guild cache, returns classic shape {ok:true, servers:[{guildId,name}]}
+// ✅ Fix CS0176: roster remove uses StringComparison (NOT StringComparer)
 
 using System;
 using System.Collections.Concurrent;
@@ -31,7 +31,7 @@ internal static class Program
 {
     private static DiscordSocketClient? _client;
 
-    // ✅ Gate API calls until Discord gateway cache is ready
+    // Gate API calls until Discord gateway cache is ready
     private static volatile bool _discordReady = false;
 
     private static readonly JsonSerializerOptions JsonReadOpts = new() { PropertyNameCaseInsensitive = true };
@@ -46,7 +46,7 @@ internal static class Program
 
     private static readonly ConcurrentDictionary<string, GuildCfg> GuildCfgs = new();
 
-    // ✅ Roster (per guild) — persistent
+    // Roster (per guild) — persistent
     private static readonly object DriversGate = new();
     private static readonly ConcurrentDictionary<string, List<DriverItem>> GuildDrivers = new();
 
@@ -57,7 +57,7 @@ internal static class Program
     // Thread map file
     private static readonly string ThreadMapPath = Path.Combine(DataDir, "thread_map.json");
 
-    // ✅ Drivers file
+    // Drivers file
     private static readonly string DriversPath = Path.Combine(DataDir, "drivers.json");
 
     // -----------------------------
@@ -71,16 +71,16 @@ internal static class Program
         // Legacy single webhook (kept for backwards compatibility)
         public string DispatchWebhookUrl { get; set; } = "";
 
-        // ✅ Multi-webhook store (key -> url), persisted in guild_cfg.json
+        // Multi-webhook store (key -> url), persisted in guild_cfg.json
         public Dictionary<string, string> Webhooks { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        // ✅ Announcement channel (persisted)
+        // Announcement channel (persisted)
         public string AnnouncementChannelId { get; set; } = "";
 
         public string VtcName { get; set; } = "";
     }
 
-    // ✅ Roster driver item
+    // Roster driver item
     private sealed class DriverItem
     {
         public string Name { get; set; } = "";
@@ -132,11 +132,10 @@ internal static class Program
                 GatewayIntents.GuildMembers
         });
 
-        // ✅ Ready event => guild cache loaded
         _client.Ready += () =>
         {
             _discordReady = true;
-            Console.WriteLine("✅ Discord client READY (guild cache loaded).");
+            Console.WriteLine("✅ Discord READY (guild cache loaded).");
             return Task.CompletedTask;
         };
 
@@ -177,65 +176,54 @@ internal static class Program
         // VTC APIs
         // -----------------------------
 
-        // ✅ FIXED: Wait for Ready + return BOTH name + Name
+        // ✅ RESTORED "WORKING" behavior:
+        // - NEVER returns 503 (ELD may cache failures and show blank server)
+        // - Waits up to 10s for Ready + guild cache
+        // - Returns classic shape: { ok:true, servers:[{guildId,name}] }
         app.MapGet("/api/vtc/servers", async () =>
-{
-    var client = _client;
-    if (client == null)
-        return Results.Json(new { ok = false, error = "DiscordClientNull" }, statusCode: 503);
-
-    // ✅ Wait longer + wait for guild list to populate
-    var start = DateTime.UtcNow;
-    while ((!_discordReady || client.Guilds.Count == 0) &&
-           (DateTime.UtcNow - start) < TimeSpan.FromSeconds(20))
-    {
-        await Task.Delay(250);
-    }
-
-    // Build server list (never return blank names)
-    var servers = client.Guilds.Select(g =>
-    {
-        var nm = (g?.Name ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(nm)) nm = "Discord Server";
-
-        return new
         {
-            // ✅ ID aliases
-            guildId = g.Id.ToString(),
-            id = g.Id.ToString(),
-            serverId = g.Id.ToString(),
-            ServerId = g.Id.ToString(),
+            var client = _client;
 
-            // ✅ NAME aliases (this is the important part)
-            name = nm,
-            Name = nm,
-            serverName = nm,
-            ServerName = nm
-        };
-    }).ToArray();
+            // Never hard-fail here; ask caller to retry
+            if (client == null)
+                return Results.Json(new { ok = true, servers = Array.Empty<object>(), retryAfterMs = 2000 }, JsonWriteOpts);
 
-    // ✅ LIST aliases (some clients look for guilds/items instead of servers)
-    var payload = new
-    {
-        ok = true,
+            var start = DateTime.UtcNow;
 
-        // "servers" (your current contract)
-        servers,
+            while ((DateTime.UtcNow - start) < TimeSpan.FromSeconds(10))
+            {
+                try
+                {
+                    if (_discordReady && client.Guilds.Count > 0)
+                        break;
+                }
+                catch { }
 
-        // extra aliases for older/newer ELD builds
-        guilds = servers,
-        items = servers,
+                await Task.Delay(250);
+            }
 
-        // debug fields (safe)
-        discordReady = _discordReady,
-        serverCount = servers.Length
-    };
+            object[] servers;
+            try
+            {
+                servers = client.Guilds
+                    .Select(g => new
+                    {
+                        guildId = g.Id.ToString(),
+                        name = string.IsNullOrWhiteSpace(g.Name) ? "Discord Server" : g.Name
+                    })
+                    .Cast<object>()
+                    .ToArray();
+            }
+            catch
+            {
+                servers = Array.Empty<object>();
+            }
 
-    // Optional: log what we returned (helps you verify in Railway logs)
-    try { Console.WriteLine($"[api/vtc/servers] ready={_discordReady} count={servers.Length}"); } catch { }
+            if (servers.Length == 0)
+                return Results.Json(new { ok = true, servers, retryAfterMs = 2000 }, JsonWriteOpts);
 
-    return Results.Json(payload, JsonWriteOpts);
-});
+            return Results.Json(new { ok = true, servers }, JsonWriteOpts);
+        });
 
         app.MapGet("/api/vtc/name", (HttpRequest req) =>
         {
@@ -293,7 +281,7 @@ internal static class Program
 
         // -----------------------------
         // Dispatch: POST /api/messages/send?guildId=...
-        // ✅ Routes to per-user thread (Option A)
+        // Routes to per-user thread (Option A)
         // -----------------------------
         app.MapPost("/api/messages/send", async (HttpRequest req) =>
         {
@@ -338,7 +326,7 @@ internal static class Program
 
             var text = payload.Text.Trim();
 
-            // Resolve display name (prevents empty name)
+            // Resolve a stable display name (prevents empty name in messages)
             string resolvedName = (payload.DiscordUsername ?? "").Trim();
             try
             {
@@ -369,7 +357,6 @@ internal static class Program
             }
         });
 
-        // Start server
         Console.WriteLine($"🌐 HTTP API listening on 0.0.0.0:{port}");
         await app.RunAsync();
     }
@@ -383,7 +370,7 @@ internal static class Program
         if (socketMsg is not SocketUserMessage msg) return;
         if (msg.Author.IsBot) return;
 
-        // Option B manual thread override (if present)
+        // Option B: manual override for routing (run inside thread)
         if (_threadStore != null)
         {
             var handled = await OverWatchELD.VtcBot.Threads.LinkThreadCommand.TryHandleAsync(msg, _client, _threadStore);
@@ -465,7 +452,7 @@ internal static class Program
             return;
         }
 
-        // Webhooks block
+        // Webhooks commands
         if (body.StartsWith("setwebhook ", StringComparison.OrdinalIgnoreCase) ||
             body.StartsWith("delwebhook ", StringComparison.OrdinalIgnoreCase) ||
             body.Equals("listwebhooks", StringComparison.OrdinalIgnoreCase) ||
@@ -813,7 +800,6 @@ internal static class Program
     private static async Task SendViaWebhookAsync(string webhookUrl, string username, string content)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-
         var payload = new { username, content };
 
         var json = JsonSerializer.Serialize(payload, JsonWriteOpts);
