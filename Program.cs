@@ -6,6 +6,7 @@
 // ✅ NEW: Admin-only persistent webhooks (multi-key): !setwebhook / !delwebhook / !listwebhooks / !testwebhook / !setdispatchwebhook
 // ✅ NEW: Admin-only persistent announcement channel: !announcement
 // ✅ NEW: Admin-only persistent roster: !adddriver <Name> <Role...>  and  !remove <Name>
+// ✅ FIX: DiscordNotReady guard for /api/vtc/servers (prevents empty server list at startup)
 
 using System;
 using System.Collections.Concurrent;
@@ -28,6 +29,9 @@ using OverWatchELD.VtcBot.Threads;
 internal static class Program
 {
     private static DiscordSocketClient? _client;
+
+    // ✅ Gate API calls until Discord gateway cache is ready
+    private static volatile bool _discordReady = false;
 
     private const string DefaultHubBase = "https://overwatcheld-saas-production.up.railway.app";
     private static readonly HttpClient HubHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
@@ -140,13 +144,14 @@ internal static class Program
                 GatewayIntents.GuildMembers // helps resolve users for thread invites
         });
 
+        // ✅ Ready event => guild cache loaded
         _client.Ready += () =>
-{
-    _discordReady = true;
-    Console.WriteLine("✅ Discord client READY (guild cache loaded).");
-    return Task.CompletedTask;
-};
-        
+        {
+            _discordReady = true;
+            Console.WriteLine("✅ Discord client READY (guild cache loaded).");
+            return Task.CompletedTask;
+        };
+
         _client.Log += msg =>
         {
             Console.WriteLine($"{DateTimeOffset.Now:HH:mm:ss} {msg.Severity,-7} {msg.Source,-12} {msg.Message}");
@@ -185,28 +190,28 @@ internal static class Program
         // -----------------------------
         app.MapGet("/api/vtc/servers", () =>
         {
-            var servers = _client?.Guilds.Select(g => new
+            var client = _client;
+            if (client == null || !_discordReady)
+                return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+
+            var servers = client.Guilds.Select(g => new
             {
                 guildId = g.Id.ToString(),
                 name = g.Name
-            }).ToArray() ?? Array.Empty<object>();
+            }).ToArray();
 
             return Results.Json(new { ok = true, servers }, JsonWriteOpts);
         });
 
-        app.MapGet("/api/vtc/servers", () =>
-{
-    if (_client == null || !_discordReady)
-        return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+        app.MapGet("/api/vtc/name", (HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId))
+                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
 
-    var servers = _client.Guilds.Select(g => new
-    {
-        guildId = g.Id.ToString(),
-        name = g.Name
-    }).ToArray();
-
-    return Results.Json(new { ok = true, servers }, JsonWriteOpts);
-});
+            var cfg = GetOrCreateGuildCfg(guildId);
+            return Results.Json(new { ok = true, guildId, vtcName = cfg.VtcName ?? "" }, JsonWriteOpts);
+        });
 
         // -----------------------------
         // Dispatch: GET /api/messages?guildId=...
@@ -244,7 +249,7 @@ internal static class Program
                 .Select(m => new MsgItem
                 {
                     Id = m.Id.ToString(),
-                    From = m.Author?.Username ?? "Dispatch",
+                    From = string.IsNullOrWhiteSpace(m.Author?.Username) ? "Dispatch" : m.Author!.Username,
                     Text = m.Content ?? "",
                     CreatedUtc = m.Timestamp.UtcDateTime
                 })
@@ -299,6 +304,25 @@ internal static class Program
                 return Results.Json(new { ok = false, error = "ThreadStoreNotReady" }, statusCode: 500);
 
             var text = payload.Text.Trim();
+
+            // ✅ Resolve a stable display name for this Discord user (prevents empty name)
+            string resolvedName = (payload.DiscordUsername ?? "").Trim();
+            try
+            {
+                if (ulong.TryParse(discordUserId, out var duid))
+                {
+                    var gu = g.GetUser(duid);
+                    if (gu != null)
+                        resolvedName = (gu.Nickname ?? gu.Username ?? "").Trim();
+                }
+            }
+            catch { }
+
+            if (string.IsNullOrWhiteSpace(resolvedName))
+                resolvedName = "Driver";
+
+            // Prefix message with resolved name (keeps UI happy even if payload had blank username)
+            text = $"{resolvedName}: {text}";
 
             // Build router for this guild's dispatch channel
             var router = new DiscordThreadRouter(_client, _threadStore, dispatchChanId);
@@ -623,7 +647,6 @@ internal static class Program
                     if (existing != null)
                     {
                         existing.Role = role;
-                        // keep original AddedUtc (or refresh it—your call; leaving it)
                     }
                     else
                     {
@@ -670,7 +693,7 @@ internal static class Program
                     else
                     {
                         var before = list.Count;
-                        list.RemoveAll(d => d.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                        list.RemoveAll(d => d.Name.Equals(name, StringComparer.OrdinalIgnoreCase));
                         removed = list.Count != before;
                         if (removed) SaveDriversUnsafe();
                     }
