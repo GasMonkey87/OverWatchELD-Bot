@@ -4,6 +4,8 @@
 // ✅ NEW: Option A auto-thread per user under dispatch channel (via /api/messages/send)
 // ✅ NEW: Option B manual override: !linkthread (run inside thread)
 // ✅ NEW: Admin-only persistent webhooks (multi-key): !setwebhook / !delwebhook / !listwebhooks / !testwebhook / !setdispatchwebhook
+// ✅ NEW: Admin-only persistent announcement channel: !announcement
+// ✅ NEW: Admin-only persistent roster: !adddriver <Name> <Role...>  and  !remove <Name>
 
 using System;
 using System.Collections.Concurrent;
@@ -52,12 +54,19 @@ internal static class Program
     private static readonly ConcurrentDictionary<string, PendingPair> PendingPairs = new();
     private static readonly ConcurrentDictionary<string, GuildCfg> GuildCfgs = new();
 
+    // ✅ Roster (per guild) — persistent
+    private static readonly object DriversGate = new();
+    private static readonly ConcurrentDictionary<string, List<DriverItem>> GuildDrivers = new();
+
     // Storage folder (Railway container-safe)
     private static readonly string DataDir = Path.Combine(AppContext.BaseDirectory, "data");
     private static readonly string GuildCfgPath = Path.Combine(DataDir, "guild_cfg.json");
 
     // Thread map file
     private static readonly string ThreadMapPath = Path.Combine(DataDir, "thread_map.json");
+
+    // ✅ Drivers file
+    private static readonly string DriversPath = Path.Combine(DataDir, "drivers.json");
 
     // -----------------------------
     // Guild configuration
@@ -70,10 +79,21 @@ internal static class Program
         // Legacy single webhook (kept for backwards compatibility)
         public string DispatchWebhookUrl { get; set; } = "";
 
-        // ✅ NEW: Multi-webhook store (key -> url), persisted in guild_cfg.json
+        // ✅ Multi-webhook store (key -> url), persisted in guild_cfg.json
         public Dictionary<string, string> Webhooks { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        // ✅ Announcement channel (persisted)
+        public string AnnouncementChannelId { get; set; } = "";
+
         public string VtcName { get; set; } = "";
+    }
+
+    // ✅ Roster driver item
+    private sealed class DriverItem
+    {
+        public string Name { get; set; } = "";
+        public string Role { get; set; } = "";
+        public DateTimeOffset AddedUtc { get; set; } = DateTimeOffset.UtcNow;
     }
 
     // -----------------------------
@@ -132,8 +152,9 @@ internal static class Program
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
 
-        // Load configs
+        // Load configs + roster
         LoadGuildCfgs();
+        LoadDrivers();
 
         // -----------------------------
         // HTTP server (Minimal API)
@@ -313,7 +334,84 @@ internal static class Program
         if (string.IsNullOrWhiteSpace(body)) return;
 
         // -----------------------------
-        // ✅ Admin-only webhook commands (persistent)
+        // ✅ Basic commands
+        // -----------------------------
+        if (body.Equals("ping", StringComparison.OrdinalIgnoreCase))
+        {
+            await msg.Channel.SendMessageAsync("pong ✅");
+            return;
+        }
+
+        // -----------------------------
+        // ✅ Admin-only: set dispatch channel
+        // -----------------------------
+        if (body.Equals("setdispatchchannel", StringComparison.OrdinalIgnoreCase))
+        {
+            SocketGuild? guild = null;
+            ulong? channelId = null;
+            string channelLabel = "";
+
+            if (msg.Channel is SocketTextChannel tc)
+            {
+                guild = tc.Guild;
+                channelId = tc.Id;
+                channelLabel = $"#{tc.Name}";
+            }
+            else if (msg.Channel is SocketThreadChannel th)
+            {
+                guild = th.Guild;
+                channelId = th.ParentChannel?.Id;
+                channelLabel = th.ParentChannel != null ? $"#{th.ParentChannel.Name} (parent of thread)" : "(parent unknown)";
+            }
+
+            if (guild == null || channelId == null)
+            {
+                await msg.Channel.SendMessageAsync("❌ Unable to detect guild/channel. Run in a server channel.");
+                return;
+            }
+
+            if (!IsAdmin(msg.Author))
+            {
+                await msg.Channel.SendMessageAsync("⛔ Admin only.");
+                return;
+            }
+
+            var cfg = GetOrCreateGuildCfg(guild.Id.ToString());
+            cfg.DispatchChannelId = channelId.Value.ToString();
+            SaveGuildCfgs();
+
+            await msg.Channel.SendMessageAsync($"✅ Dispatch channel saved: {channelLabel}");
+            return;
+        }
+
+        // -----------------------------
+        // ✅ Admin-only: Announcement channel link
+        // Command: !announcement  (run inside the channel you want as announcements)
+        // -----------------------------
+        if (body.Equals("announcement", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryGetGuildAndChannel(msg, out var guild, out var channelId, out var label))
+            {
+                await msg.Channel.SendMessageAsync("❌ Run this inside a server channel.");
+                return;
+            }
+
+            if (!IsAdmin(msg.Author))
+            {
+                await msg.Channel.SendMessageAsync("⛔ Admin only.");
+                return;
+            }
+
+            var cfg = GetOrCreateGuildCfg(guild.Id.ToString());
+            cfg.AnnouncementChannelId = channelId.ToString();
+            SaveGuildCfgs();
+
+            await msg.Channel.SendMessageAsync($"✅ Announcement channel saved: {label}");
+            return;
+        }
+
+        // -----------------------------
+        // ✅ Admin-only: Webhook commands (persistent)
         // -----------------------------
         if (body.StartsWith("setwebhook ", StringComparison.OrdinalIgnoreCase) ||
             body.StartsWith("delwebhook ", StringComparison.OrdinalIgnoreCase) ||
@@ -321,7 +419,6 @@ internal static class Program
             body.StartsWith("testwebhook ", StringComparison.OrdinalIgnoreCase) ||
             body.StartsWith("setdispatchwebhook ", StringComparison.OrdinalIgnoreCase))
         {
-            // Must be in a guild channel/thread and must be admin
             if (!TryGetGuildId(msg, out var guildId))
             {
                 await msg.Channel.SendMessageAsync("❌ Run this inside a server channel.");
@@ -357,8 +454,8 @@ internal static class Program
             // !setwebhook <key> <url>
             if (body.StartsWith("setwebhook ", StringComparison.OrdinalIgnoreCase))
             {
-                var parts = body.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 3)
+                var parts = SplitArgs(body);
+                if (parts.Count < 3)
                 {
                     await msg.Channel.SendMessageAsync("Usage: `!setwebhook <key> <url>`");
                     return;
@@ -381,7 +478,6 @@ internal static class Program
 
                 cfg.Webhooks[key] = url;
 
-                // keep legacy field synced if key is dispatch
                 if (key.Equals("dispatch", StringComparison.OrdinalIgnoreCase))
                     cfg.DispatchWebhookUrl = url;
 
@@ -393,8 +489,8 @@ internal static class Program
             // !delwebhook <key>
             if (body.StartsWith("delwebhook ", StringComparison.OrdinalIgnoreCase))
             {
-                var parts = body.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 2)
+                var parts = SplitArgs(body);
+                if (parts.Count < 2)
                 {
                     await msg.Channel.SendMessageAsync("Usage: `!delwebhook <key>`");
                     return;
@@ -437,8 +533,8 @@ internal static class Program
             // !testwebhook <key> <message...>
             if (body.StartsWith("testwebhook ", StringComparison.OrdinalIgnoreCase))
             {
-                var parts = body.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 3)
+                var parts = SplitArgs(body);
+                if (parts.Count < 3)
                 {
                     await msg.Channel.SendMessageAsync("Usage: `!testwebhook <key> <message>`");
                     return;
@@ -467,46 +563,113 @@ internal static class Program
         }
 
         // -----------------------------
-        // Existing commands
+        // ✅ Admin-only: Roster commands
+        // !adddriver "Name Here" Role Here
+        // !remove "Name Here"
         // -----------------------------
-        if (body.Equals("ping", StringComparison.OrdinalIgnoreCase))
+        if (body.StartsWith("adddriver", StringComparison.OrdinalIgnoreCase) ||
+            body.StartsWith("remove", StringComparison.OrdinalIgnoreCase))
         {
-            await msg.Channel.SendMessageAsync("pong ✅");
-            return;
-        }
-
-        // Thread-safe: works in channel OR thread (thread saves parent channel)
-        if (body.Equals("setdispatchchannel", StringComparison.OrdinalIgnoreCase))
-        {
-            SocketGuild? guild = null;
-            ulong? channelId = null;
-            string channelLabel = "";
-
-            if (msg.Channel is SocketTextChannel tc)
+            if (!TryGetGuildId(msg, out var guildId))
             {
-                guild = tc.Guild;
-                channelId = tc.Id;
-                channelLabel = $"#{tc.Name}";
-            }
-            else if (msg.Channel is SocketThreadChannel th)
-            {
-                guild = th.Guild;
-                channelId = th.ParentChannel?.Id;
-                channelLabel = th.ParentChannel != null ? $"#{th.ParentChannel.Name} (parent of thread)" : "(parent unknown)";
-            }
-
-            if (guild == null || channelId == null)
-            {
-                await msg.Channel.SendMessageAsync("❌ Unable to detect guild/channel. Run in a server channel.");
+                await msg.Channel.SendMessageAsync("❌ Run this inside a server channel.");
                 return;
             }
 
-            var cfg = GetOrCreateGuildCfg(guild.Id.ToString());
-            cfg.DispatchChannelId = channelId.Value.ToString();
-            SaveGuildCfgs();
+            if (!IsAdmin(msg.Author))
+            {
+                await msg.Channel.SendMessageAsync("⛔ Admin only.");
+                return;
+            }
 
-            await msg.Channel.SendMessageAsync($"✅ Dispatch channel saved: {channelLabel}");
-            return;
+            var args = SplitArgs(body);
+
+            // !adddriver <Name> <Role...>
+            if (args.Count > 0 && args[0].Equals("adddriver", StringComparison.OrdinalIgnoreCase))
+            {
+                if (args.Count < 3)
+                {
+                    await msg.Channel.SendMessageAsync("Usage: `!adddriver \"Name\" Role`  (quotes optional if no spaces)");
+                    return;
+                }
+
+                var name = args[1].Trim();
+                var role = string.Join(' ', args.Skip(2)).Trim();
+
+                if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(role))
+                {
+                    await msg.Channel.SendMessageAsync("❌ Name and Role are required.");
+                    return;
+                }
+
+                lock (DriversGate)
+                {
+                    var key = guildId.ToString();
+                    var list = GuildDrivers.GetOrAdd(key, _ => new List<DriverItem>());
+
+                    // upsert by name (case-insensitive)
+                    var existing = list.FirstOrDefault(d => d.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    if (existing != null)
+                    {
+                        existing.Role = role;
+                        // keep original AddedUtc (or refresh it—your call; leaving it)
+                    }
+                    else
+                    {
+                        list.Add(new DriverItem
+                        {
+                            Name = name,
+                            Role = role,
+                            AddedUtc = DateTimeOffset.UtcNow
+                        });
+                    }
+
+                    SaveDriversUnsafe();
+                }
+
+                await msg.Channel.SendMessageAsync($"✅ Driver saved: **{name}** — *{role}*");
+                return;
+            }
+
+            // !remove <Name...>
+            if (args.Count > 0 && args[0].Equals("remove", StringComparison.OrdinalIgnoreCase))
+            {
+                if (args.Count < 2)
+                {
+                    await msg.Channel.SendMessageAsync("Usage: `!remove \"Name\"`");
+                    return;
+                }
+
+                var name = string.Join(' ', args.Skip(1)).Trim().Trim('"');
+
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    await msg.Channel.SendMessageAsync("❌ Name is required.");
+                    return;
+                }
+
+                bool removed;
+                lock (DriversGate)
+                {
+                    var key = guildId.ToString();
+                    if (!GuildDrivers.TryGetValue(key, out var list))
+                    {
+                        removed = false;
+                    }
+                    else
+                    {
+                        var before = list.Count;
+                        list.RemoveAll(d => d.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+                        removed = list.Count != before;
+                        if (removed) SaveDriversUnsafe();
+                    }
+                }
+
+                await msg.Channel.SendMessageAsync(removed
+                    ? $"✅ Removed driver **{name}**."
+                    : $"No driver named **{name}** found.");
+                return;
+            }
         }
     }
 
@@ -574,6 +737,75 @@ internal static class Program
     }
 
     // -----------------------------
+    // Drivers persistence
+    // -----------------------------
+    private sealed class DriversFileModel
+    {
+        public List<GuildDriversBlock> Guilds { get; set; } = new();
+    }
+
+    private sealed class GuildDriversBlock
+    {
+        public string GuildId { get; set; } = "";
+        public List<DriverItem> Drivers { get; set; } = new();
+    }
+
+    private static void LoadDrivers()
+    {
+        try
+        {
+            if (!File.Exists(DriversPath)) return;
+
+            var json = File.ReadAllText(DriversPath);
+            var model = JsonSerializer.Deserialize<DriversFileModel>(json, JsonReadOpts) ?? new DriversFileModel();
+
+            lock (DriversGate)
+            {
+                GuildDrivers.Clear();
+
+                foreach (var g in model.Guilds ?? new List<GuildDriversBlock>())
+                {
+                    var gid = (g.GuildId ?? "").Trim();
+                    if (string.IsNullOrWhiteSpace(gid)) continue;
+
+                    var list = (g.Drivers ?? new List<DriverItem>())
+                        .Where(d => d != null && !string.IsNullOrWhiteSpace(d.Name))
+                        .ToList();
+
+                    GuildDrivers[gid] = list;
+                }
+            }
+        }
+        catch { }
+    }
+
+    private static void SaveDriversUnsafe()
+    {
+        try
+        {
+            Directory.CreateDirectory(DataDir);
+
+            var model = new DriversFileModel
+            {
+                Guilds = GuildDrivers
+                    .OrderBy(kvp => kvp.Key)
+                    .Select(kvp => new GuildDriversBlock
+                    {
+                        GuildId = kvp.Key,
+                        Drivers = kvp.Value
+                            .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                            .ToList()
+                    })
+                    .ToList()
+            };
+
+            var json = JsonSerializer.Serialize(model, new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(DriversPath, json);
+        }
+        catch { }
+    }
+
+    // -----------------------------
     // Webhook helper (unchanged)
     // -----------------------------
     private static async Task SendViaWebhookAsync(string webhookUrl, string username, string content)
@@ -615,6 +847,31 @@ internal static class Program
         return false;
     }
 
+    private static bool TryGetGuildAndChannel(SocketUserMessage msg, out SocketGuild guild, out ulong channelId, out string label)
+    {
+        guild = null!;
+        channelId = 0;
+        label = "";
+
+        if (msg.Channel is SocketTextChannel tc)
+        {
+            guild = tc.Guild;
+            channelId = tc.Id;
+            label = $"#{tc.Name}";
+            return true;
+        }
+
+        if (msg.Channel is SocketThreadChannel th)
+        {
+            guild = th.Guild;
+            channelId = th.ParentChannel?.Id ?? th.Id;
+            label = th.ParentChannel != null ? $"#{th.ParentChannel.Name} (parent of thread)" : $"(thread parent unknown)";
+            return true;
+        }
+
+        return false;
+    }
+
     private static bool IsAdmin(SocketUser user)
     {
         if (user is not SocketGuildUser gu) return false;
@@ -636,5 +893,44 @@ internal static class Program
         if (string.IsNullOrWhiteSpace(url)) return "";
         if (url.Length <= 18) return url;
         return url.Substring(0, 12) + "..." + url.Substring(Math.Max(0, url.Length - 6));
+    }
+
+    // Splits command args with quote support:
+    // !adddriver "John Doe" Company Driver
+    private static List<string> SplitArgs(string input)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrWhiteSpace(input)) return result;
+
+        var sb = new StringBuilder();
+        bool inQuotes = false;
+
+        for (int i = 0; i < input.Length; i++)
+        {
+            var c = input[i];
+
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+                continue;
+            }
+
+            if (!inQuotes && char.IsWhiteSpace(c))
+            {
+                if (sb.Length > 0)
+                {
+                    result.Add(sb.ToString());
+                    sb.Clear();
+                }
+                continue;
+            }
+
+            sb.Append(c);
+        }
+
+        if (sb.Length > 0)
+            result.Add(sb.ToString());
+
+        return result;
     }
 }
