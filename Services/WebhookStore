@@ -1,0 +1,129 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text.Json;
+using System.Threading;
+
+namespace OverWatchELD.VtcBot.Services
+{
+    /// <summary>
+    /// Persists per-guild webhook URLs to a local JSON file.
+    /// Safe for concurrent reads/writes (simple lock).
+    /// </summary>
+    public sealed class WebhookStore
+    {
+        private readonly string _path;
+        private readonly object _gate = new();
+        private StoreModel _model;
+
+        private static readonly JsonSerializerOptions JsonWrite = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = true
+        };
+
+        private static readonly JsonSerializerOptions JsonRead = new()
+        {
+            PropertyNameCaseInsensitive = true
+        };
+
+        public WebhookStore(string path)
+        {
+            _path = path;
+            _model = LoadOrDefault(path);
+        }
+
+        private static StoreModel LoadOrDefault(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return new StoreModel();
+                var json = File.ReadAllText(path);
+                var model = JsonSerializer.Deserialize<StoreModel>(json, JsonRead);
+                return model ?? new StoreModel();
+            }
+            catch
+            {
+                // If file is corrupted, start fresh (but do not crash bot)
+                return new StoreModel();
+            }
+        }
+
+        private void SaveUnsafe()
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+            var tmp = _path + ".tmp";
+            var json = JsonSerializer.Serialize(_model, JsonWrite);
+            File.WriteAllText(tmp, json);
+            File.Copy(tmp, _path, overwrite: true);
+            try { File.Delete(tmp); } catch { }
+        }
+
+        public IReadOnlyDictionary<string, string> GetGuildWebhooks(ulong guildId)
+        {
+            lock (_gate)
+            {
+                if (_model.Guilds.TryGetValue(guildId.ToString(), out var g))
+                    return new Dictionary<string, string>(g.Webhooks, StringComparer.OrdinalIgnoreCase);
+
+                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        public bool TryGet(ulong guildId, string key, out string url)
+        {
+            lock (_gate)
+            {
+                url = "";
+                if (_model.Guilds.TryGetValue(guildId.ToString(), out var g) &&
+                    g.Webhooks.TryGetValue(key, out var found))
+                {
+                    url = found;
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        public void Set(ulong guildId, string key, string url)
+        {
+            lock (_gate)
+            {
+                if (!_model.Guilds.TryGetValue(guildId.ToString(), out var g))
+                {
+                    g = new GuildModel();
+                    _model.Guilds[guildId.ToString()] = g;
+                }
+
+                g.Webhooks[key] = url;
+                SaveUnsafe();
+            }
+        }
+
+        public bool Remove(ulong guildId, string key)
+        {
+            lock (_gate)
+            {
+                if (_model.Guilds.TryGetValue(guildId.ToString(), out var g) &&
+                    g.Webhooks.Remove(key))
+                {
+                    SaveUnsafe();
+                    return true;
+                }
+                return false;
+            }
+        }
+
+        // ---------------- models ----------------
+
+        private sealed class StoreModel
+        {
+            public Dictionary<string, GuildModel> Guilds { get; set; } = new();
+        }
+
+        private sealed class GuildModel
+        {
+            public Dictionary<string, string> Webhooks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+}
