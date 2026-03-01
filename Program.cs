@@ -9,8 +9,10 @@
 //    /api/vtc/name?guildId=...
 //    /api/vtc/roster?guildId=...
 //    /api/vtc/pair/claim?code=...
-//    /api/messages?guildId=...
-//    /api/messages/send?guildId=...
+// ✅ Dispatch messaging for Dispatch Window:
+//    GET  /api/messages?guildId=...
+//    POST /api/messages/send?guildId=...
+// ✅ Sender fix: ELD can send discordUserId so Discord shows real driver name (not "Driver")
 
 using System;
 using System.Collections.Concurrent;
@@ -128,13 +130,21 @@ internal static class Program
     }
 
     // -----------------------------
-    // Messaging payload
+    // Messaging payload (ELD -> Bot)
     // -----------------------------
     private sealed class SendReq
     {
+        // ✅ Best: ELD sends this (from pairing claim)
+        public string? DiscordUserId { get; set; }
+
+        // Optional hint if you want
+        public string? DiscordUsername { get; set; }
+
+        // Fallback for older clients
         public string? DriverName { get; set; }
+
         public string Text { get; set; } = "";
-        public string? Source { get; set; }
+        public string? Source { get; set; } // eld/discord etc
     }
 
     // -----------------------------
@@ -191,7 +201,7 @@ internal static class Program
 
         app.MapGet("/", () => Results.Ok(new { ok = true, service = "OverWatchELD.VtcBot" }));
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
-        app.MapGet("/build", () => Results.Ok(new { ok = true, build = "VtcBot-2026-02-28-dispatch-webhookurlfix" }));
+        app.MapGet("/build", () => Results.Ok(new { ok = true, build = "VtcBot-2026-02-28-dispatch-senderfix" }));
 
         // -----------------------------
         // VTC endpoints
@@ -348,14 +358,42 @@ internal static class Program
 
             var cfg = GetOrCreateGuildCfg(guildId);
             if (!ulong.TryParse(cfg.DispatchChannelId, out var chanId))
-                return Results.Json(new { ok = false, error = "DispatchChannelNotConfigured", hint = "Run !setdispatchchannel in your dispatch channel." }, statusCode: 409);
+                return Results.Json(new
+                {
+                    ok = false,
+                    error = "DispatchChannelNotConfigured",
+                    hint = "Run !setdispatchchannel in your dispatch channel."
+                }, statusCode: 409);
 
             var chan = g.GetTextChannel(chanId);
             if (chan == null)
                 return Results.Json(new { ok = false, error = "DispatchChannelNotFound" }, statusCode: 404);
 
-            var sender = string.IsNullOrWhiteSpace(payload.DriverName) ? "driver" : payload.DriverName.Trim();
             var text = payload.Text.Trim();
+
+            // ✅ Resolve sender name (best -> worst)
+            string sender = "";
+
+            // 1) Best: resolve from DiscordUserId
+            var discordUserId = (payload.DiscordUserId ?? "").Trim();
+            if (ulong.TryParse(discordUserId, out var uid))
+            {
+                var u = g.GetUser(uid);
+                if (u != null)
+                    sender = (u.Nickname ?? u.Username) ?? (u.Username ?? "");
+            }
+
+            // 2) Next: use DiscordUsername hint
+            if (string.IsNullOrWhiteSpace(sender))
+                sender = (payload.DiscordUsername ?? "").Trim();
+
+            // 3) Next: fallback to driverName
+            if (string.IsNullOrWhiteSpace(sender))
+                sender = (payload.DriverName ?? "").Trim();
+
+            // 4) Final fallback
+            if (string.IsNullOrWhiteSpace(sender))
+                sender = "Driver";
 
             // Prefer webhook (clean sender name)
             if (!string.IsNullOrWhiteSpace(cfg.DispatchWebhookUrl))
@@ -367,7 +405,7 @@ internal static class Program
                 }
                 catch
                 {
-                    // fallback to bot message below
+                    // fallback below
                 }
             }
 
