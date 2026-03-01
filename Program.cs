@@ -6,6 +6,7 @@
 // ✅ Keeps thread by-user endpoints + bulk mark/delete
 // ✅ Keeps !setupdispatch + !announcement working (MessageReceived wired)
 // ✅ No RestWebhook.Url (build webhook URL from Id+Token)
+// ✅ ADD: VTC Roster API + !rosterLink + !rosterlist (manual drivers)  (NO changes to locked messaging/login behavior)
 
 using System;
 using System.Collections.Generic;
@@ -54,210 +55,210 @@ internal static class Program
     private static readonly string DispatchCfgPath = Path.Combine(DataDir, "dispatch_settings.json");
 
     // -----------------------------
-// VTC Roster (manual drivers) - persistent per guild
-// Stored at: data/vtc_roster.json
-// -----------------------------
-private static VtcRosterStore? _rosterStore;
-private static readonly string RosterPath = Path.Combine(DataDir, "vtc_roster.json");
+    // VTC Roster (manual drivers) - persistent per guild
+    // Stored at: data/vtc_roster.json
+    // -----------------------------
+    private static VtcRosterStore? _rosterStore;
+    private static readonly string RosterPath = Path.Combine(DataDir, "vtc_roster.json");
 
-private sealed class VtcDriver
-{
-    public string DriverId { get; set; } = Guid.NewGuid().ToString("N"); // stable id
-    public string Name { get; set; } = "";
-    public string? DiscordUserId { get; set; } // optional
-    public string? TruckNumber { get; set; }
-    public string? Role { get; set; }          // Driver/Dispatcher/Admin/etc
-    public string? Status { get; set; }        // Active/Inactive
-    public string? Notes { get; set; }
-    public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
-    public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
-}
-
-private sealed class VtcRosterStore
-{
-    private readonly string _path;
-    private readonly object _lock = new();
-
-    // guildId -> drivers[]
-    private Dictionary<string, List<VtcDriver>> _byGuild = new();
-
-    public VtcRosterStore(string path)
+    private sealed class VtcDriver
     {
-        _path = path;
-        Load();
+        public string DriverId { get; set; } = Guid.NewGuid().ToString("N"); // stable id
+        public string Name { get; set; } = "";
+        public string? DiscordUserId { get; set; } // optional
+        public string? TruckNumber { get; set; }
+        public string? Role { get; set; }          // Driver/Dispatcher/Admin/etc
+        public string? Status { get; set; }        // Active/Inactive
+        public string? Notes { get; set; }
+        public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
     }
 
-    public List<VtcDriver> List(string guildId)
+    private sealed class VtcRosterStore
     {
-        guildId = (guildId ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
+        private readonly string _path;
+        private readonly object _lock = new();
 
-        lock (_lock)
+        // guildId -> drivers[]
+        private Dictionary<string, List<VtcDriver>> _byGuild = new();
+
+        public VtcRosterStore(string path)
         {
-            if (!_byGuild.TryGetValue(guildId, out var list))
-            {
-                list = new List<VtcDriver>();
-                _byGuild[guildId] = list;
-                Save();
-            }
-            return list.Select(Clone).ToList();
+            _path = path;
+            Load();
         }
-    }
 
-    public VtcDriver AddOrUpdateByName(string guildId, VtcDriver incoming)
-    {
-        guildId = (guildId ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
-
-        incoming.Name = (incoming.Name ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(incoming.Name))
-            throw new InvalidOperationException("Name is required.");
-
-        lock (_lock)
+        public List<VtcDriver> List(string guildId)
         {
-            if (!_byGuild.TryGetValue(guildId, out var list))
+            guildId = (guildId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
+
+            lock (_lock)
             {
-                list = new List<VtcDriver>();
-                _byGuild[guildId] = list;
-            }
-
-            VtcDriver? existing = null;
-
-            if (!string.IsNullOrWhiteSpace(incoming.DriverId))
-                existing = list.FirstOrDefault(d => d.DriverId == incoming.DriverId);
-
-            existing ??= list.FirstOrDefault(d => string.Equals(d.Name, incoming.Name, StringComparison.OrdinalIgnoreCase));
-
-            if (existing == null)
-            {
-                var d = new VtcDriver
+                if (!_byGuild.TryGetValue(guildId, out var list))
                 {
-                    DriverId = string.IsNullOrWhiteSpace(incoming.DriverId) ? Guid.NewGuid().ToString("N") : incoming.DriverId,
-                    Name = incoming.Name,
-                    DiscordUserId = Clean(incoming.DiscordUserId),
-                    TruckNumber = Clean(incoming.TruckNumber),
-                    Role = Clean(incoming.Role),
-                    Status = Clean(incoming.Status),
-                    Notes = Clean(incoming.Notes),
-                    CreatedUtc = DateTimeOffset.UtcNow,
-                    UpdatedUtc = DateTimeOffset.UtcNow
-                };
-
-                list.Add(d);
-                Save();
-                return Clone(d);
+                    list = new List<VtcDriver>();
+                    _byGuild[guildId] = list;
+                    Save();
+                }
+                return list.Select(Clone).ToList();
             }
-
-            // update existing
-            existing.DiscordUserId = Clean(incoming.DiscordUserId) ?? existing.DiscordUserId;
-            existing.TruckNumber = Clean(incoming.TruckNumber) ?? existing.TruckNumber;
-            existing.Role = Clean(incoming.Role) ?? existing.Role;
-            existing.Status = Clean(incoming.Status) ?? existing.Status;
-            existing.Notes = Clean(incoming.Notes) ?? existing.Notes;
-
-            if (!string.IsNullOrWhiteSpace(incoming.Name))
-                existing.Name = incoming.Name;
-
-            existing.UpdatedUtc = DateTimeOffset.UtcNow;
-
-            Save();
-            return Clone(existing);
         }
-    }
 
-    public bool Delete(string guildId, string driverIdOrName)
-    {
-        guildId = (guildId ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
-
-        driverIdOrName = (driverIdOrName ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(driverIdOrName)) return false;
-
-        lock (_lock)
+        public VtcDriver AddOrUpdateByName(string guildId, VtcDriver incoming)
         {
-            if (!_byGuild.TryGetValue(guildId, out var list)) return false;
+            guildId = (guildId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
 
-            var idx = list.FindIndex(d =>
-                d.DriverId.Equals(driverIdOrName, StringComparison.OrdinalIgnoreCase) ||
-                d.Name.Equals(driverIdOrName, StringComparison.OrdinalIgnoreCase));
+            incoming.Name = (incoming.Name ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(incoming.Name))
+                throw new InvalidOperationException("Name is required.");
 
-            if (idx < 0) return false;
+            lock (_lock)
+            {
+                if (!_byGuild.TryGetValue(guildId, out var list))
+                {
+                    list = new List<VtcDriver>();
+                    _byGuild[guildId] = list;
+                }
 
-            list.RemoveAt(idx);
-            Save();
-            return true;
+                VtcDriver? existing = null;
+
+                if (!string.IsNullOrWhiteSpace(incoming.DriverId))
+                    existing = list.FirstOrDefault(d => d.DriverId == incoming.DriverId);
+
+                existing ??= list.FirstOrDefault(d => string.Equals(d.Name, incoming.Name, StringComparison.OrdinalIgnoreCase));
+
+                if (existing == null)
+                {
+                    var d = new VtcDriver
+                    {
+                        DriverId = string.IsNullOrWhiteSpace(incoming.DriverId) ? Guid.NewGuid().ToString("N") : incoming.DriverId,
+                        Name = incoming.Name,
+                        DiscordUserId = Clean(incoming.DiscordUserId),
+                        TruckNumber = Clean(incoming.TruckNumber),
+                        Role = Clean(incoming.Role),
+                        Status = Clean(incoming.Status),
+                        Notes = Clean(incoming.Notes),
+                        CreatedUtc = DateTimeOffset.UtcNow,
+                        UpdatedUtc = DateTimeOffset.UtcNow
+                    };
+
+                    list.Add(d);
+                    Save();
+                    return Clone(d);
+                }
+
+                // update existing
+                existing.DiscordUserId = Clean(incoming.DiscordUserId) ?? existing.DiscordUserId;
+                existing.TruckNumber = Clean(incoming.TruckNumber) ?? existing.TruckNumber;
+                existing.Role = Clean(incoming.Role) ?? existing.Role;
+                existing.Status = Clean(incoming.Status) ?? existing.Status;
+                existing.Notes = Clean(incoming.Notes) ?? existing.Notes;
+
+                if (!string.IsNullOrWhiteSpace(incoming.Name))
+                    existing.Name = incoming.Name;
+
+                existing.UpdatedUtc = DateTimeOffset.UtcNow;
+
+                Save();
+                return Clone(existing);
+            }
         }
-    }
 
-    private void Load()
-    {
-        try
+        public bool Delete(string guildId, string driverIdOrName)
         {
-            if (!File.Exists(_path)) { _byGuild = new(); return; }
-            var json = File.ReadAllText(_path);
-            var dict = JsonSerializer.Deserialize<Dictionary<string, List<VtcDriver>>>(json, JsonReadOpts);
-            _byGuild = dict ?? new();
-        }
-        catch { _byGuild = new(); }
-    }
+            guildId = (guildId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
 
-    private void Save()
-    {
-        try
+            driverIdOrName = (driverIdOrName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(driverIdOrName)) return false;
+
+            lock (_lock)
+            {
+                if (!_byGuild.TryGetValue(guildId, out var list)) return false;
+
+                var idx = list.FindIndex(d =>
+                    d.DriverId.Equals(driverIdOrName, StringComparison.OrdinalIgnoreCase) ||
+                    d.Name.Equals(driverIdOrName, StringComparison.OrdinalIgnoreCase));
+
+                if (idx < 0) return false;
+
+                list.RemoveAt(idx);
+                Save();
+                return true;
+            }
+        }
+
+        private void Load()
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_path) ?? DataDir);
-            File.WriteAllText(_path, JsonSerializer.Serialize(_byGuild, JsonWriteOpts));
+            try
+            {
+                if (!File.Exists(_path)) { _byGuild = new(); return; }
+                var json = File.ReadAllText(_path);
+                var dict = JsonSerializer.Deserialize<Dictionary<string, List<VtcDriver>>>(json, JsonReadOpts);
+                _byGuild = dict ?? new();
+            }
+            catch { _byGuild = new(); }
         }
-        catch { }
+
+        private void Save()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_path) ?? DataDir);
+                File.WriteAllText(_path, JsonSerializer.Serialize(_byGuild, JsonWriteOpts));
+            }
+            catch { }
+        }
+
+        private static string? Clean(string? s)
+        {
+            s = (s ?? "").Trim();
+            return string.IsNullOrWhiteSpace(s) ? null : s;
+        }
+
+        private static VtcDriver Clone(VtcDriver d) => new VtcDriver
+        {
+            DriverId = d.DriverId,
+            Name = d.Name,
+            DiscordUserId = d.DiscordUserId,
+            TruckNumber = d.TruckNumber,
+            Role = d.Role,
+            Status = d.Status,
+            Notes = d.Notes,
+            CreatedUtc = d.CreatedUtc,
+            UpdatedUtc = d.UpdatedUtc
+        };
     }
 
-    private static string? Clean(string? s)
+    private sealed class RosterUpsertReq
     {
-        s = (s ?? "").Trim();
-        return string.IsNullOrWhiteSpace(s) ? null : s;
+        public string? DriverId { get; set; }
+        public string? Name { get; set; }
+        public string? DiscordUserId { get; set; }
+        public string? TruckNumber { get; set; }
+        public string? Role { get; set; }
+        public string? Status { get; set; }
+        public string? Notes { get; set; }
     }
 
-    private static VtcDriver Clone(VtcDriver d) => new VtcDriver
+    // ✅ helper for !rosterLink
+    private static ulong? TryParseUserIdFromMentionOrId(string raw)
     {
-        DriverId = d.DriverId,
-        Name = d.Name,
-        DiscordUserId = d.DiscordUserId,
-        TruckNumber = d.TruckNumber,
-        Role = d.Role,
-        Status = d.Status,
-        Notes = d.Notes,
-        CreatedUtc = d.CreatedUtc,
-        UpdatedUtc = d.UpdatedUtc
-    };
-}
+        if (string.IsNullOrWhiteSpace(raw)) return null;
+        raw = raw.Trim();
 
-private sealed class RosterUpsertReq
-{
-    public string? DriverId { get; set; }
-    public string? Name { get; set; }
-    public string? DiscordUserId { get; set; }
-    public string? TruckNumber { get; set; }
-    public string? Role { get; set; }
-    public string? Status { get; set; }
-    public string? Notes { get; set; }
-}
+        // <@123> or <@!123>
+        if (raw.StartsWith("<@") && raw.EndsWith(">"))
+        {
+            raw = raw.Substring(2, raw.Length - 3);
+            if (raw.StartsWith("!")) raw = raw.Substring(1);
+        }
 
-// ✅ helper for !rosterLink
-private static ulong? TryParseUserIdFromMentionOrId(string raw)
-{
-    if (string.IsNullOrWhiteSpace(raw)) return null;
-    raw = raw.Trim();
-
-    // <@123> or <@!123>
-    if (raw.StartsWith("<@") && raw.EndsWith(">"))
-    {
-        raw = raw.Substring(2, raw.Length - 3);
-        if (raw.StartsWith("!")) raw = raw.Substring(1);
+        return ulong.TryParse(raw, out var id) ? id : null;
     }
 
-    return ulong.TryParse(raw, out var id) ? id : null;
-}
-    
     private sealed class DispatchSettings
     {
         public string GuildId { get; set; } = "";
@@ -395,7 +396,7 @@ private static ulong? TryParseUserIdFromMentionOrId(string raw)
         _threadStore = new ThreadMapStore(ThreadMapPath);
         _dispatchStore = new DispatchSettingsStore(DispatchCfgPath);
         _rosterStore = new VtcRosterStore(RosterPath);
-        
+
         var token = (Environment.GetEnvironmentVariable("DISCORD_TOKEN") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(token))
         {
@@ -500,114 +501,114 @@ private static ulong? TryParseUserIdFromMentionOrId(string raw)
         });
 
         // -----------------------------
-// ✅ VTC Roster API (manual drivers)
-// -----------------------------
-r.MapGet("/vtc/roster", (HttpRequest req) =>
-{
-    var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-    var guild = ResolveGuild(gidStr);
-    if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
-
-    if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
-
-    var list = _rosterStore.List(guild.Id.ToString())
-        .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
-        .ToArray();
-
-    return Results.Json(new { ok = true, guildId = guild.Id.ToString(), drivers = list }, JsonWriteOpts);
-});
-
-r.MapPost("/vtc/roster/add", async (HttpRequest req) =>
-{
-    var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-    var guild = ResolveGuild(gidStr);
-    if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
-
-    if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
-
-    RosterUpsertReq? payload;
-    try { payload = await JsonSerializer.DeserializeAsync<RosterUpsertReq>(req.Body, JsonReadOpts); }
-    catch { payload = null; }
-
-    if (payload == null || string.IsNullOrWhiteSpace(payload.Name))
-        return Results.Json(new { ok = false, error = "BadJsonOrMissingName" }, statusCode: 400);
-
-    try
-    {
-        var saved = _rosterStore.AddOrUpdateByName(guild.Id.ToString(), new VtcDriver
+        // ✅ VTC Roster API (manual drivers)
+        // -----------------------------
+        r.MapGet("/vtc/roster", (HttpRequest req) =>
         {
-            DriverId = (payload.DriverId ?? "").Trim(),
-            Name = (payload.Name ?? "").Trim(),
-            DiscordUserId = (payload.DiscordUserId ?? "").Trim(),
-            TruckNumber = (payload.TruckNumber ?? "").Trim(),
-            Role = (payload.Role ?? "").Trim(),
-            Status = (payload.Status ?? "").Trim(),
-            Notes = (payload.Notes ?? "").Trim()
+            var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
+            var guild = ResolveGuild(gidStr);
+            if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
+
+            var list = _rosterStore.List(guild.Id.ToString())
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            return Results.Json(new { ok = true, guildId = guild.Id.ToString(), drivers = list }, JsonWriteOpts);
         });
 
-        return Results.Json(new { ok = true, driver = saved }, JsonWriteOpts);
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new { ok = false, error = "RosterSaveFailed", message = ex.Message }, statusCode: 500);
-    }
-});
-
-r.MapPost("/vtc/roster/update", async (HttpRequest req) =>
-{
-    var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-    var guild = ResolveGuild(gidStr);
-    if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
-
-    if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
-
-    RosterUpsertReq? payload;
-    try { payload = await JsonSerializer.DeserializeAsync<RosterUpsertReq>(req.Body, JsonReadOpts); }
-    catch { payload = null; }
-
-    if (payload == null || (string.IsNullOrWhiteSpace(payload.DriverId) && string.IsNullOrWhiteSpace(payload.Name)))
-        return Results.Json(new { ok = false, error = "BadJsonMissingDriverIdOrName" }, statusCode: 400);
-
-    try
-    {
-        var saved = _rosterStore.AddOrUpdateByName(guild.Id.ToString(), new VtcDriver
+        r.MapPost("/vtc/roster/add", async (HttpRequest req) =>
         {
-            DriverId = (payload.DriverId ?? "").Trim(),
-            Name = (payload.Name ?? "").Trim(),
-            DiscordUserId = (payload.DiscordUserId ?? "").Trim(),
-            TruckNumber = (payload.TruckNumber ?? "").Trim(),
-            Role = (payload.Role ?? "").Trim(),
-            Status = (payload.Status ?? "").Trim(),
-            Notes = (payload.Notes ?? "").Trim()
+            var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
+            var guild = ResolveGuild(gidStr);
+            if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
+
+            RosterUpsertReq? payload;
+            try { payload = await JsonSerializer.DeserializeAsync<RosterUpsertReq>(req.Body, JsonReadOpts); }
+            catch { payload = null; }
+
+            if (payload == null || string.IsNullOrWhiteSpace(payload.Name))
+                return Results.Json(new { ok = false, error = "BadJsonOrMissingName" }, statusCode: 400);
+
+            try
+            {
+                var saved = _rosterStore.AddOrUpdateByName(guild.Id.ToString(), new VtcDriver
+                {
+                    DriverId = (payload.DriverId ?? "").Trim(),
+                    Name = (payload.Name ?? "").Trim(),
+                    DiscordUserId = (payload.DiscordUserId ?? "").Trim(),
+                    TruckNumber = (payload.TruckNumber ?? "").Trim(),
+                    Role = (payload.Role ?? "").Trim(),
+                    Status = (payload.Status ?? "").Trim(),
+                    Notes = (payload.Notes ?? "").Trim()
+                });
+
+                return Results.Json(new { ok = true, driver = saved }, JsonWriteOpts);
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(new { ok = false, error = "RosterSaveFailed", message = ex.Message }, statusCode: 500);
+            }
         });
 
-        return Results.Json(new { ok = true, driver = saved }, JsonWriteOpts);
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new { ok = false, error = "RosterUpdateFailed", message = ex.Message }, statusCode: 500);
-    }
-});
+        r.MapPost("/vtc/roster/update", async (HttpRequest req) =>
+        {
+            var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
+            var guild = ResolveGuild(gidStr);
+            if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
 
-r.MapDelete("/vtc/roster/delete", (HttpRequest req) =>
-{
-    var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-    var driverId = (req.Query["driverId"].ToString() ?? "").Trim();
-    var name = (req.Query["name"].ToString() ?? "").Trim();
+            if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
 
-    var guild = ResolveGuild(gidStr);
-    if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+            RosterUpsertReq? payload;
+            try { payload = await JsonSerializer.DeserializeAsync<RosterUpsertReq>(req.Body, JsonReadOpts); }
+            catch { payload = null; }
 
-    if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
+            if (payload == null || (string.IsNullOrWhiteSpace(payload.DriverId) && string.IsNullOrWhiteSpace(payload.Name)))
+                return Results.Json(new { ok = false, error = "BadJsonMissingDriverIdOrName" }, statusCode: 400);
 
-    var key = !string.IsNullOrWhiteSpace(driverId) ? driverId : name;
-    if (string.IsNullOrWhiteSpace(key))
-        return Results.Json(new { ok = false, error = "MissingDriverIdOrName" }, statusCode: 400);
+            try
+            {
+                var saved = _rosterStore.AddOrUpdateByName(guild.Id.ToString(), new VtcDriver
+                {
+                    DriverId = (payload.DriverId ?? "").Trim(),
+                    Name = (payload.Name ?? "").Trim(),
+                    DiscordUserId = (payload.DiscordUserId ?? "").Trim(),
+                    TruckNumber = (payload.TruckNumber ?? "").Trim(),
+                    Role = (payload.Role ?? "").Trim(),
+                    Status = (payload.Status ?? "").Trim(),
+                    Notes = (payload.Notes ?? "").Trim()
+                });
 
-    var ok = _rosterStore.Delete(guild.Id.ToString(), key);
-    return Results.Json(new { ok = ok }, JsonWriteOpts);
-});
-        
+                return Results.Json(new { ok = true, driver = saved }, JsonWriteOpts);
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(new { ok = false, error = "RosterUpdateFailed", message = ex.Message }, statusCode: 500);
+            }
+        });
+
+        r.MapDelete("/vtc/roster/delete", (HttpRequest req) =>
+        {
+            var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
+            var driverId = (req.Query["driverId"].ToString() ?? "").Trim();
+            var name = (req.Query["name"].ToString() ?? "").Trim();
+
+            var guild = ResolveGuild(gidStr);
+            if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
+
+            var key = !string.IsNullOrWhiteSpace(driverId) ? driverId : name;
+            if (string.IsNullOrWhiteSpace(key))
+                return Results.Json(new { ok = false, error = "MissingDriverIdOrName" }, statusCode: 400);
+
+            var ok = _rosterStore.Delete(guild.Id.ToString(), key);
+            return Results.Json(new { ok = ok }, JsonWriteOpts);
+        });
+
         // -----------------------------
         // ✅ Announcements feed + post
         // -----------------------------
@@ -928,7 +929,7 @@ r.MapDelete("/vtc/roster/delete", (HttpRequest req) =>
         if (msg.Channel is not SocketGuildChannel guildChan)
         {
             if (content.Equals("!help", StringComparison.OrdinalIgnoreCase))
-                await msg.Channel.SendMessageAsync("Use !setupdispatch / !announcement inside a server.");
+                await msg.Channel.SendMessageAsync("Use !setupdispatch / !announcement / !rosterlink inside a server.");
             return;
         }
 
@@ -951,6 +952,8 @@ r.MapDelete("/vtc/roster/delete", (HttpRequest req) =>
                 "• !setdispatchwebhook <url> (admin)\n" +
                 "• !announcement #channel (admin)\n" +
                 "• !setannouncementwebhook <url> (admin)\n" +
+                "• !rosterlink @user | DriverName (admin)\n" +
+                "• !rosterlist (admin)\n" +
                 "• !ping\n"
             );
             return;
@@ -1008,114 +1011,94 @@ r.MapDelete("/vtc/roster/delete", (HttpRequest req) =>
             await msg.Channel.SendMessageAsync("✅ Dispatch webhook saved.");
             return;
         }
-        // -----------------------------
-// ✅ VTC Roster API (manual drivers)
-// -----------------------------
-r.MapGet("/vtc/roster", (HttpRequest req) =>
-{
-    var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-    var guild = ResolveGuild(gidStr);
-    if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
 
-    if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
-
-    var list = _rosterStore.List(guild.Id.ToString())
-        .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
-        .ToArray();
-
-    return Results.Json(new { ok = true, guildId = guild.Id.ToString(), drivers = list }, JsonWriteOpts);
-});
-
-r.MapPost("/vtc/roster/add", async (HttpRequest req) =>
-{
-    var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-    var guild = ResolveGuild(gidStr);
-    if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
-
-    if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
-
-    RosterUpsertReq? payload;
-    try { payload = await JsonSerializer.DeserializeAsync<RosterUpsertReq>(req.Body, JsonReadOpts); }
-    catch { payload = null; }
-
-    if (payload == null || string.IsNullOrWhiteSpace(payload.Name))
-        return Results.Json(new { ok = false, error = "BadJsonOrMissingName" }, statusCode: 400);
-
-    try
-    {
-        var saved = _rosterStore.AddOrUpdateByName(guild.Id.ToString(), new VtcDriver
+        // ✅ ROSTER: !rosterlink @user | DriverName
+        if (cmd == "rosterlink")
         {
-            DriverId = (payload.DriverId ?? "").Trim(),
-            Name = (payload.Name ?? "").Trim(),
-            DiscordUserId = (payload.DiscordUserId ?? "").Trim(),
-            TruckNumber = (payload.TruckNumber ?? "").Trim(),
-            Role = (payload.Role ?? "").Trim(),
-            Status = (payload.Status ?? "").Trim(),
-            Notes = (payload.Notes ?? "").Trim()
-        });
+            if (_rosterStore == null)
+            {
+                await msg.Channel.SendMessageAsync("❌ Roster store not initialized.");
+                return;
+            }
 
-        return Results.Json(new { ok = true, driver = saved }, JsonWriteOpts);
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new { ok = false, error = "RosterSaveFailed", message = ex.Message }, statusCode: 500);
-    }
-});
+            // expected: "<@id> | Driver Name"
+            var parts2 = (arg ?? "").Split('|', 2, StringSplitOptions.RemoveEmptyEntries);
+            var left = (parts2.Length > 0 ? parts2[0] : "").Trim();
+            var right = (parts2.Length > 1 ? parts2[1] : "").Trim();
 
-r.MapPost("/vtc/roster/update", async (HttpRequest req) =>
-{
-    var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-    var guild = ResolveGuild(gidStr);
-    if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+            var uid = TryParseUserIdFromMentionOrId(left);
+            if (uid == null || uid.Value == 0)
+            {
+                await msg.Channel.SendMessageAsync("Usage: `!rosterLink @user | DriverName`");
+                return;
+            }
 
-    if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
+            var u = guild.GetUser(uid.Value);
+            var driverName = !string.IsNullOrWhiteSpace(right)
+                ? right
+                : ((u?.DisplayName ?? u?.Username ?? "Driver").Trim());
 
-    RosterUpsertReq? payload;
-    try { payload = await JsonSerializer.DeserializeAsync<RosterUpsertReq>(req.Body, JsonReadOpts); }
-    catch { payload = null; }
+            if (string.IsNullOrWhiteSpace(driverName))
+            {
+                await msg.Channel.SendMessageAsync("❌ DriverName is required.");
+                return;
+            }
 
-    if (payload == null || (string.IsNullOrWhiteSpace(payload.DriverId) && string.IsNullOrWhiteSpace(payload.Name)))
-        return Results.Json(new { ok = false, error = "BadJsonMissingDriverIdOrName" }, statusCode: 400);
+            try
+            {
+                var saved = _rosterStore.AddOrUpdateByName(guildIdStr, new VtcDriver
+                {
+                    Name = driverName.Trim(),
+                    DiscordUserId = uid.Value.ToString()
+                });
 
-    try
-    {
-        var saved = _rosterStore.AddOrUpdateByName(guild.Id.ToString(), new VtcDriver
+                await msg.Channel.SendMessageAsync($"✅ Roster linked: **{saved.Name}** ↔ <@{uid.Value}>");
+            }
+            catch (Exception ex)
+            {
+                await msg.Channel.SendMessageAsync($"❌ Roster link failed: {ex.Message}");
+            }
+            return;
+        }
+
+        if (cmd == "rosterlist")
         {
-            DriverId = (payload.DriverId ?? "").Trim(),
-            Name = (payload.Name ?? "").Trim(),
-            DiscordUserId = (payload.DiscordUserId ?? "").Trim(),
-            TruckNumber = (payload.TruckNumber ?? "").Trim(),
-            Role = (payload.Role ?? "").Trim(),
-            Status = (payload.Status ?? "").Trim(),
-            Notes = (payload.Notes ?? "").Trim()
-        });
+            if (_rosterStore == null)
+            {
+                await msg.Channel.SendMessageAsync("❌ Roster store not initialized.");
+                return;
+            }
 
-        return Results.Json(new { ok = true, driver = saved }, JsonWriteOpts);
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new { ok = false, error = "RosterUpdateFailed", message = ex.Message }, statusCode: 500);
-    }
-});
+            var list = _rosterStore.List(guildIdStr)
+                .OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase)
+                .Take(30)
+                .ToList();
 
-r.MapDelete("/vtc/roster/delete", (HttpRequest req) =>
-{
-    var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-    var driverId = (req.Query["driverId"].ToString() ?? "").Trim();
-    var name = (req.Query["name"].ToString() ?? "").Trim();
+            if (list.Count == 0)
+            {
+                await msg.Channel.SendMessageAsync("📋 Roster is empty. Use `!rosterLink @user | DriverName`");
+                return;
+            }
 
-    var guild = ResolveGuild(gidStr);
-    if (guild == null) return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+            var lines = new List<string> { "📋 **VTC Roster (top 30)**" };
+            foreach (var d in list)
+            {
+                var link = !string.IsNullOrWhiteSpace(d.DiscordUserId) && ulong.TryParse(d.DiscordUserId, out var id) ? $"<@{id}>" : "(unlinked)";
+                var extra = string.Join(" • ", new[]
+                {
+                    string.IsNullOrWhiteSpace(d.TruckNumber) ? null : $"Truck {d.TruckNumber}",
+                    string.IsNullOrWhiteSpace(d.Role) ? null : d.Role,
+                    string.IsNullOrWhiteSpace(d.Status) ? null : d.Status
+                }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
-    if (_rosterStore == null) return Results.Json(new { ok = false, error = "RosterNotReady" }, statusCode: 503);
+                lines.Add($"• **{d.Name}** — {link}" + (string.IsNullOrWhiteSpace(extra) ? "" : $" — {extra}"));
+            }
 
-    var key = !string.IsNullOrWhiteSpace(driverId) ? driverId : name;
-    if (string.IsNullOrWhiteSpace(key))
-        return Results.Json(new { ok = false, error = "MissingDriverIdOrName" }, statusCode: 400);
+            var text = string.Join("\n", lines);
+            await msg.Channel.SendMessageAsync(text.Length > 1800 ? text.Substring(0, 1800) + "\n..." : text);
+            return;
+        }
 
-    var ok = _rosterStore.Delete(guild.Id.ToString(), key);
-    return Results.Json(new { ok = ok }, JsonWriteOpts);
-});
         if (cmd == "announcement" || cmd == "announcements")
         {
             var cid = TryParseChannelIdFromMention(arg);
