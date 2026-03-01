@@ -1,28 +1,18 @@
 // Program.cs ✅ FULL COPY/REPLACE (OverWatchELD.VtcBot)
-// ✅ Public-release safe: NO guild hardcoding, NO personal Discord name output
-// ✅ Discord bot: !ping, !link CODE
-// ✅ VTC endpoints:
-//    /api/vtc/servers
-//    /api/vtc/name?guildId=...
-//    /api/vtc/roster?guildId=...         (includes truck/location if heartbeat posted)
-//    /api/vtc/announcements?guildId=...
-//    /api/vtc/pair/claim?code=...        (returns discordUserId + discordUsername)
-//    POST /api/vtc/roster/heartbeat
-//
-// ✅ NEW: Dispatch messaging bridge (two-way)
-//    POST /api/dispatch/send             (ELD -> Discord #dispatch)
-//    GET  /api/dispatch/inbox?guildId=   (ELD polls Discord #dispatch -> ELD)
-//    - Discord->ELD sender is "dispatch" (always)
-//    - Optional webhook posting as username "dispatch"
-//
-// ✅ Optional: proxies /api/messages/* to HUB (unchanged)
+// ✅ Public-release safe
+// ✅ Two-way dispatch bridge
+// ✅ NEW: Self-service per-guild webhook setup via Discord commands:
+//    !setwebhook <url>   (admins only)
+//    !testwebhook        (admins only)
+//    !clearwebhook       (admins only)
+// ✅ Stores per-guild webhooks in guild_webhooks.json on the bot host
 
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -36,71 +26,113 @@ internal static class Program
 {
     private static DiscordSocketClient? _client;
 
-    // Optional Hub proxy for /api/messages
     private const string DefaultHubBase = "https://overwatcheld-saas-production.up.railway.app";
     private static readonly HttpClient HubHttp = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
 
-    // ✅ Pairing codes captured from Discord `!link CODE` (includes Discord user identity)
-    private sealed record PendingPair(
-        string GuildId,
-        string VtcName,
-        string DiscordUserId,
-        string DiscordUsername,
-        DateTimeOffset CreatedUtc
-    );
+    private static readonly JsonSerializerOptions JsonReadOpts = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions JsonWriteOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = false };
 
+    // ---------- Self-service webhook storage ----------
+    private static readonly string WebhooksPath = Path.Combine(AppContext.BaseDirectory, "guild_webhooks.json");
+    private static readonly object WebhooksLock = new();
+    private static Dictionary<string, string> GuildWebhookUrl = LoadWebhooks();
+
+    private static Dictionary<string, string> LoadWebhooks()
+    {
+        try
+        {
+            if (!File.Exists(WebhooksPath)) return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            var json = File.ReadAllText(WebhooksPath);
+            var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(json, JsonReadOpts);
+            return dict ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    private static void SaveWebhooks()
+    {
+        try
+        {
+            lock (WebhooksLock)
+            {
+                var json = JsonSerializer.Serialize(GuildWebhookUrl, new JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(WebhooksPath, json);
+            }
+        }
+        catch { }
+    }
+
+    private static string GetWebhookForGuild(string guildId)
+    {
+        lock (WebhooksLock)
+        {
+            if (GuildWebhookUrl.TryGetValue(guildId, out var url) && !string.IsNullOrWhiteSpace(url))
+                return url.Trim();
+        }
+
+        // Optional env fallback if you still want:
+        var key1 = "DISPATCH_WEBHOOK_URL_" + guildId;
+        return (Environment.GetEnvironmentVariable(key1) ??
+                Environment.GetEnvironmentVariable("DISPATCH_WEBHOOK_URL") ??
+                "").Trim();
+    }
+
+    private static void SetWebhookForGuild(string guildId, string url)
+    {
+        lock (WebhooksLock)
+        {
+            GuildWebhookUrl[guildId] = url.Trim();
+            SaveWebhooks();
+        }
+    }
+
+    private static void ClearWebhookForGuild(string guildId)
+    {
+        lock (WebhooksLock)
+        {
+            if (GuildWebhookUrl.Remove(guildId))
+                SaveWebhooks();
+        }
+    }
+
+    // ---------- Pairing + roster live state ----------
+    private sealed record PendingPair(string GuildId, string VtcName, string DiscordUserId, string DiscordUsername, DateTimeOffset CreatedUtc);
     private static readonly ConcurrentDictionary<string, PendingPair> PendingPairs = new(StringComparer.OrdinalIgnoreCase);
 
-    // ✅ Roster live state (ELD -> Bot telemetry heartbeat)
     private sealed class DriverLiveState
     {
         public string GuildId { get; set; } = "";
         public string DiscordUserId { get; init; } = "";
         public string DiscordUsername { get; set; } = "";
-
         public string Truck { get; set; } = "";
         public string City { get; set; } = "";
         public string State { get; set; } = "";
         public string DutyStatus { get; set; } = "";
-
         public DateTimeOffset LastSeenUtc { get; set; } = DateTimeOffset.UtcNow;
     }
 
-    // Key: guildId:userId
     private static readonly ConcurrentDictionary<string, DriverLiveState> Live = new(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly JsonSerializerOptions JsonReadOpts = new()
-    {
-        PropertyNameCaseInsensitive = true
-    };
-
-    private static readonly JsonSerializerOptions JsonWriteOpts = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
-    // Heartbeat payload ELD will POST
     private sealed class RosterHeartbeat
     {
         public string? GuildId { get; set; }
         public string? DiscordUserId { get; set; }
         public string? DiscordUsername { get; set; }
-
         public string? Truck { get; set; }
         public string? City { get; set; }
         public string? State { get; set; }
         public string? DutyStatus { get; set; }
     }
 
-    // -----------------------------
-    // Dispatch bridge DTOs
-    // -----------------------------
+    // ---------- Dispatch DTO ----------
     private sealed class DispatchSendRequest
     {
-        public string? GuildId { get; set; }    // required
-        public string? Text { get; set; }       // required
-        public string? From { get; set; }       // optional (e.g. driver name); Discord will still show "dispatch" if webhook used
+        public string? GuildId { get; set; }
+        public string? Text { get; set; }
+        public string? From { get; set; }
     }
 
     public static async Task Main(string[] args)
@@ -114,16 +146,14 @@ internal static class Program
             return;
         }
 
-        // -----------------------------
         // Discord client
-        // -----------------------------
         var socketConfig = new DiscordSocketConfig
         {
             LogLevel = LogSeverity.Info,
             MessageCacheSize = 50,
             GatewayIntents =
                 GatewayIntents.Guilds |
-                GatewayIntents.GuildMembers |   // ✅ required for full roster (also enable in Dev Portal)
+                GatewayIntents.GuildMembers |
                 GatewayIntents.GuildMessages |
                 GatewayIntents.DirectMessages |
                 GatewayIntents.MessageContent
@@ -131,25 +161,17 @@ internal static class Program
 
         _client = new DiscordSocketClient(socketConfig);
         _client.Log += m => { Console.WriteLine(m.ToString()); return Task.CompletedTask; };
-        _client.Ready += () =>
-        {
-            Console.WriteLine("✅ READY");
-            return Task.CompletedTask;
-        };
+        _client.Ready += () => { Console.WriteLine("✅ READY"); return Task.CompletedTask; };
         _client.MessageReceived += HandleMessageAsync;
 
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
 
-        // -----------------------------
-        // HTTP API (Railway)
-        // -----------------------------
+        // HTTP API
         var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-
         var builder = WebApplication.CreateBuilder(args);
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
 
-        // Hub proxy base (only used for /api/messages if you want)
         var hubBase = (Environment.GetEnvironmentVariable("HUB_BASE_URL") ?? DefaultHubBase).Trim();
         hubBase = NormalizeAbsoluteBaseUrl(hubBase);
         HubHttp.BaseAddress = new Uri(hubBase + "/", UriKind.Absolute);
@@ -158,11 +180,9 @@ internal static class Program
 
         app.MapGet("/", () => Results.Ok(new { ok = true, service = "OverWatchELD.VtcBot" }));
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
-        app.MapGet("/build", () => Results.Ok(new { ok = true, build = "VtcBot-2026-02-28-public+pairing+rosterLive+dispatchBridge" }));
+        app.MapGet("/build", () => Results.Ok(new { ok = true, build = "VtcBot-2026-02-28-public+dispatch-selfservice-webhooks" }));
 
-        // -----------------------------
-        // VTC endpoints
-        // -----------------------------
+        // -------- VTC endpoints --------
         app.MapGet("/api/vtc/servers", () =>
         {
             var guilds = (_client?.Guilds ?? Array.Empty<SocketGuild>())
@@ -178,14 +198,13 @@ internal static class Program
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             if (string.IsNullOrWhiteSpace(guildId))
-                return Results.Json(new { error = "MissingGuildId", hint = "Provide ?guildId=YOUR_SERVER_ID" }, statusCode: 400);
+                return Results.Json(new { error = "MissingGuildId" }, statusCode: 400);
 
             if (!ulong.TryParse(guildId, out var gid) || _client == null)
                 return Results.Json(new { error = "BadGuildId" }, statusCode: 400);
 
             var g = _client.GetGuild(gid);
             if (g == null) return Results.NotFound(new { error = "GuildNotFound" });
-
             return Results.Ok(new { ok = true, guildId = guildId, vtcName = g.Name ?? "" });
         });
 
@@ -195,16 +214,10 @@ internal static class Program
             {
                 using var reader = new StreamReader(req.Body);
                 var body = await reader.ReadToEndAsync();
-
-                if (string.IsNullOrWhiteSpace(body))
-                    return Results.Json(new { ok = false, error = "EmptyBody" }, statusCode: 400);
-
                 var hb = JsonSerializer.Deserialize<RosterHeartbeat>(body, JsonReadOpts);
-                if (hb == null)
-                    return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
 
-                var guildId = (hb.GuildId ?? "").Trim();
-                var userId = (hb.DiscordUserId ?? "").Trim();
+                var guildId = (hb?.GuildId ?? "").Trim();
+                var userId = (hb?.DiscordUserId ?? "").Trim();
 
                 if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(userId))
                     return Results.Json(new { ok = false, error = "MissingGuildIdOrUserId" }, statusCode: 400);
@@ -216,30 +229,28 @@ internal static class Program
                     {
                         GuildId = guildId,
                         DiscordUserId = userId,
-                        DiscordUsername = (hb.DiscordUsername ?? "").Trim(),
-                        Truck = (hb.Truck ?? "").Trim(),
-                        City = (hb.City ?? "").Trim(),
-                        State = (hb.State ?? "").Trim(),
-                        DutyStatus = (hb.DutyStatus ?? "").Trim(),
+                        DiscordUsername = (hb?.DiscordUsername ?? "").Trim(),
+                        Truck = (hb?.Truck ?? "").Trim(),
+                        City = (hb?.City ?? "").Trim(),
+                        State = (hb?.State ?? "").Trim(),
+                        DutyStatus = (hb?.DutyStatus ?? "").Trim(),
                         LastSeenUtc = DateTimeOffset.UtcNow
                     },
                     (_, existing) =>
                     {
-                        existing.GuildId = guildId;
-
-                        var dn = (hb.DiscordUsername ?? "").Trim();
+                        var dn = (hb?.DiscordUsername ?? "").Trim();
                         if (!string.IsNullOrWhiteSpace(dn)) existing.DiscordUsername = dn;
 
-                        var tr = (hb.Truck ?? "").Trim();
+                        var tr = (hb?.Truck ?? "").Trim();
                         if (!string.IsNullOrWhiteSpace(tr)) existing.Truck = tr;
 
-                        var c = (hb.City ?? "").Trim();
+                        var c = (hb?.City ?? "").Trim();
                         if (!string.IsNullOrWhiteSpace(c)) existing.City = c;
 
-                        var s = (hb.State ?? "").Trim();
+                        var s = (hb?.State ?? "").Trim();
                         if (!string.IsNullOrWhiteSpace(s)) existing.State = s;
 
-                        var ds = (hb.DutyStatus ?? "").Trim();
+                        var ds = (hb?.DutyStatus ?? "").Trim();
                         if (!string.IsNullOrWhiteSpace(ds)) existing.DutyStatus = ds;
 
                         existing.LastSeenUtc = DateTimeOffset.UtcNow;
@@ -259,7 +270,7 @@ internal static class Program
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             if (string.IsNullOrWhiteSpace(guildId))
-                return Results.Json(new { error = "MissingGuildId", hint = "Provide ?guildId=YOUR_SERVER_ID" }, statusCode: 400);
+                return Results.Json(new { error = "MissingGuildId" }, statusCode: 400);
 
             if (!ulong.TryParse(guildId, out var gid) || _client == null)
                 return Results.Json(new { error = "BadGuildId" }, statusCode: 400);
@@ -267,7 +278,6 @@ internal static class Program
             var g = _client.GetGuild(gid);
             if (g == null) return Results.NotFound(new { error = "GuildNotFound" });
 
-            // Force member download for reliable roster
             try { await g.DownloadUsersAsync(); } catch { }
 
             CleanupOldLiveStates();
@@ -283,25 +293,21 @@ internal static class Program
                     var key = $"{guildId}:{uid}";
                     Live.TryGetValue(key, out var live);
 
-                    var truck = live?.Truck ?? "";
-                    var city = live?.City ?? "";
-                    var state = live?.State ?? "";
-                    var duty = live?.DutyStatus ?? "";
-                    var lastSeenUtc = live?.LastSeenUtc ?? DateTimeOffset.MinValue;
-
                     var hbName = live?.DiscordUsername ?? "";
                     if (!string.IsNullOrWhiteSpace(hbName))
                         username = hbName;
+
+                    var lastSeenUtc = live?.LastSeenUtc ?? DateTimeOffset.MinValue;
 
                     return new
                     {
                         discordUserId = uid,
                         discordUsername = username,
                         displayName = display,
-                        truck = truck,
-                        city = city,
-                        state = state,
-                        dutyStatus = duty,
+                        truck = live?.Truck ?? "",
+                        city = live?.City ?? "",
+                        state = live?.State ?? "",
+                        dutyStatus = live?.DutyStatus ?? "",
                         lastSeenUtc = lastSeenUtc == DateTimeOffset.MinValue ? "" : lastSeenUtc.UtcDateTime.ToString("O")
                     };
                 })
@@ -312,87 +318,18 @@ internal static class Program
             return Results.Json(new { ok = true, guildId, drivers = users }, JsonWriteOpts);
         });
 
-        app.MapGet("/api/vtc/announcements", async (HttpRequest req) =>
-        {
-            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(guildId))
-                return Results.Json(new { error = "MissingGuildId", hint = "Provide ?guildId=YOUR_SERVER_ID" }, statusCode: 400);
-
-            if (!ulong.TryParse(guildId, out var gid) || _client == null)
-                return Results.Json(new { error = "BadGuildId" }, statusCode: 400);
-
-            var g = _client.GetGuild(gid);
-            if (g == null) return Results.NotFound(new { error = "GuildNotFound" });
-
-            var key1 = "ANNOUNCEMENTS_CHANNEL_ID_" + guildId;
-            var chanStr = (Environment.GetEnvironmentVariable(key1) ??
-                           Environment.GetEnvironmentVariable("ANNOUNCEMENTS_CHANNEL_ID") ??
-                           "").Trim();
-
-            if (!ulong.TryParse(chanStr, out var chanId))
-                return Results.Ok(new { ok = true, guildId, items = Array.Empty<object>() });
-
-            var chan = g.GetTextChannel(chanId);
-            if (chan == null)
-                return Results.Ok(new { ok = true, guildId, items = Array.Empty<object>() });
-
-            var msgs = await chan.GetMessagesAsync(25).FlattenAsync();
-
-            var items = msgs
-                .OrderBy(m => m.Timestamp)
-                .Select(m => new
-                {
-                    text = m.Content ?? "",
-                    author = m.Author?.Username ?? "Discord",
-                    createdUtc = m.Timestamp.UtcDateTime.ToString("O")
-                })
-                .ToList();
-
-            return Results.Ok(new { ok = true, guildId, items });
-        });
-
-        app.MapGet("/api/vtc/pair/claim", (HttpRequest req) =>
-        {
-            var code = (req.Query["code"].ToString() ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(code))
-                return Results.Json(new { ok = false, error = "MissingCode", message = "Provide ?code=XXXXXX" }, statusCode: 400);
-
-            CleanupExpiredPairs();
-
-            if (!PendingPairs.TryRemove(code, out var p))
-                return Results.Json(new { ok = false, error = "InvalidOrExpiredCode" }, statusCode: 404);
-
-            return Results.Ok(new
-            {
-                ok = true,
-                guildId = p.GuildId,
-                vtcName = p.VtcName,
-                discordUserId = p.DiscordUserId,
-                discordUsername = p.DiscordUsername
-            });
-        });
-
-        // -----------------------------
-        // ✅ Dispatch messaging bridge
-        // -----------------------------
-
-        // ELD -> Discord (posts into #dispatch)
+        // -------- Dispatch bridge --------
         app.MapPost("/api/dispatch/send", async (HttpRequest req) =>
         {
             try
             {
                 using var reader = new StreamReader(req.Body);
                 var body = await reader.ReadToEndAsync();
-                if (string.IsNullOrWhiteSpace(body))
-                    return Results.Json(new { ok = false, error = "EmptyBody" }, statusCode: 400);
-
                 var send = JsonSerializer.Deserialize<DispatchSendRequest>(body, JsonReadOpts);
-                if (send == null)
-                    return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
 
-                var guildId = (send.GuildId ?? "").Trim();
-                var text = (send.Text ?? "").Trim();
-                var from = (send.From ?? "").Trim();
+                var guildId = (send?.GuildId ?? "").Trim();
+                var text = (send?.Text ?? "").Trim();
+                var from = (send?.From ?? "").Trim();
 
                 if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(text))
                     return Results.Json(new { ok = false, error = "MissingGuildIdOrText" }, statusCode: 400);
@@ -408,8 +345,9 @@ internal static class Program
                 if (chan == null)
                     return Results.Json(new { ok = false, error = "DispatchChannelNotFound", hint = "Create #dispatch or set DISPATCH_CHANNEL_ID(_GUILDID)" }, statusCode: 404);
 
-                // Prefer webhook so sender shows "dispatch"
-                var webhookUrl = GetDispatchWebhookUrl(guildId);
+                var webhookUrl = GetWebhookForGuild(guildId);
+
+                // Preferred: webhook posts as "dispatch"
                 if (!string.IsNullOrWhiteSpace(webhookUrl))
                 {
                     var payload = new
@@ -421,13 +359,14 @@ internal static class Program
                     using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
                     using var content = new StringContent(JsonSerializer.Serialize(payload, JsonWriteOpts), Encoding.UTF8, "application/json");
                     var resp = await http.PostAsync(webhookUrl, content);
+
                     if (!resp.IsSuccessStatusCode)
                         return Results.Json(new { ok = false, error = "WebhookPostFailed", status = (int)resp.StatusCode }, statusCode: 502);
 
                     return Results.Ok(new { ok = true, mode = "webhook" });
                 }
 
-                // Fallback: bot posts (sender shows bot name)
+                // Fallback: bot message
                 await chan.SendMessageAsync(string.IsNullOrWhiteSpace(from) ? text : $"[{from}] {text}");
                 return Results.Ok(new { ok = true, mode = "bot" });
             }
@@ -437,13 +376,11 @@ internal static class Program
             }
         });
 
-        // Discord -> ELD (ELD polls this)
-        // Returns last N messages from #dispatch; sender is always "dispatch"
         app.MapGet("/api/dispatch/inbox", async (HttpRequest req) =>
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             var takeStr = (req.Query["take"].ToString() ?? "").Trim();
-            var afterIdStr = (req.Query["afterId"].ToString() ?? "").Trim(); // optional
+            var afterIdStr = (req.Query["afterId"].ToString() ?? "").Trim();
 
             var take = 25;
             if (int.TryParse(takeStr, out var t) && t >= 1 && t <= 100) take = t;
@@ -462,22 +399,18 @@ internal static class Program
             if (chan == null)
                 return Results.Json(new { ok = false, error = "DispatchChannelNotFound" }, statusCode: 404);
 
-            // Pull messages (requires Read Message History permission)
             var msgs = await chan.GetMessagesAsync(take).FlattenAsync();
 
-            // Filter "afterId" if provided (so ELD can poll incrementally)
             if (ulong.TryParse(afterIdStr, out var afterId) && afterId != 0)
                 msgs = msgs.Where(m => m.Id > afterId);
 
             var items = msgs
                 .OrderBy(m => m.Timestamp)
-                .Where(m => m.Author != null)
                 .Select(m => new
                 {
                     id = m.Id.ToString(),
-                    sender = "dispatch", // ✅ your requirement
-                    // keep actual author so you can display it (or embed it into text)
-                    discordAuthor = m.Author.Username ?? "Discord",
+                    sender = "dispatch",
+                    discordAuthor = m.Author?.Username ?? "Discord",
                     text = m.Content ?? "",
                     createdUtc = m.Timestamp.UtcDateTime.ToString("O")
                 })
@@ -486,9 +419,7 @@ internal static class Program
             return Results.Json(new { ok = true, guildId, items }, JsonWriteOpts);
         });
 
-        // -----------------------------
-        // Optional: proxy /api/messages/* to HUB (unchanged)
-        // -----------------------------
+        // -------- Hub proxy (unchanged) --------
         async Task<IResult> ProxyToHub(HttpRequest req)
         {
             var path = req.Path.HasValue ? req.Path.Value! : "/";
@@ -516,7 +447,6 @@ internal static class Program
         app.MapMethods("/api/messages", new[] { "GET", "POST" }, (HttpRequest req) => ProxyToHub(req));
         app.MapMethods("/api/messages/{**rest}", new[] { "GET", "POST" }, (HttpRequest req) => ProxyToHub(req));
 
-        // Start HTTP server
         _ = Task.Run(() => app.RunAsync());
         Console.WriteLine($"🌐 HTTP API listening on 0.0.0.0:{port}");
         Console.WriteLine($"🔁 Hub proxy base: {hubBase}");
@@ -541,6 +471,98 @@ internal static class Program
             return;
         }
 
+        // Admin-only webhook commands
+        if (body.StartsWith("setwebhook", StringComparison.OrdinalIgnoreCase))
+        {
+            if (msg.Channel is not SocketGuildChannel gc)
+            {
+                await msg.Channel.SendMessageAsync("❌ Use this in a server channel.");
+                return;
+            }
+
+            if (!IsAdmin(msg))
+            {
+                await msg.Channel.SendMessageAsync("❌ Admin only.");
+                return;
+            }
+
+            var url = body.Length > 10 ? body.Substring(10).Trim() : "";
+            if (string.IsNullOrWhiteSpace(url) || !url.StartsWith("https://discord.com/api/webhooks/", StringComparison.OrdinalIgnoreCase))
+            {
+                await msg.Channel.SendMessageAsync("Usage: `!setwebhook https://discord.com/api/webhooks/...`");
+                return;
+            }
+
+            SetWebhookForGuild(gc.Guild.Id.ToString(), url);
+            await msg.Channel.SendMessageAsync("✅ Webhook saved for this server. Use `!testwebhook` to verify.");
+            return;
+        }
+
+        if (body.Equals("testwebhook", StringComparison.OrdinalIgnoreCase))
+        {
+            if (msg.Channel is not SocketGuildChannel gc)
+            {
+                await msg.Channel.SendMessageAsync("❌ Use this in a server channel.");
+                return;
+            }
+
+            if (!IsAdmin(msg))
+            {
+                await msg.Channel.SendMessageAsync("❌ Admin only.");
+                return;
+            }
+
+            var guildId = gc.Guild.Id.ToString();
+            var url = GetWebhookForGuild(guildId);
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                await msg.Channel.SendMessageAsync("❌ No webhook set. Use `!setwebhook <url>`.");
+                return;
+            }
+
+            try
+            {
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+                var payload = new { username = "dispatch", content = "✅ dispatch webhook test" };
+                using var content2 = new StringContent(JsonSerializer.Serialize(payload, JsonWriteOpts), Encoding.UTF8, "application/json");
+                var resp = await http.PostAsync(url, content2);
+
+                if (!resp.IsSuccessStatusCode)
+                {
+                    await msg.Channel.SendMessageAsync($"❌ Webhook test failed (HTTP {(int)resp.StatusCode}).");
+                    return;
+                }
+
+                await msg.Channel.SendMessageAsync("✅ Webhook test sent.");
+            }
+            catch
+            {
+                await msg.Channel.SendMessageAsync("❌ Webhook test failed (network error).");
+            }
+
+            return;
+        }
+
+        if (body.Equals("clearwebhook", StringComparison.OrdinalIgnoreCase))
+        {
+            if (msg.Channel is not SocketGuildChannel gc)
+            {
+                await msg.Channel.SendMessageAsync("❌ Use this in a server channel.");
+                return;
+            }
+
+            if (!IsAdmin(msg))
+            {
+                await msg.Channel.SendMessageAsync("❌ Admin only.");
+                return;
+            }
+
+            ClearWebhookForGuild(gc.Guild.Id.ToString());
+            await msg.Channel.SendMessageAsync("✅ Webhook cleared for this server.");
+            return;
+        }
+
+        // Link pairing
         if (body.StartsWith("link", StringComparison.OrdinalIgnoreCase))
         {
             var code = body.Length > 4 ? body.Substring(4).Trim() : "";
@@ -569,27 +591,29 @@ internal static class Program
             var discordUsername = msg.Author.Username ?? "";
 
             CleanupExpiredPairs();
-            PendingPairs[code] = new PendingPair(
-                guildId,
-                vtcName,
-                discordUserId,
-                discordUsername,
-                DateTimeOffset.UtcNow
-            );
+            PendingPairs[code] = new PendingPair(guildId, vtcName, discordUserId, discordUsername, DateTimeOffset.UtcNow);
 
             await msg.Channel.SendMessageAsync("✅ Link code received. Paste it into the ELD to complete pairing.");
             return;
         }
     }
 
-    // -----------------------------
-    // Helpers
-    // -----------------------------
+    private static bool IsAdmin(SocketUserMessage msg)
+    {
+        try
+        {
+            if (msg.Author is SocketGuildUser gu)
+            {
+                // Administrator permission OR ManageGuild permission
+                return gu.GuildPermissions.Administrator || gu.GuildPermissions.ManageGuild;
+            }
+        }
+        catch { }
+        return false;
+    }
+
     private static SocketTextChannel? ResolveDispatchChannel(SocketGuild guild)
     {
-        // 1) Per-guild override: DISPATCH_CHANNEL_ID_<GUILDID>
-        // 2) Global override:     DISPATCH_CHANNEL_ID
-        // 3) Fallback: channel name "dispatch"
         var gid = guild.Id.ToString();
         var key1 = "DISPATCH_CHANNEL_ID_" + gid;
 
@@ -598,43 +622,26 @@ internal static class Program
                        "").Trim();
 
         if (ulong.TryParse(chanStr, out var chanId) && chanId != 0)
-        {
             return guild.GetTextChannel(chanId);
-        }
 
-        // fallback by name
         return guild.TextChannels.FirstOrDefault(c =>
             string.Equals(c.Name, "dispatch", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static string GetDispatchWebhookUrl(string guildId)
-    {
-        // Per guild: DISPATCH_WEBHOOK_URL_<GUILDID>
-        // Global:    DISPATCH_WEBHOOK_URL
-        var key1 = "DISPATCH_WEBHOOK_URL_" + guildId;
-        return (Environment.GetEnvironmentVariable(key1) ??
-                Environment.GetEnvironmentVariable("DISPATCH_WEBHOOK_URL") ??
-                "").Trim();
     }
 
     private static void CleanupExpiredPairs()
     {
         var cutoff = DateTimeOffset.UtcNow.AddMinutes(-10);
         foreach (var kv in PendingPairs)
-        {
             if (kv.Value.CreatedUtc < cutoff)
                 PendingPairs.TryRemove(kv.Key, out _);
-        }
     }
 
     private static void CleanupOldLiveStates()
     {
         var cutoff = DateTimeOffset.UtcNow.AddHours(-2);
         foreach (var kv in Live)
-        {
             if (kv.Value.LastSeenUtc < cutoff)
                 Live.TryRemove(kv.Key, out _);
-        }
     }
 
     private static string NormalizeAbsoluteBaseUrl(string url)
