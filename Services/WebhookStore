@@ -2,30 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
-using System.Threading;
 
 namespace OverWatchELD.VtcBot.Services
 {
-    /// <summary>
-    /// Persists per-guild webhook URLs to a local JSON file.
-    /// Safe for concurrent reads/writes (simple lock).
-    /// </summary>
     public sealed class WebhookStore
     {
         private readonly string _path;
         private readonly object _gate = new();
         private StoreModel _model;
 
-        private static readonly JsonSerializerOptions JsonWrite = new()
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = true
-        };
-
-        private static readonly JsonSerializerOptions JsonRead = new()
-        {
-            PropertyNameCaseInsensitive = true
-        };
+        private static readonly JsonSerializerOptions ReadOpts = new() { PropertyNameCaseInsensitive = true };
+        private static readonly JsonSerializerOptions WriteOpts = new() { WriteIndented = true };
 
         public WebhookStore(string path)
         {
@@ -39,35 +26,18 @@ namespace OverWatchELD.VtcBot.Services
             {
                 if (!File.Exists(path)) return new StoreModel();
                 var json = File.ReadAllText(path);
-                var model = JsonSerializer.Deserialize<StoreModel>(json, JsonRead);
-                return model ?? new StoreModel();
+                return JsonSerializer.Deserialize<StoreModel>(json, ReadOpts) ?? new StoreModel();
             }
-            catch
-            {
-                // If file is corrupted, start fresh (but do not crash bot)
-                return new StoreModel();
-            }
+            catch { return new StoreModel(); }
         }
 
         private void SaveUnsafe()
         {
             Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
             var tmp = _path + ".tmp";
-            var json = JsonSerializer.Serialize(_model, JsonWrite);
-            File.WriteAllText(tmp, json);
-            File.Copy(tmp, _path, overwrite: true);
+            File.WriteAllText(tmp, JsonSerializer.Serialize(_model, WriteOpts));
+            File.Copy(tmp, _path, true);
             try { File.Delete(tmp); } catch { }
-        }
-
-        public IReadOnlyDictionary<string, string> GetGuildWebhooks(ulong guildId)
-        {
-            lock (_gate)
-            {
-                if (_model.Guilds.TryGetValue(guildId.ToString(), out var g))
-                    return new Dictionary<string, string>(g.Webhooks, StringComparer.OrdinalIgnoreCase);
-
-                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            }
         }
 
         public bool TryGet(ulong guildId, string key, out string url)
@@ -85,6 +55,17 @@ namespace OverWatchELD.VtcBot.Services
             }
         }
 
+        public IReadOnlyDictionary<string, string> GetGuild(ulong guildId)
+        {
+            lock (_gate)
+            {
+                if (_model.Guilds.TryGetValue(guildId.ToString(), out var g))
+                    return new Dictionary<string, string>(g.Webhooks, StringComparer.OrdinalIgnoreCase);
+
+                return new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
         public void Set(ulong guildId, string key, string url)
         {
             lock (_gate)
@@ -94,7 +75,6 @@ namespace OverWatchELD.VtcBot.Services
                     g = new GuildModel();
                     _model.Guilds[guildId.ToString()] = g;
                 }
-
                 g.Webhooks[key] = url;
                 SaveUnsafe();
             }
@@ -113,8 +93,6 @@ namespace OverWatchELD.VtcBot.Services
                 return false;
             }
         }
-
-        // ---------------- models ----------------
 
         private sealed class StoreModel
         {
