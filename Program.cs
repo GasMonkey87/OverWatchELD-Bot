@@ -7,7 +7,7 @@
 // ✅ Keeps !setupdispatch + !announcement working (MessageReceived wired)
 // ✅ No RestWebhook.Url (build webhook URL from Id+Token)
 // ✅ ADD: VTC Roster API + !rosterLink + !rosterlist (manual drivers)  (NO changes to locked messaging/login behavior)
-// ✅ ADD BACK: !link CODE (DM the bot) -> calls Companion API /api/vtc/link/confirm so Login shows Linked
+// ✅ ADD BACK: !link <CODE> -> calls ELD Companion API /api/vtc/link/confirm so Login shows Linked ✅
 
 using System;
 using System.Collections.Generic;
@@ -260,6 +260,76 @@ internal static class Program
         return ulong.TryParse(raw, out var id) ? id : null;
     }
 
+    // -----------------------------
+    // ✅ ELD Link Confirm (for !link CODE)
+    // Calls local ELD companion host (default 127.0.0.1:5234)
+    // -----------------------------
+    private sealed class EldLinkConfirmReq
+    {
+        public string? Code { get; set; }
+        public string? DiscordUserId { get; set; }
+        public string? DiscordUserName { get; set; }
+    }
+
+    private sealed class EldLinkConfirmResp
+    {
+        public bool Ok { get; set; }
+        public string? Error { get; set; }
+        public string? Message { get; set; }
+    }
+
+    private static string GetEldCompanionBaseUrl()
+    {
+        // If you ever need to override:
+        // set env var ELD_COMPANION_URL=http://127.0.0.1:5234
+        var env = (Environment.GetEnvironmentVariable("ELD_COMPANION_URL") ?? "").Trim();
+        if (!string.IsNullOrWhiteSpace(env)) return env.TrimEnd('/');
+        return "http://127.0.0.1:5234";
+    }
+
+    private static async Task<(bool ok, string msg)> TryConfirmEldLinkAsync(string code, ulong discordUserId, string discordUserName)
+    {
+        try
+        {
+            var baseUrl = GetEldCompanionBaseUrl().TrimEnd('/');
+            var url = baseUrl + "/api/vtc/link/confirm";
+
+            var payload = new EldLinkConfirmReq
+            {
+                Code = (code ?? "").Trim(),
+                DiscordUserId = discordUserId.ToString(),
+                DiscordUserName = (discordUserName ?? "").Trim()
+            };
+
+            var json = JsonSerializer.Serialize(payload, JsonWriteOpts);
+            using var resp = await _http.PostAsync(url, new StringContent(json, Encoding.UTF8, "application/json"));
+            var body = await resp.Content.ReadAsStringAsync();
+
+            if (!resp.IsSuccessStatusCode)
+                return (false, $"ELD confirm failed ({(int)resp.StatusCode}).");
+
+            EldLinkConfirmResp? parsed = null;
+            try { parsed = JsonSerializer.Deserialize<EldLinkConfirmResp>(body, JsonReadOpts); } catch { }
+
+            if (parsed != null && parsed.Ok)
+                return (true, "✅ Linked! Return to the ELD login screen — it should show **Linked ✅**.");
+
+            // If response isn't standard, treat HTTP 200 as success-ish
+            if (parsed == null)
+                return (true, "✅ Linked! Return to the ELD login screen — it should show **Linked ✅**.");
+
+            var why = (parsed.Error ?? parsed.Message ?? "UnknownError").Trim();
+            return (false, $"❌ Link rejected: {why}");
+        }
+        catch
+        {
+            return (false,
+                "❌ Could not reach the ELD companion API.\n" +
+                "If your bot is hosted online (Railway), it cannot reach your PC.\n" +
+                "Run the bot locally on the same machine as the ELD.");
+        }
+    }
+
     private sealed class DispatchSettings
     {
         public string GuildId { get; set; } = "";
@@ -388,64 +458,6 @@ internal static class Program
         public string? GuildId { get; set; }
         public string? Text { get; set; }
         public string? Author { get; set; }
-    }
-
-    // -----------------------------
-    // ✅ LINKING: Discord DM -> Companion /api/vtc/link/confirm
-    // Env vars required on BOT host:
-    //   COMPANION_API_BASE_URL  (e.g. http://127.0.0.1:5080 or https://your-companion-host)
-    //   BOT_LINK_SECRET         (must match vtc.config.json Linking.BotLinkSecret)
-    // -----------------------------
-    private sealed class LinkConfirmReq
-    {
-        public string? Code { get; set; }
-        public string? DiscordUserId { get; set; }
-        public string? DiscordUsername { get; set; }
-    }
-
-    private static async Task<(bool ok, string message)> ConfirmLinkWithCompanionAsync(string code, SocketUser user)
-    {
-        code = (code ?? "").Trim().ToUpperInvariant();
-        if (string.IsNullOrWhiteSpace(code))
-            return (false, "Usage: `!link CODE` (example: `!link WH4G6P`)");
-
-        var baseUrl = (Environment.GetEnvironmentVariable("COMPANION_API_BASE_URL") ?? "").Trim().TrimEnd('/');
-        if (string.IsNullOrWhiteSpace(baseUrl))
-            return (false, "❌ Bot is missing COMPANION_API_BASE_URL env var.");
-
-        var secret = (Environment.GetEnvironmentVariable("BOT_LINK_SECRET") ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(secret))
-            return (false, "❌ Bot is missing BOT_LINK_SECRET env var.");
-
-        var url = baseUrl + "/api/vtc/link/confirm";
-
-        var payload = new LinkConfirmReq
-        {
-            Code = code,
-            DiscordUserId = user.Id.ToString(),
-            DiscordUsername = user.Username
-        };
-
-        try
-        {
-            var json = JsonSerializer.Serialize(payload, JsonWriteOpts);
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, url);
-            req.Headers.TryAddWithoutValidation("X-Link-Secret", secret);
-            req.Content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            using var resp = await _http.SendAsync(req);
-            var body = await resp.Content.ReadAsStringAsync();
-
-            if (!resp.IsSuccessStatusCode)
-                return (false, $"❌ Link failed ({(int)resp.StatusCode}). {body}");
-
-            return (true, "✅ Linked! Go back to the ELD Login window — it should show Linked/Accepted.");
-        }
-        catch (Exception ex)
-        {
-            return (false, $"❌ Link error: {ex.Message}");
-        }
     }
 
     public static async Task Main()
@@ -985,34 +997,32 @@ internal static class Program
             return;
         }
 
-        // ✅ Allow !link in DM (and basic help)
+        // Parse command early (so !link works in DMs too)
+        var body0 = content.Length > 1 ? content[1..].Trim() : "";
+        var parts0 = body0.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var cmd0 = (parts0.Length > 0 ? parts0[0] : "").Trim().ToLowerInvariant();
+        var arg0 = (parts0.Length > 1 ? parts0[1] : "").Trim();
+
+        // ✅ ADD BACK: !link <CODE> (DM or server)
+        if (cmd0 == "link")
+        {
+            var code = (arg0 ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                await msg.Channel.SendMessageAsync("Usage: `!link YOURCODE` (example: `!link WH4G6P`)");
+                return;
+            }
+
+            var who = (msg.Author.Username ?? "User").Trim();
+            var (ok, reply) = await TryConfirmEldLinkAsync(code, msg.Author.Id, who);
+            await msg.Channel.SendMessageAsync(reply);
+            return;
+        }
+
         if (msg.Channel is not SocketGuildChannel guildChan)
         {
-            var bodyDm = content[1..].Trim();
-            var partsDm = bodyDm.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-            var cmdDm = (partsDm.Length > 0 ? partsDm[0] : "").Trim().ToLowerInvariant();
-            var argDm = (partsDm.Length > 1 ? partsDm[1] : "").Trim();
-
-            if (cmdDm == "help")
-            {
-                await msg.Channel.SendMessageAsync(
-                    "DM Commands:\n" +
-                    "• !link CODE\n" +
-                    "Example: `!link WH4G6P`\n"
-                );
-                return;
-            }
-
-            if (cmdDm == "link")
-            {
-                var (_, message) = await ConfirmLinkWithCompanionAsync(argDm, msg.Author);
-                await msg.Channel.SendMessageAsync(message);
-                return;
-            }
-
-            // keep existing behavior for non-guild channels
-            if (content.Equals("!help", StringComparison.OrdinalIgnoreCase))
-                await msg.Channel.SendMessageAsync("Use !link CODE in DM, or !setupdispatch / !announcement / !rosterlink inside a server.");
+            if (cmd0 == "help")
+                await msg.Channel.SendMessageAsync("Use !setupdispatch / !announcement / !rosterlink inside a server.\nYou can use `!link CODE` in DMs too.");
             return;
         }
 
@@ -1031,13 +1041,13 @@ internal static class Program
         {
             await msg.Channel.SendMessageAsync(
                 "Commands:\n" +
+                "• !link <CODE> (driver)\n" +
                 "• !setupdispatch #channel (admin)\n" +
                 "• !setdispatchwebhook <url> (admin)\n" +
                 "• !announcement #channel (admin)\n" +
                 "• !setannouncementwebhook <url> (admin)\n" +
                 "• !rosterlink @user | DriverName (admin)\n" +
                 "• !rosterlist (admin)\n" +
-                "• !link CODE (DM the bot)\n" +
                 "• !ping\n"
             );
             return;
