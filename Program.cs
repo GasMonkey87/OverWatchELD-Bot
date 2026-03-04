@@ -15,6 +15,12 @@
 //    - logs/inspections/bols: returns webhookUrl (ELD stores it)
 //    - announcement: ALSO saves AnnouncementChannelId + AnnouncementWebhookUrl into dispatch_settings.json
 //
+// ✅ NEW UPGRADE: Performance tracking + Leaderboard
+//    - Slash commands: /performance, /leaderboard
+//    - Push endpoint: POST /api/performance/update?guildId=...
+//    - Top endpoint:  GET  /api/performance/top?guildId=...&take=10
+//    - Optional pull-refresh failsafe from ELD: set env ELD_BASE_URL, bot will periodically pull /api/performance?guildId=...
+//
 // ⚠️ Nothing else changed.
 
 using System;
@@ -27,6 +33,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using Discord;
 using Discord.Rest;
@@ -46,6 +53,10 @@ internal static class Program
 
     // ✅ 2-line guard support (prevents duplicate MessageReceived handlers)
     private static bool _messageHandlerAttached = false;
+
+    // ✅ Slash command guard (prevents duplicate registration)
+    private static bool _slashWired = false;
+    private static bool _slashRegisteredOnce = false;
 
     private static readonly JsonSerializerOptions JsonReadOpts = new() { PropertyNameCaseInsensitive = true };
     private static readonly JsonSerializerOptions JsonWriteOpts = new()
@@ -83,6 +94,13 @@ internal static class Program
     private static readonly string LinkedDriversPath = Path.Combine(DataDir, "linked_drivers.json");
 
     // -----------------------------
+    // ✅ Performance Store (Miles + Loads + Performance%)
+    // Stored at: data/performance_<guildId>.json
+    // -----------------------------
+    private static PerformanceStore? _perfStore;
+    private static readonly string PerfDir = Path.Combine(DataDir, "performance");
+
+    // -----------------------------
     // Models
     // -----------------------------
     private sealed class VtcDriver
@@ -96,6 +114,162 @@ internal static class Program
         public string? Notes { get; set; }
         public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
         public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    // -----------------------------
+    // ✅ Performance models
+    // -----------------------------
+    private sealed class DriverPerformance
+    {
+        public string DiscordUserId { get; set; } = "";
+
+        public double MilesWeek { get; set; }
+        public double MilesMonth { get; set; }
+        public double MilesTotal { get; set; }
+
+        public int LoadsWeek { get; set; }
+        public int LoadsMonth { get; set; }
+        public int LoadsTotal { get; set; }
+
+        public double PerformancePct { get; set; } // 0..100 (from ELD)
+        public double Score { get; set; }          // computed here
+        public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
+
+        public string? Source { get; set; }        // optional "eld"
+    }
+
+    private static class PerformanceScoring
+    {
+        // Miles + Loads + Performance %
+        // You can tune these later without changing payload/storage.
+        public static double ComputeScore(DriverPerformance p)
+        {
+            var miles = p.MilesWeek * 1.0;
+            var loads = p.LoadsWeek * 250.0;
+            var pct = p.PerformancePct * 500.0;
+            return miles + loads + pct;
+        }
+    }
+
+    private sealed class PerformanceStore
+    {
+        private readonly string _dir;
+        private readonly object _lock = new();
+
+        public PerformanceStore(string dir)
+        {
+            _dir = dir;
+            Directory.CreateDirectory(_dir);
+        }
+
+        private string PathForGuild(string guildId)
+        {
+            guildId = (guildId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
+            return System.IO.Path.Combine(_dir, $"performance_{guildId}.json");
+        }
+
+        // guild file: discordUserId -> performance
+        public Dictionary<string, DriverPerformance> Load(string guildId)
+        {
+            var path = PathForGuild(guildId);
+            lock (_lock)
+            {
+                try
+                {
+                    if (!File.Exists(path)) return new Dictionary<string, DriverPerformance>(StringComparer.OrdinalIgnoreCase);
+                    var json = File.ReadAllText(path);
+                    var dict = JsonSerializer.Deserialize<Dictionary<string, DriverPerformance>>(json, JsonReadOpts);
+                    return dict != null
+                        ? new Dictionary<string, DriverPerformance>(dict, StringComparer.OrdinalIgnoreCase)
+                        : new Dictionary<string, DriverPerformance>(StringComparer.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    return new Dictionary<string, DriverPerformance>(StringComparer.OrdinalIgnoreCase);
+                }
+            }
+        }
+
+        public void Save(string guildId, Dictionary<string, DriverPerformance> dict)
+        {
+            var path = PathForGuild(guildId);
+            lock (_lock)
+            {
+                try
+                {
+                    Directory.CreateDirectory(System.IO.Path.GetDirectoryName(path) ?? _dir);
+                    File.WriteAllText(path, JsonSerializer.Serialize(dict, JsonWriteOpts));
+                }
+                catch { }
+            }
+        }
+
+        public void Upsert(string guildId, DriverPerformance perf)
+        {
+            guildId = (guildId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
+
+            var uid = (perf?.DiscordUserId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(uid)) return;
+
+            var dict = Load(guildId);
+
+            perf.DiscordUserId = uid;
+            perf.UpdatedUtc = DateTimeOffset.UtcNow;
+            perf.Score = PerformanceScoring.ComputeScore(perf);
+
+            dict[uid] = perf;
+            Save(guildId, dict);
+        }
+
+        public (DriverPerformance? perf, int rank, int total) GetWithRank(string guildId, string discordUserId)
+        {
+            guildId = (guildId ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
+            discordUserId = (discordUserId ?? "").Trim();
+
+            var dict = Load(guildId);
+            if (!dict.TryGetValue(discordUserId, out var me))
+                return (null, 0, dict.Count);
+
+            // compute scores + rank
+            var list = dict.Values
+                .Select(p =>
+                {
+                    p.Score = PerformanceScoring.ComputeScore(p);
+                    return p;
+                })
+                .OrderByDescending(p => p.Score)
+                .ThenByDescending(p => p.PerformancePct)
+                .ThenByDescending(p => p.MilesWeek)
+                .ThenByDescending(p => p.LoadsWeek)
+                .ToList();
+
+            var idx = list.FindIndex(x => string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
+            var rank = idx >= 0 ? idx + 1 : 0;
+            return (me, rank, list.Count);
+        }
+
+        public List<DriverPerformance> GetTop(string guildId, int take)
+        {
+            if (take <= 0) take = 10;
+            if (take > 50) take = 50;
+
+            var dict = Load(guildId);
+            return dict.Values
+                .Select(p =>
+                {
+                    p.Score = PerformanceScoring.ComputeScore(p);
+                    return p;
+                })
+                .OrderByDescending(p => p.Score)
+                .ThenByDescending(p => p.PerformancePct)
+                .ThenByDescending(p => p.MilesWeek)
+                .ThenByDescending(p => p.LoadsWeek)
+                .Take(take)
+                .ToList();
+        }
     }
 
     private sealed class VtcRosterStore
@@ -619,6 +793,7 @@ internal static class Program
     public static async Task Main()
     {
         Directory.CreateDirectory(DataDir);
+        Directory.CreateDirectory(PerfDir);
 
         _threadStore = new ThreadMapStore(ThreadMapPath);
         _dispatchStore = new DispatchSettingsStore(DispatchCfgPath);
@@ -626,6 +801,8 @@ internal static class Program
 
         _linkCodeStore = new LinkCodeStore(LinkCodesPath);
         _linkedDriversStore = new LinkedDriversStore(LinkedDriversPath);
+
+        _perfStore = new PerformanceStore(PerfDir);
 
         var token = (Environment.GetEnvironmentVariable("DISCORD_TOKEN") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(token))
@@ -643,11 +820,41 @@ internal static class Program
                 GatewayIntents.GuildMembers
         });
 
-        _client.Ready += () =>
+        _client.Ready += async () =>
         {
             _discordReady = true;
             Console.WriteLine("✅ Discord client READY");
-            return Task.CompletedTask;
+
+            // ✅ Wire slash interactions exactly once
+            if (!_slashWired)
+            {
+                _client.InteractionCreated += HandleInteractionAsync;
+                _client.GuildAvailable += async g =>
+                {
+                    try { await RegisterSlashCommandsForGuildAsync(g); } catch { }
+                };
+                _slashWired = true;
+            }
+
+            // ✅ Register slash commands once on startup for all current guilds
+            if (!_slashRegisteredOnce)
+            {
+                _slashRegisteredOnce = true;
+                try
+                {
+                    foreach (var g in _client.Guilds)
+                    {
+                        try { await RegisterSlashCommandsForGuildAsync(g); } catch { }
+                    }
+                    Console.WriteLine("✅ Slash commands registered (guild-scoped).");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("⚠️ Slash command register failed: " + ex.Message);
+                }
+            }
+
+            return;
         };
 
         _client.Log += msg =>
@@ -667,6 +874,9 @@ internal static class Program
         await _client.LoginAsync(TokenType.Bot, token);
         await _client.StartAsync();
 
+        // ✅ Optional: background pull refresh loop (failsafe)
+        _ = Task.Run(() => PerformancePullLoopAsync());
+
         var portStr = (Environment.GetEnvironmentVariable("PORT") ?? "8080").Trim();
         if (!int.TryParse(portStr, out var port)) port = 8080;
 
@@ -675,7 +885,7 @@ internal static class Program
         var app = builder.Build();
 
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
-        app.MapGet("/build", () => Results.Ok(new { ok = true, name = "OverWatchELD.VtcBot", version = "link-eld-claim+webhook-create" }));
+        app.MapGet("/build", () => Results.Ok(new { ok = true, name = "OverWatchELD.VtcBot", version = "link-eld-claim+webhook-create+performance-slash" }));
 
         var api = app.MapGroup("/api");
         var api2 = app.MapGroup("/api/api"); // double-api safety
@@ -798,6 +1008,69 @@ internal static class Program
             {
                 return Results.Json(new { ok = false, error = "WebhookCreateFailed", message = ex.Message }, statusCode: 500);
             }
+        });
+
+        // -----------------------------
+        // ✅ NEW: Performance PUSH (ELD -> Bot)
+        // POST /api/performance/update?guildId=...
+        // Body: DriverPerformance JSON
+        // -----------------------------
+        r.MapPost("/performance/update", async (HttpRequest req) =>
+        {
+            if (_perfStore == null)
+                return Results.Json(new { ok = false, error = "PerfStoreNotReady" }, statusCode: 503);
+
+            var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
+            var guild = ResolveGuild(gidStr);
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            DriverPerformance? payload;
+            try { payload = await JsonSerializer.DeserializeAsync<DriverPerformance>(req.Body, JsonReadOpts); }
+            catch { payload = null; }
+
+            if (payload == null || string.IsNullOrWhiteSpace(payload.DiscordUserId))
+                return Results.Json(new { ok = false, error = "BadJsonOrMissingDiscordUserId" }, statusCode: 400);
+
+            payload.DiscordUserId = (payload.DiscordUserId ?? "").Trim();
+            payload.PerformancePct = Math.Clamp(payload.PerformancePct, 0, 100);
+            payload.Score = PerformanceScoring.ComputeScore(payload);
+
+            _perfStore.Upsert(guild.Id.ToString(), payload);
+
+            var (_, rank, total) = _perfStore.GetWithRank(guild.Id.ToString(), payload.DiscordUserId);
+
+            return Results.Json(new
+            {
+                ok = true,
+                guildId = guild.Id.ToString(),
+                discordUserId = payload.DiscordUserId,
+                score = payload.Score,
+                rank,
+                total
+            }, JsonWriteOpts);
+        });
+
+        // -----------------------------
+        // ✅ NEW: Performance TOP (for UI/debug)
+        // GET /api/performance/top?guildId=...&take=10
+        // -----------------------------
+        r.MapGet("/performance/top", (HttpRequest req) =>
+        {
+            if (_perfStore == null)
+                return Results.Json(new { ok = false, error = "PerfStoreNotReady" }, statusCode: 503);
+
+            var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
+            var guild = ResolveGuild(gidStr);
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            var takeStr = (req.Query["take"].ToString() ?? "10").Trim();
+            if (!int.TryParse(takeStr, out var take)) take = 10;
+            take = Math.Clamp(take, 1, 50);
+
+            var top = _perfStore.GetTop(guild.Id.ToString(), take);
+            return Results.Json(new { ok = true, guildId = guild.Id.ToString(), top }, JsonWriteOpts);
         });
 
         // -----------------------------
@@ -1243,6 +1516,267 @@ internal static class Program
     }
 
     // -----------------------------
+    // ✅ Slash Commands: /performance, /leaderboard
+    // -----------------------------
+    private static async Task RegisterSlashCommandsForGuildAsync(SocketGuild guild)
+    {
+        if (_client == null) return;
+
+        // Guild-scoped commands = instant updates (no global propagation delay).
+        // If missing permissions, this will fail silently and you can rely on prefix commands.
+        try
+        {
+            var perf = new SlashCommandBuilder()
+                .WithName("performance")
+                .WithDescription("Show your current performance and rank in this VTC.");
+
+            var leaderboard = new SlashCommandBuilder()
+                .WithName("leaderboard")
+                .WithDescription("Show the top drivers leaderboard for this VTC.")
+                .AddOption(new SlashCommandOptionBuilder()
+                    .WithName("take")
+                    .WithDescription("How many drivers to show (default 10, max 25).")
+                    .WithType(ApplicationCommandOptionType.Integer)
+                    .WithRequired(false));
+
+            // Upsert by name (delete+create is simplest & reliable)
+            // We attempt delete first; ignore failures.
+            try
+            {
+                var existing = await guild.GetApplicationCommandsAsync();
+                foreach (var cmd in existing)
+                {
+                    if (cmd.Name.Equals("performance", StringComparison.OrdinalIgnoreCase) ||
+                        cmd.Name.Equals("leaderboard", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try { await cmd.DeleteAsync(); } catch { }
+                    }
+                }
+            }
+            catch { }
+
+            await guild.CreateApplicationCommandAsync(perf.Build());
+            await guild.CreateApplicationCommandAsync(leaderboard.Build());
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Slash register failed for guild {guild.Id}: {ex.Message}");
+        }
+    }
+
+    private static async Task HandleInteractionAsync(SocketInteraction inter)
+    {
+        try
+        {
+            if (inter is SocketSlashCommand slash)
+            {
+                var name = (slash.Data?.Name ?? "").Trim().ToLowerInvariant();
+                if (name == "performance")
+                {
+                    await HandleSlashPerformanceAsync(slash);
+                    return;
+                }
+                if (name == "leaderboard")
+                {
+                    await HandleSlashLeaderboardAsync(slash);
+                    return;
+                }
+            }
+        }
+        catch { }
+
+        try
+        {
+            // If we didn't handle it, ack so Discord doesn't show "interaction failed"
+            if (!inter.HasResponded)
+                await inter.RespondAsync("⚠️ Command not handled.", ephemeral: true);
+        }
+        catch { }
+    }
+
+    private static async Task HandleSlashPerformanceAsync(SocketSlashCommand cmd)
+    {
+        if (_perfStore == null)
+        {
+            await cmd.RespondAsync("❌ Performance store not ready.", ephemeral: true);
+            return;
+        }
+
+        if (cmd.GuildId == null || cmd.GuildId.Value == 0)
+        {
+            await cmd.RespondAsync("❌ Run this command inside your VTC server (not DM).", ephemeral: true);
+            return;
+        }
+
+        var guildIdStr = cmd.GuildId.Value.ToString();
+        var userIdStr = cmd.User.Id.ToString();
+
+        var (perf, rank, total) = _perfStore.GetWithRank(guildIdStr, userIdStr);
+        if (perf == null)
+        {
+            await cmd.RespondAsync("📊 No performance data yet for you.\nMake sure your ELD is paired and sending performance updates.", ephemeral: true);
+            return;
+        }
+
+        // small “top 5” preview
+        var top5 = _perfStore.GetTop(guildIdStr, 5);
+        var topLines = new List<string>();
+        for (int i = 0; i < top5.Count; i++)
+        {
+            var p = top5[i];
+            var tag = p.DiscordUserId == userIdStr ? "**(you)**" : "";
+            topLines.Add($"`#{i + 1}` <@{p.DiscordUserId}> — **{p.Score:n0}** {tag}");
+        }
+
+        var eb = new EmbedBuilder()
+            .WithTitle("🏁 Your Performance")
+            .WithDescription($"Rank **#{rank}** of **{total}** drivers\n\n**Top 5 (Score):**\n{string.Join("\n", topLines)}")
+            .AddField("Week Miles", $"{perf.MilesWeek:n0}", true)
+            .AddField("Week Loads", $"{perf.LoadsWeek:n0}", true)
+            .AddField("Performance %", $"{perf.PerformancePct:0.0}%", true)
+            .AddField("Month Miles", $"{perf.MilesMonth:n0}", true)
+            .AddField("Month Loads", $"{perf.LoadsMonth:n0}", true)
+            .AddField("Score", $"{perf.Score:n0}", true)
+            .WithFooter($"Last updated: {perf.UpdatedUtc:yyyy-MM-dd HH:mm} UTC");
+
+        await cmd.RespondAsync(embed: eb.Build(), ephemeral: false);
+    }
+
+    private static async Task HandleSlashLeaderboardAsync(SocketSlashCommand cmd)
+    {
+        if (_perfStore == null)
+        {
+            await cmd.RespondAsync("❌ Performance store not ready.", ephemeral: true);
+            return;
+        }
+
+        if (cmd.GuildId == null || cmd.GuildId.Value == 0)
+        {
+            await cmd.RespondAsync("❌ Run this command inside your VTC server (not DM).", ephemeral: true);
+            return;
+        }
+
+        int take = 10;
+        try
+        {
+            var opt = cmd.Data.Options.FirstOrDefault(x => x.Name == "take");
+            if (opt?.Value != null)
+            {
+                if (int.TryParse(opt.Value.ToString(), out var v)) take = v;
+            }
+        }
+        catch { }
+
+        take = Math.Clamp(take, 1, 25);
+
+        var guildIdStr = cmd.GuildId.Value.ToString();
+        var top = _perfStore.GetTop(guildIdStr, take);
+
+        if (top.Count == 0)
+        {
+            await cmd.RespondAsync("📊 No performance data yet.\nOnce ELD starts sending updates, the leaderboard will populate.", ephemeral: true);
+            return;
+        }
+
+        var lines = new List<string>();
+        for (int i = 0; i < top.Count; i++)
+        {
+            var p = top[i];
+            lines.Add($"`#{i + 1}` <@{p.DiscordUserId}> — **{p.Score:n0}** | {p.MilesWeek:n0} mi | {p.LoadsWeek} loads | {p.PerformancePct:0.0}%");
+        }
+
+        var eb = new EmbedBuilder()
+            .WithTitle("🏆 VTC Leaderboard")
+            .WithDescription(string.Join("\n", lines))
+            .WithFooter("Ranking = Miles (week) + Loads (week) + Performance% (overall)");
+
+        await cmd.RespondAsync(embed: eb.Build(), ephemeral: false);
+    }
+
+    // -----------------------------
+    // ✅ Optional Pull Refresh Loop (failsafe)
+    // Bot will call: GET {ELD_BASE_URL}/api/performance?guildId=...
+    // Expected response: { ok:true, drivers:[ DriverPerformance ... ] } OR plain array of DriverPerformance
+    // Safe no-op if ELD_BASE_URL not set.
+    // -----------------------------
+    private static async Task PerformancePullLoopAsync()
+    {
+        var baseUrl = (Environment.GetEnvironmentVariable("ELD_BASE_URL") ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return; // no-op unless configured
+
+        if (!baseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        while (true)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(2));
+
+                if (_client == null || !_discordReady || _perfStore == null) continue;
+
+                foreach (var g in _client.Guilds)
+                {
+                    try
+                    {
+                        var url = $"{baseUrl.TrimEnd('/')}/api/performance?guildId={g.Id}";
+                        using var resp = await _http.GetAsync(url);
+                        if (!resp.IsSuccessStatusCode) continue;
+
+                        var json = await resp.Content.ReadAsStringAsync();
+                        if (string.IsNullOrWhiteSpace(json)) continue;
+
+                        List<DriverPerformance>? drivers = null;
+
+                        // Try wrapped object first: { ok, drivers:[...] }
+                        try
+                        {
+                            using var doc = JsonDocument.Parse(json);
+                            if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                                doc.RootElement.TryGetProperty("drivers", out var dEl) &&
+                                dEl.ValueKind == JsonValueKind.Array)
+                            {
+                                drivers = JsonSerializer.Deserialize<List<DriverPerformance>>(dEl.GetRawText(), JsonReadOpts);
+                            }
+                        }
+                        catch { }
+
+                        // Try raw array fallback
+                        if (drivers == null)
+                        {
+                            try
+                            {
+                                if (json.TrimStart().StartsWith("["))
+                                    drivers = JsonSerializer.Deserialize<List<DriverPerformance>>(json, JsonReadOpts);
+                            }
+                            catch { }
+                        }
+
+                        if (drivers == null || drivers.Count == 0) continue;
+
+                        foreach (var p in drivers)
+                        {
+                            if (p == null) continue;
+                            p.DiscordUserId = (p.DiscordUserId ?? "").Trim();
+                            if (string.IsNullOrWhiteSpace(p.DiscordUserId)) continue;
+                            p.PerformancePct = Math.Clamp(p.PerformancePct, 0, 100);
+                            p.Score = PerformanceScoring.ComputeScore(p);
+                            p.Source = "eld-pull";
+                            _perfStore.Upsert(g.Id.ToString(), p);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch
+            {
+                // swallow loop errors
+            }
+        }
+    }
+
+    // -----------------------------
     // Discord prefix commands
     // -----------------------------
     private static async Task HandleMessageAsync(SocketMessage socketMsg)
@@ -1350,7 +1884,10 @@ internal static class Program
                 "• !setannouncementwebhook <url> (admin)\n" +
                 "• !rosterlink @user | DriverName (admin)\n" +
                 "• !rosterlist (admin)\n" +
-                "• !ping\n"
+                "• !ping\n" +
+                "\nSlash Commands:\n" +
+                "• /performance\n" +
+                "• /leaderboard\n"
             );
             return;
         }
