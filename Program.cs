@@ -9,6 +9,13 @@
 // ✅ Keeps VTC Roster API + !rosterLink + !rosterlist (manual drivers)
 // ✅ ✅ FIXED: Discord command !link now generates/accepts a pairing code that ELD can claim
 // ✅ ✅ FIXED: /api/vtc/pair/claim?code=... now returns guildId/vtcName/discordUserId/discordUsername (like ELD expects)
+//
+// ✅ NEW UPGRADE: API webhook creator for ELD Settings:
+//    POST /api/vtc/webhook/create?guildId=...&channelId=...&type=logs|inspections|bols|announcement
+//    - logs/inspections/bols: returns webhookUrl (ELD stores it)
+//    - announcement: ALSO saves AnnouncementChannelId + AnnouncementWebhookUrl into dispatch_settings.json
+//
+// ⚠️ Nothing else changed.
 
 using System;
 using System.Collections.Generic;
@@ -668,7 +675,7 @@ internal static class Program
         var app = builder.Build();
 
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
-        app.MapGet("/build", () => Results.Ok(new { ok = true, name = "OverWatchELD.VtcBot", version = "link-eld-claim" }));
+        app.MapGet("/build", () => Results.Ok(new { ok = true, name = "OverWatchELD.VtcBot", version = "link-eld-claim+webhook-create" }));
 
         var api = app.MapGroup("/api");
         var api2 = app.MapGroup("/api/api"); // double-api safety
@@ -725,6 +732,75 @@ internal static class Program
         });
 
         // -----------------------------
+        // ✅ NEW: ELD Settings Webhook Creator (Logs / Inspections / BOLs / Announcement)
+        // POST /api/vtc/webhook/create?guildId=...&channelId=...&type=logs|inspections|bols|announcement
+        // - logs/inspections/bols: returns webhookUrl (ELD stores it)
+        // - announcement: ALSO saves in dispatch_settings.json for announcements API usage
+        // -----------------------------
+        r.MapPost("/vtc/webhook/create", async (HttpRequest req) =>
+        {
+            if (_client == null || !_discordReady)
+                return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+
+            var guildIdStr = (req.Query["guildId"].ToString() ?? "").Trim();
+            var channelIdStr = (req.Query["channelId"].ToString() ?? "").Trim();
+            var type = (req.Query["type"].ToString() ?? "").Trim().ToLowerInvariant();
+
+            if (!ulong.TryParse(guildIdStr, out var gid) || gid == 0)
+                return Results.Json(new { ok = false, error = "InvalidGuildId" }, statusCode: 400);
+
+            if (!ulong.TryParse(channelIdStr, out var cid) || cid == 0)
+                return Results.Json(new { ok = false, error = "InvalidChannelId" }, statusCode: 400);
+
+            var guild = _client.Guilds.FirstOrDefault(x => x.Id == gid);
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            var ch = guild.GetTextChannel(cid);
+            if (ch == null)
+                return Results.Json(new { ok = false, error = "ChannelNotFound" }, statusCode: 404);
+
+            var hookName = type switch
+            {
+                "logs" => "OverWatchELD Logs",
+                "inspections" => "OverWatchELD Inspections",
+                "bols" => "OverWatchELD BOLs",
+                "announcement" => "OverWatchELD Announcements",
+                "announcements" => "OverWatchELD Announcements",
+                _ => "OverWatchELD"
+            };
+
+            try
+            {
+                var hook = await ch.CreateWebhookAsync(hookName);
+                var token = (hook.Token ?? "").Trim();
+                var url = string.IsNullOrWhiteSpace(token) ? "" : $"https://discord.com/api/webhooks/{hook.Id}/{token}";
+
+                // If this is announcement, persist into dispatch settings (so /vtc/announcements works)
+                if (_dispatchStore != null && (type == "announcement" || type == "announcements"))
+                {
+                    _dispatchStore.SetAnnouncementChannel(gid.ToString(), ch.Id);
+                    if (!string.IsNullOrWhiteSpace(url))
+                        _dispatchStore.SetAnnouncementWebhook(gid.ToString(), url);
+                }
+
+                return Results.Json(new
+                {
+                    ok = true,
+                    type,
+                    guildId = gid.ToString(),
+                    channelId = ch.Id.ToString(),
+                    webhookUrl = url,
+                    saved = (type == "announcement" || type == "announcements")
+                }, JsonWriteOpts);
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(new { ok = false, error = "WebhookCreateFailed", message = ex.Message }, statusCode: 500);
+            }
+        });
+
+        // -----------------------------
         // ✅ ELD PAIRING CLAIM (classic flow)
         // GET /api/vtc/pair/claim?code=ABC123
         // Bot consumes code created by !link and returns identity + guild
@@ -747,9 +823,9 @@ internal static class Program
             {
                 try
                 {
-                    if (ulong.TryParse(entry.GuildId, out var gid) && gid != 0)
+                    if (ulong.TryParse(entry.GuildId, out var gid2) && gid2 != 0)
                     {
-                        var g = _client.Guilds.FirstOrDefault(x => x.Id == gid);
+                        var g = _client.Guilds.FirstOrDefault(x => x.Id == gid2);
                         if (g != null) vtcName = g.Name;
                     }
                 }
