@@ -3,11 +3,12 @@
 // ✅ CRITICAL FIX: GET /api/messages returns ROOT ARRAY (ELD ParseMessages requires array)
 // ✅ Keeps /api/vtc/servers (servers[].id) and /api/vtc/name (fix login 404)
 // ✅ Keeps ELD -> Discord send: POST /api/messages/send
-// ✅ Keeps thread by-user endpoints + bulk mark/delete
+// ✅ Keeps thread by-user endpoints + bulk mark/delete (thread helper kept)
 // ✅ Keeps !setupdispatch + !announcement working (MessageReceived wired)
 // ✅ No RestWebhook.Url (build webhook URL from Id+Token)
-// ✅ ADD: VTC Roster API + !rosterLink + !rosterlist (manual drivers)  (NO changes to locked messaging/login behavior)
-// ✅ ADD BACK: !link <CODE> -> calls ELD Companion API /api/vtc/link/confirm so Login shows Linked ✅
+// ✅ Keeps VTC Roster API + !rosterLink + !rosterlist (manual drivers)
+// ✅ ✅ FIXED: Discord command !link now generates/accepts a pairing code that ELD can claim
+// ✅ ✅ FIXED: /api/vtc/pair/claim?code=... now returns guildId/vtcName/discordUserId/discordUsername (like ELD expects)
 
 using System;
 using System.Collections.Generic;
@@ -15,6 +16,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -46,7 +48,6 @@ internal static class Program
     };
 
     private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-
     private static readonly string DataDir = Path.Combine(AppContext.BaseDirectory, "data");
 
     private static ThreadMapStore? _threadStore;
@@ -62,6 +63,21 @@ internal static class Program
     private static VtcRosterStore? _rosterStore;
     private static readonly string RosterPath = Path.Combine(DataDir, "vtc_roster.json");
 
+    // -----------------------------
+    // ✅ Pairing store (ELD pairing codes)
+    // Bot generates code (via !link) -> ELD claims it at /api/vtc/pair/claim?code=...
+    // Stored at: data/link_codes.json
+    // -----------------------------
+    private static LinkCodeStore? _linkCodeStore;
+    private static readonly string LinkCodesPath = Path.Combine(DataDir, "link_codes.json");
+
+    // (Optional) linked history, useful later
+    private static LinkedDriversStore? _linkedDriversStore;
+    private static readonly string LinkedDriversPath = Path.Combine(DataDir, "linked_drivers.json");
+
+    // -----------------------------
+    // Models
+    // -----------------------------
     private sealed class VtcDriver
     {
         public string DriverId { get; set; } = Guid.NewGuid().ToString("N"); // stable id
@@ -261,75 +277,208 @@ internal static class Program
     }
 
     // -----------------------------
-    // ✅ ELD Link Confirm (for !link CODE)
-    // Calls local ELD companion host (default 127.0.0.1:5234)
+    // ✅ Pairing Code Store (Bot -> ELD)
     // -----------------------------
-    private sealed class EldLinkConfirmReq
+    private sealed class LinkCodeEntry
     {
-        public string? Code { get; set; }
-        public string? DiscordUserId { get; set; }
-        public string? DiscordUserName { get; set; }
+        public string Code { get; set; } = "";
+        public string GuildId { get; set; } = "0";
+        public string GuildName { get; set; } = "";
+        public string DiscordUserId { get; set; } = "";
+        public string DiscordUsername { get; set; } = "";
+        public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset ExpiresUtc { get; set; } = DateTimeOffset.UtcNow.AddMinutes(30);
     }
 
-    private sealed class EldLinkConfirmResp
+    private sealed class LinkCodeStore
     {
-        public bool Ok { get; set; }
-        public string? Error { get; set; }
-        public string? Message { get; set; }
-    }
+        private readonly string _path;
+        private readonly object _lock = new();
+        private Dictionary<string, LinkCodeEntry> _byCode = new(StringComparer.OrdinalIgnoreCase);
 
-    private static string GetEldCompanionBaseUrl()
-    {
-        // If you ever need to override:
-        // set env var ELD_COMPANION_URL=http://127.0.0.1:5234
-        var env = (Environment.GetEnvironmentVariable("ELD_COMPANION_URL") ?? "").Trim();
-        if (!string.IsNullOrWhiteSpace(env)) return env.TrimEnd('/');
-        return "http://127.0.0.1:5234";
-    }
-
-    private static async Task<(bool ok, string msg)> TryConfirmEldLinkAsync(string code, ulong discordUserId, string discordUserName)
-    {
-        try
+        public LinkCodeStore(string path)
         {
-            var baseUrl = GetEldCompanionBaseUrl().TrimEnd('/');
-            var url = baseUrl + "/api/vtc/link/confirm";
+            _path = path;
+            Load();
+        }
 
-            var payload = new EldLinkConfirmReq
+        public void Put(LinkCodeEntry entry)
+        {
+            if (entry == null) throw new InvalidOperationException("Entry required.");
+            var code = (entry.Code ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(code)) throw new InvalidOperationException("Code required.");
+
+            var now = DateTimeOffset.UtcNow;
+
+            lock (_lock)
             {
-                Code = (code ?? "").Trim(),
-                DiscordUserId = discordUserId.ToString(),
-                DiscordUserName = (discordUserName ?? "").Trim()
-            };
+                entry.Code = code;
+                if (entry.CreatedUtc == default) entry.CreatedUtc = now;
+                if (entry.ExpiresUtc <= now) entry.ExpiresUtc = now.AddMinutes(30);
 
-            var json = JsonSerializer.Serialize(payload, JsonWriteOpts);
-            using var resp = await _http.PostAsync(url, new StringContent(json, Encoding.UTF8, "application/json"));
-            var body = await resp.Content.ReadAsStringAsync();
-
-            if (!resp.IsSuccessStatusCode)
-                return (false, $"ELD confirm failed ({(int)resp.StatusCode}).");
-
-            EldLinkConfirmResp? parsed = null;
-            try { parsed = JsonSerializer.Deserialize<EldLinkConfirmResp>(body, JsonReadOpts); } catch { }
-
-            if (parsed != null && parsed.Ok)
-                return (true, "✅ Linked! Return to the ELD login screen — it should show **Linked ✅**.");
-
-            // If response isn't standard, treat HTTP 200 as success-ish
-            if (parsed == null)
-                return (true, "✅ Linked! Return to the ELD login screen — it should show **Linked ✅**.");
-
-            var why = (parsed.Error ?? parsed.Message ?? "UnknownError").Trim();
-            return (false, $"❌ Link rejected: {why}");
+                _byCode[code] = entry;
+                Prune_NoLock(now);
+                Save_NoLock();
+            }
         }
-        catch
+
+        public bool Consume(string code, out LinkCodeEntry entry)
         {
-            return (false,
-                "❌ Could not reach the ELD companion API.\n" +
-                "If your bot is hosted online (Railway), it cannot reach your PC.\n" +
-                "Run the bot locally on the same machine as the ELD.");
+            entry = new LinkCodeEntry();
+            code = (code ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            var now = DateTimeOffset.UtcNow;
+
+            lock (_lock)
+            {
+                Prune_NoLock(now);
+
+                if (!_byCode.TryGetValue(code, out var e)) return false;
+                if (e.ExpiresUtc <= now)
+                {
+                    _byCode.Remove(code);
+                    Save_NoLock();
+                    return false;
+                }
+
+                _byCode.Remove(code);
+                Save_NoLock();
+                entry = Clone(e);
+                return true;
+            }
+        }
+
+        private void Prune_NoLock(DateTimeOffset now)
+        {
+            var expired = _byCode
+                .Where(kvp => kvp.Value.ExpiresUtc <= now)
+                .Select(kvp => kvp.Key)
+                .ToList();
+
+            if (expired.Count == 0) return;
+            foreach (var k in expired) _byCode.Remove(k);
+        }
+
+        private void Load()
+        {
+            try
+            {
+                if (!File.Exists(_path)) { _byCode = new(StringComparer.OrdinalIgnoreCase); return; }
+                var json = File.ReadAllText(_path);
+                var dict = JsonSerializer.Deserialize<Dictionary<string, LinkCodeEntry>>(json, JsonReadOpts)
+                           ?? new Dictionary<string, LinkCodeEntry>();
+                _byCode = new Dictionary<string, LinkCodeEntry>(dict, StringComparer.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                _byCode = new(StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        private void Save_NoLock()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_path) ?? DataDir);
+                File.WriteAllText(_path, JsonSerializer.Serialize(_byCode, JsonWriteOpts));
+            }
+            catch { }
+        }
+
+        private static LinkCodeEntry Clone(LinkCodeEntry e) => new LinkCodeEntry
+        {
+            Code = e.Code,
+            GuildId = e.GuildId,
+            GuildName = e.GuildName,
+            DiscordUserId = e.DiscordUserId,
+            DiscordUsername = e.DiscordUsername,
+            CreatedUtc = e.CreatedUtc,
+            ExpiresUtc = e.ExpiresUtc
+        };
+    }
+
+    private sealed class LinkedDriverEntry
+    {
+        public string GuildId { get; set; } = "0";
+        public string DiscordUserId { get; set; } = "";
+        public string DiscordUserName { get; set; } = "";
+        public DateTimeOffset LinkedUtc { get; set; } = DateTimeOffset.UtcNow;
+        public string? LastCode { get; set; }
+    }
+
+    private sealed class LinkedDriversStore
+    {
+        private readonly string _path;
+        private readonly object _lock = new();
+
+        // guildId -> (discordUserId -> entry)
+        private Dictionary<string, Dictionary<string, LinkedDriverEntry>> _byGuild =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        public LinkedDriversStore(string path)
+        {
+            _path = path;
+            Load();
+        }
+
+        public void Link(string guildId, string discordUserId, string discordUserName, string? code)
+        {
+            guildId = (guildId ?? "").Trim();
+            discordUserId = (discordUserId ?? "").Trim();
+            discordUserName = (discordUserName ?? "").Trim();
+            code = (code ?? "").Trim();
+
+            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
+            if (string.IsNullOrWhiteSpace(discordUserId)) return;
+
+            lock (_lock)
+            {
+                if (!_byGuild.TryGetValue(guildId, out var byUser))
+                {
+                    byUser = new Dictionary<string, LinkedDriverEntry>(StringComparer.OrdinalIgnoreCase);
+                    _byGuild[guildId] = byUser;
+                }
+
+                byUser[discordUserId] = new LinkedDriverEntry
+                {
+                    GuildId = guildId,
+                    DiscordUserId = discordUserId,
+                    DiscordUserName = discordUserName,
+                    LinkedUtc = DateTimeOffset.UtcNow,
+                    LastCode = string.IsNullOrWhiteSpace(code) ? null : code
+                };
+
+                Save_NoLock();
+            }
+        }
+
+        private void Load()
+        {
+            try
+            {
+                if (!File.Exists(_path)) { _byGuild = new(StringComparer.OrdinalIgnoreCase); return; }
+                var json = File.ReadAllText(_path);
+                var dict = JsonSerializer.Deserialize<Dictionary<string, Dictionary<string, LinkedDriverEntry>>>(json, JsonReadOpts);
+                _byGuild = dict ?? new(StringComparer.OrdinalIgnoreCase);
+            }
+            catch { _byGuild = new(StringComparer.OrdinalIgnoreCase); }
+        }
+
+        private void Save_NoLock()
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(_path) ?? DataDir);
+                File.WriteAllText(_path, JsonSerializer.Serialize(_byGuild, JsonWriteOpts));
+            }
+            catch { }
         }
     }
 
+    // -----------------------------
+    // Dispatch settings store (unchanged)
+    // -----------------------------
     private sealed class DispatchSettings
     {
         public string GuildId { get; set; } = "";
@@ -468,6 +617,9 @@ internal static class Program
         _dispatchStore = new DispatchSettingsStore(DispatchCfgPath);
         _rosterStore = new VtcRosterStore(RosterPath);
 
+        _linkCodeStore = new LinkCodeStore(LinkCodesPath);
+        _linkedDriversStore = new LinkedDriversStore(LinkedDriversPath);
+
         var token = (Environment.GetEnvironmentVariable("DISCORD_TOKEN") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(token))
         {
@@ -480,7 +632,7 @@ internal static class Program
             GatewayIntents =
                 GatewayIntents.Guilds |
                 GatewayIntents.GuildMessages |
-                GatewayIntents.MessageContent |
+                GatewayIntents.MessageContent | // ✅ REQUIRED for prefix commands
                 GatewayIntents.GuildMembers
         });
 
@@ -516,6 +668,7 @@ internal static class Program
         var app = builder.Build();
 
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
+        app.MapGet("/build", () => Results.Ok(new { ok = true, name = "OverWatchELD.VtcBot", version = "link-eld-claim" }));
 
         var api = app.MapGroup("/api");
         var api2 = app.MapGroup("/api/api"); // double-api safety
@@ -568,6 +721,56 @@ internal static class Program
                 guildId = g.Id.ToString(),
                 name = g.Name,
                 vtcName = g.Name
+            }, JsonWriteOpts);
+        });
+
+        // -----------------------------
+        // ✅ ELD PAIRING CLAIM (classic flow)
+        // GET /api/vtc/pair/claim?code=ABC123
+        // Bot consumes code created by !link and returns identity + guild
+        // -----------------------------
+        r.MapGet("/vtc/pair/claim", (HttpRequest req) =>
+        {
+            var code = (req.Query["code"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(code))
+                return Results.Json(new { ok = false, error = "MissingCode" }, statusCode: 400);
+
+            if (_linkCodeStore == null)
+                return Results.Json(new { ok = false, error = "LinkStoreNotReady" }, statusCode: 503);
+
+            if (!_linkCodeStore.Consume(code, out var entry))
+                return Results.Json(new { ok = false, error = "InvalidOrExpiredCode" }, statusCode: 404);
+
+            // Validate guild still exists, but don't block pairing if bot cache not ready
+            var vtcName = (entry.GuildName ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(vtcName) && _client != null)
+            {
+                try
+                {
+                    if (ulong.TryParse(entry.GuildId, out var gid) && gid != 0)
+                    {
+                        var g = _client.Guilds.FirstOrDefault(x => x.Id == gid);
+                        if (g != null) vtcName = g.Name;
+                    }
+                }
+                catch { }
+            }
+
+            // Save linked history (optional)
+            try
+            {
+                _linkedDriversStore?.Link(entry.GuildId, entry.DiscordUserId, entry.DiscordUsername, entry.Code);
+            }
+            catch { }
+
+            return Results.Json(new
+            {
+                ok = true,
+                code = entry.Code,
+                guildId = entry.GuildId,
+                vtcName = string.IsNullOrWhiteSpace(vtcName) ? "VTC" : vtcName,
+                discordUserId = entry.DiscordUserId,
+                discordUsername = entry.DiscordUsername
             }, JsonWriteOpts);
         });
 
@@ -793,10 +996,7 @@ internal static class Program
                 {
                     var txt = (m.Content ?? "").Trim();
                     if (string.IsNullOrWhiteSpace(txt)) return false;
-
-                    // ✅ don't feed setup/command spam into the ELD
-                    if (txt.StartsWith("!", StringComparison.OrdinalIgnoreCase)) return false;
-
+                    if (txt.StartsWith("!", StringComparison.OrdinalIgnoreCase)) return false; // don't feed commands into ELD
                     return true;
                 })
                 .OrderBy(m => m.Timestamp)
@@ -813,14 +1013,12 @@ internal static class Program
 
                     return new
                     {
-                        id = m.Id.ToString(),                 // ✅ string (ELD requires)
-                        createdUnix = createdUnix.ToString(), // ✅ extra-safe for strict parsers
+                        id = m.Id.ToString(),
+                        createdUnix = createdUnix.ToString(),
                         sentUtc = m.Timestamp.UtcDateTime.ToString("o"),
-
                         fromName = "Dispatch",
                         senderName = "Dispatch",
                         text = eldText,
-
                         isDispatcher = true,
                         avatarUrl = ""
                     };
@@ -906,7 +1104,7 @@ internal static class Program
         });
 
         // -----------------------------
-        // ✅ Bulk mark/delete (kept as-is)
+        // ✅ Bulk mark/delete
         // -----------------------------
         r.MapPost("/messages/markread/bulk", async (HttpRequest req) =>
         {
@@ -997,37 +1195,65 @@ internal static class Program
             return;
         }
 
-        // Parse command early (so !link works in DMs too)
         var body0 = content.Length > 1 ? content[1..].Trim() : "";
         var parts0 = body0.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var cmd0 = (parts0.Length > 0 ? parts0[0] : "").Trim().ToLowerInvariant();
         var arg0 = (parts0.Length > 1 ? parts0[1] : "").Trim();
 
-        // ✅ ADD BACK: !link <CODE> (DM or server)
+        // ✅ FIXED: !link [CODE]
+        // - If CODE provided: uses that code
+        // - If no CODE: generates one
+        // Code is stored for ELD to claim at /api/vtc/pair/claim?code=...
         if (cmd0 == "link")
         {
-            var code = (arg0 ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(code))
+            if (_linkCodeStore == null)
             {
-                await msg.Channel.SendMessageAsync("Usage: `!link YOURCODE` (example: `!link WH4G6P`)");
+                await msg.Channel.SendMessageAsync("❌ Link store not ready.");
                 return;
             }
 
-            var who = (msg.Author.Username ?? "User").Trim();
-            var (ok, reply) = await TryConfirmEldLinkAsync(code, msg.Author.Id, who);
-            await msg.Channel.SendMessageAsync(reply);
+            // Must be in a server channel so we know which guild to link
+            if (msg.Channel is not SocketGuildChannel gch)
+            {
+                await msg.Channel.SendMessageAsync("❌ Run `!link` inside your VTC server (not DM), then paste the code into the ELD.");
+                return;
+            }
+
+            var guild = gch.Guild;
+            var code = (arg0 ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(code))
+                code = GenerateLinkCode(6);
+
+            var entry = new LinkCodeEntry
+            {
+                Code = code,
+                GuildId = guild.Id.ToString(),
+                GuildName = (guild.Name ?? "").Trim(),
+                DiscordUserId = msg.Author.Id.ToString(),
+                DiscordUsername = (msg.Author.Username ?? "Driver").Trim(),
+                CreatedUtc = DateTimeOffset.UtcNow,
+                ExpiresUtc = DateTimeOffset.UtcNow.AddMinutes(30)
+            };
+
+            _linkCodeStore.Put(entry);
+
+            await msg.Channel.SendMessageAsync(
+                "✅ **ELD Pair Code:** `" + code + "`\n" +
+                "Open the ELD → VTC → paste the code → click **Pair**.\n" +
+                "_Code expires in 30 minutes._"
+            );
             return;
         }
 
         if (msg.Channel is not SocketGuildChannel guildChan)
         {
             if (cmd0 == "help")
-                await msg.Channel.SendMessageAsync("Use !setupdispatch / !announcement / !rosterlink inside a server.\nYou can use `!link CODE` in DMs too.");
+                await msg.Channel.SendMessageAsync("Use `!link` inside your server to get a pairing code for the ELD.\nAdmins: !setupdispatch / !announcement / !rosterlink");
             return;
         }
 
-        var guild = guildChan.Guild;
-        var guildIdStr = guild.Id.ToString();
+        var guild2 = guildChan.Guild;
+        var guildIdStr = guild2.Id.ToString();
 
         var gu = msg.Author as SocketGuildUser;
         var isAdmin = gu != null && (gu.GuildPermissions.Administrator || gu.GuildPermissions.ManageGuild);
@@ -1041,7 +1267,7 @@ internal static class Program
         {
             await msg.Channel.SendMessageAsync(
                 "Commands:\n" +
-                "• !link <CODE> (driver)\n" +
+                "• !link [CODE] (driver)\n" +
                 "• !setupdispatch #channel (admin)\n" +
                 "• !setdispatchwebhook <url> (admin)\n" +
                 "• !announcement #channel (admin)\n" +
@@ -1070,7 +1296,7 @@ internal static class Program
             var cid = TryParseChannelIdFromMention(arg);
             if (cid == null) { await msg.Channel.SendMessageAsync("Usage: `!setupdispatch #dispatch`"); return; }
 
-            var ch = guild.GetTextChannel(cid.Value);
+            var ch = guild2.GetTextChannel(cid.Value);
             if (ch == null) { await msg.Channel.SendMessageAsync("❌ Must be a text channel."); return; }
 
             try
@@ -1115,7 +1341,6 @@ internal static class Program
                 return;
             }
 
-            // expected: "<@id> | Driver Name"
             var parts2 = (arg ?? "").Split('|', 2, StringSplitOptions.RemoveEmptyEntries);
             var left = (parts2.Length > 0 ? parts2[0] : "").Trim();
             var right = (parts2.Length > 1 ? parts2[1] : "").Trim();
@@ -1127,7 +1352,7 @@ internal static class Program
                 return;
             }
 
-            var u = guild.GetUser(uid.Value);
+            var u = guild2.GetUser(uid.Value);
             var driverName = !string.IsNullOrWhiteSpace(right)
                 ? right
                 : ((u?.DisplayName ?? u?.Username ?? "Driver").Trim());
@@ -1198,7 +1423,7 @@ internal static class Program
             var cid = TryParseChannelIdFromMention(arg);
             if (cid == null) { await msg.Channel.SendMessageAsync("Usage: `!announcement #announcements`"); return; }
 
-            var ch = guild.GetTextChannel(cid.Value);
+            var ch = guild2.GetTextChannel(cid.Value);
             if (ch == null) { await msg.Channel.SendMessageAsync("❌ Must be a text channel."); return; }
 
             try
@@ -1235,6 +1460,21 @@ internal static class Program
         }
 
         await msg.Channel.SendMessageAsync("Unknown command. Use `!help`.");
+    }
+
+    private static string GenerateLinkCode(int len)
+    {
+        const string alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+        len = Math.Clamp(len, 4, 12);
+
+        var bytes = new byte[len];
+        RandomNumberGenerator.Fill(bytes);
+
+        var chars = new char[len];
+        for (int i = 0; i < len; i++)
+            chars[i] = alphabet[bytes[i] % alphabet.Length];
+
+        return new string(chars);
     }
 
     private static SocketGuild? ResolveGuild(string gidStr)
