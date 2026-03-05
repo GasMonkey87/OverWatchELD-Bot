@@ -21,18 +21,14 @@
 //    - Top endpoint:  GET  /api/performance/top?guildId=...&take=10
 //    - Optional pull-refresh failsafe from ELD: set env ELD_BASE_URL, bot will periodically pull /api/performance?guildId=...
 //
-// ✅ NEW UPGRADE: PMTiles range-serving + Live driver pings (Map backend)
-//    - Range-safe PMTiles server:
-//        GET /pmtiles/{file}  (supports Range: bytes=... for PMTiles clients)
-//      Set env PMTILES_DIR to your folder (default: ./pmtiles)
-//    - Live driver locations (ELD -> Bot):
-//        POST /api/map/ping?guildId=...
-//        GET  /api/map/positions?guildId=...
+// ✅ NEW UPGRADE: Live Map (PMTiles byte-range + location ping/latest)
+//    - GET  /maps/usa.pmtiles  (byte-range capable)
+//    - POST /api/location/ping?guildId=...
+//    - GET  /api/location/latest?guildId=...
 //
 // ⚠️ Nothing else changed.
 
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -44,9 +40,11 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+
 using Discord;
 using Discord.Rest;
 using Discord.WebSocket;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -79,11 +77,6 @@ internal static class Program
     private static readonly HttpClient _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
     private static readonly string DataDir = Path.Combine(AppContext.BaseDirectory, "data");
 
-    // -----------------------------
-    // ✅ PMTiles directory
-    // -----------------------------
-    private static readonly string PmtilesDir = InitPmtilesDir();
-
     private static ThreadMapStore? _threadStore;
     private static readonly string ThreadMapPath = Path.Combine(DataDir, "thread_map.json");
 
@@ -99,6 +92,7 @@ internal static class Program
 
     // -----------------------------
     // ✅ Pairing store (ELD pairing codes)
+    // Bot generates code (via !link) -> ELD claims it at /api/vtc/pair/claim?code=...
     // Stored at: data/link_codes.json
     // -----------------------------
     private static LinkCodeStore? _linkCodeStore;
@@ -110,17 +104,30 @@ internal static class Program
 
     // -----------------------------
     // ✅ Performance Store (Miles + Loads + Performance%)
-    // Stored at: data/performance/performance_<guildId>.json
+    // Stored at: data/performance_<guildId>.json
     // -----------------------------
     private static PerformanceStore? _perfStore;
     private static readonly string PerfDir = Path.Combine(DataDir, "performance");
 
-    // -----------------------------
-    // ✅ Live Map Ping store
-    // Stored at: data/map_pings/map_pings_<guildId>.json
-    // -----------------------------
-    private static MapPingStore? _mapPingStore;
-    private static readonly string MapPingDir = Path.Combine(DataDir, "map_pings");
+    // ===============================
+    // ✅ LIVE MAP: Driver location pings (in-memory latest)
+    // ===============================
+    private sealed class DriverPing
+    {
+        public string GuildId { get; set; } = "0";
+        public string DriverId { get; set; } = "";       // discordUserId (string)
+        public string? DriverName { get; set; }          // optional display name
+        public double X { get; set; }                    // ATS world coord
+        public double Z { get; set; }                    // ATS world coord
+        public double SpeedMph { get; set; }
+        public double HeadingDeg { get; set; }
+        public string? DutyStatus { get; set; }
+        public DateTimeOffset ServerTsUtc { get; set; } = DateTimeOffset.UtcNow;
+    }
+
+    // key = guildId|driverId -> latest ping
+    private static readonly Dictionary<string, DriverPing> _latestPings = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly object _latestPingsLock = new();
 
     // -----------------------------
     // Models
@@ -783,137 +790,6 @@ internal static class Program
         }
     }
 
-    // -----------------------------
-    // ✅ Map Ping models + store
-    // -----------------------------
-    private sealed class DriverPing
-    {
-        public string DiscordUserId { get; set; } = "";
-        public string? Name { get; set; }
-        public double Lat { get; set; }
-        public double Lng { get; set; }
-        public double? Heading { get; set; }
-        public double? SpeedMph { get; set; }
-        public string? TruckNumber { get; set; }
-        public string? Status { get; set; }
-        public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
-        public string? Source { get; set; } // "eld"
-    }
-
-    private sealed class DriverPingReq
-    {
-        public string? DiscordUserId { get; set; }
-        public string? Name { get; set; }
-        public double? Lat { get; set; }
-        public double? Lng { get; set; }
-        public double? Heading { get; set; }
-        public double? SpeedMph { get; set; }
-        public string? TruckNumber { get; set; }
-        public string? Status { get; set; }
-        public string? Source { get; set; }
-        public DateTimeOffset? UpdatedUtc { get; set; }
-    }
-
-    private sealed class MapPingStore
-    {
-        private readonly string _dir;
-        private readonly object _lock = new();
-
-        // in-memory cache: guildId -> (discordUserId -> ping)
-        private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, DriverPing>> _cache =
-            new(StringComparer.OrdinalIgnoreCase);
-
-        public MapPingStore(string dir)
-        {
-            _dir = dir;
-            Directory.CreateDirectory(_dir);
-        }
-
-        private string PathForGuild(string guildId)
-        {
-            guildId = (guildId ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
-            return System.IO.Path.Combine(_dir, $"map_pings_{guildId}.json");
-        }
-
-        private ConcurrentDictionary<string, DriverPing> GetGuildBucket(string guildId)
-        {
-            guildId = (guildId ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
-
-            return _cache.GetOrAdd(guildId, gid =>
-            {
-                // load from disk best-effort
-                var bucket = new ConcurrentDictionary<string, DriverPing>(StringComparer.OrdinalIgnoreCase);
-                try
-                {
-                    var path = PathForGuild(gid);
-                    if (File.Exists(path))
-                    {
-                        var json = File.ReadAllText(path);
-                        var dict = JsonSerializer.Deserialize<Dictionary<string, DriverPing>>(json, JsonReadOpts);
-                        if (dict != null)
-                        {
-                            foreach (var kv in dict)
-                                if (!string.IsNullOrWhiteSpace(kv.Key) && kv.Value != null)
-                                    bucket[kv.Key] = kv.Value;
-                        }
-                    }
-                }
-                catch { }
-                return bucket;
-            });
-        }
-
-        public void Upsert(string guildId, DriverPing ping)
-        {
-            if (ping == null) return;
-            guildId = (guildId ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
-
-            var uid = (ping.DiscordUserId ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(uid)) return;
-
-            ping.DiscordUserId = uid;
-            ping.UpdatedUtc = ping.UpdatedUtc == default ? DateTimeOffset.UtcNow : ping.UpdatedUtc;
-
-            var bucket = GetGuildBucket(guildId);
-            bucket[uid] = ping;
-
-            SaveGuild_NoThrow(guildId, bucket);
-        }
-
-        public List<DriverPing> List(string guildId, TimeSpan? maxAge = null)
-        {
-            guildId = (guildId ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
-
-            var bucket = GetGuildBucket(guildId);
-            var now = DateTimeOffset.UtcNow;
-
-            var age = maxAge ?? TimeSpan.FromMinutes(5);
-
-            return bucket.Values
-                .Where(p => (now - p.UpdatedUtc) <= age)
-                .OrderByDescending(p => p.UpdatedUtc)
-                .ToList();
-        }
-
-        private void SaveGuild_NoThrow(string guildId, ConcurrentDictionary<string, DriverPing> bucket)
-        {
-            lock (_lock)
-            {
-                try
-                {
-                    var path = PathForGuild(guildId);
-                    var dict = bucket.ToDictionary(k => k.Key, v => v.Value, StringComparer.OrdinalIgnoreCase);
-                    File.WriteAllText(path, JsonSerializer.Serialize(dict, JsonWriteOpts));
-                }
-                catch { }
-            }
-        }
-    }
-
     private sealed class SendMessageReq
     {
         [JsonPropertyName("driverName")]
@@ -947,8 +823,6 @@ internal static class Program
     {
         Directory.CreateDirectory(DataDir);
         Directory.CreateDirectory(PerfDir);
-        Directory.CreateDirectory(MapPingDir);
-        Directory.CreateDirectory(PmtilesDir);
 
         _threadStore = new ThreadMapStore(ThreadMapPath);
         _dispatchStore = new DispatchSettingsStore(DispatchCfgPath);
@@ -958,8 +832,6 @@ internal static class Program
         _linkedDriversStore = new LinkedDriversStore(LinkedDriversPath);
 
         _perfStore = new PerformanceStore(PerfDir);
-
-        _mapPingStore = new MapPingStore(MapPingDir);
 
         var token = (Environment.GetEnvironmentVariable("DISCORD_TOKEN") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(token))
@@ -1042,19 +914,14 @@ internal static class Program
         var app = builder.Build();
 
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
-        app.MapGet("/build", () => Results.Ok(new { ok = true, name = "OverWatchELD.VtcBot", version = "link-eld-claim+webhook-create+performance-slash+pmtiles-range+map-pings" }));
+        app.MapGet("/build", () => Results.Ok(new { ok = true, name = "OverWatchELD.VtcBot", version = "link-eld-claim+webhook-create+performance-slash+livemap" }));
 
-        // ✅ PMTiles Range endpoint
-        // Drop your *.pmtiles into PMTILES_DIR (default ./pmtiles)
-        app.MapGet("/pmtiles/{file}", (HttpContext ctx, string file) =>
+        // ✅ LIVE MAP: PMTiles host (byte-range capable via PmtilesRangeResult)
+        // Put Maps/usa.pmtiles in project root under Maps/
+        app.MapGet("/maps/usa.pmtiles", (IWebHostEnvironment env) =>
         {
-            file = Path.GetFileName(file ?? "");
-            if (string.IsNullOrWhiteSpace(file))
-                return Results.BadRequest(new { ok = false, error = "BadFile" });
-
-            var full = Path.Combine(PmtilesDir, file);
-            // best-guess content type; you can override via query later if needed
-            return new PmtilesRangeResult(full, "application/octet-stream");
+            var path = Path.Combine(env.ContentRootPath, "Maps", "usa.pmtiles");
+            return new PmtilesRangeResult(path, "application/octet-stream");
         });
 
         var api = app.MapGroup("/api");
@@ -1064,7 +931,6 @@ internal static class Program
 
         _ = Task.Run(() => app.RunAsync());
         Console.WriteLine($"🌐 HTTP API listening on 0.0.0.0:{port}");
-        Console.WriteLine($"🗺️ PMTiles dir: {PmtilesDir}");
         await Task.Delay(-1);
     }
 
@@ -1113,88 +979,8 @@ internal static class Program
         });
 
         // -----------------------------
-        // ✅ NEW: Map ping endpoints (ELD -> Bot -> UI)
-        // POST /api/map/ping?guildId=...
-        // Body: DriverPingReq
-        // GET  /api/map/positions?guildId=...&maxAgeSeconds=300
-        // -----------------------------
-        r.MapPost("/map/ping", async (HttpRequest req) =>
-        {
-            if (_mapPingStore == null)
-                return Results.Json(new { ok = false, error = "MapPingStoreNotReady" }, statusCode: 503);
-
-            var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-            var guild = ResolveGuild(gidStr);
-            if (guild == null)
-                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
-
-            DriverPingReq? payload;
-            try { payload = await JsonSerializer.DeserializeAsync<DriverPingReq>(req.Body, JsonReadOpts); }
-            catch { payload = null; }
-
-            var uid = (payload?.DiscordUserId ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(uid))
-                return Results.Json(new { ok = false, error = "MissingDiscordUserId" }, statusCode: 400);
-
-            if (payload?.Lat == null || payload?.Lng == null)
-                return Results.Json(new { ok = false, error = "MissingLatLng" }, statusCode: 400);
-
-            var ping = new DriverPing
-            {
-                DiscordUserId = uid,
-                Name = (payload?.Name ?? "").Trim(),
-                Lat = payload!.Lat.Value,
-                Lng = payload!.Lng.Value,
-                Heading = payload.Heading,
-                SpeedMph = payload.SpeedMph,
-                TruckNumber = (payload.TruckNumber ?? "").Trim(),
-                Status = (payload.Status ?? "").Trim(),
-                Source = (payload.Source ?? "eld").Trim(),
-                UpdatedUtc = payload.UpdatedUtc ?? DateTimeOffset.UtcNow
-            };
-
-            // sanity clamp lat/lng
-            if (ping.Lat is < -90 or > 90 || ping.Lng is < -180 or > 180)
-                return Results.Json(new { ok = false, error = "BadLatLng" }, statusCode: 400);
-
-            _mapPingStore.Upsert(guild.Id.ToString(), ping);
-
-            return Results.Json(new
-            {
-                ok = true,
-                guildId = guild.Id.ToString(),
-                discordUserId = ping.DiscordUserId,
-                updatedUtc = ping.UpdatedUtc
-            }, JsonWriteOpts);
-        });
-
-        r.MapGet("/map/positions", (HttpRequest req) =>
-        {
-            if (_mapPingStore == null)
-                return Results.Json(new { ok = false, error = "MapPingStoreNotReady" }, statusCode: 503);
-
-            var gidStr = (req.Query["guildId"].ToString() ?? "").Trim();
-            var guild = ResolveGuild(gidStr);
-            if (guild == null)
-                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
-
-            var maxAgeStr = (req.Query["maxAgeSeconds"].ToString() ?? "300").Trim();
-            if (!int.TryParse(maxAgeStr, out var s)) s = 300;
-            s = Math.Clamp(s, 30, 3600);
-
-            var list = _mapPingStore.List(guild.Id.ToString(), TimeSpan.FromSeconds(s));
-
-            return Results.Json(new
-            {
-                ok = true,
-                guildId = guild.Id.ToString(),
-                count = list.Count,
-                positions = list
-            }, JsonWriteOpts);
-        });
-
-        // -----------------------------
         // ✅ NEW: ELD Settings Webhook Creator
+        // POST /api/vtc/webhook/create?guildId=...&channelId=...&type=logs|inspections|bols|announcement
         // -----------------------------
         r.MapPost("/vtc/webhook/create", async (HttpRequest req) =>
         {
@@ -1261,6 +1047,7 @@ internal static class Program
 
         // -----------------------------
         // ✅ NEW: Performance PUSH (ELD -> Bot)
+        // POST /api/performance/update?guildId=...
         // -----------------------------
         r.MapPost("/performance/update", async (HttpRequest req) =>
         {
@@ -1300,6 +1087,7 @@ internal static class Program
 
         // -----------------------------
         // ✅ NEW: Performance TOP
+        // GET /api/performance/top?guildId=...&take=10
         // -----------------------------
         r.MapGet("/performance/top", (HttpRequest req) =>
         {
@@ -1321,6 +1109,7 @@ internal static class Program
 
         // -----------------------------
         // ✅ ELD PAIRING CLAIM
+        // GET /api/vtc/pair/claim?code=ABC123
         // -----------------------------
         r.MapGet("/vtc/pair/claim", (HttpRequest req) =>
         {
@@ -1368,7 +1157,7 @@ internal static class Program
         });
 
         // -----------------------------
-        // ✅ VTC Roster API
+        // ✅ VTC Roster API (manual drivers)
         // -----------------------------
         r.MapGet("/vtc/roster", (HttpRequest req) =>
         {
@@ -1757,6 +1546,57 @@ internal static class Program
 
             return Results.Json(new { ok = true, deleted = okCount }, JsonWriteOpts);
         });
+
+        // ===============================
+        // ✅ LIVE MAP: Location endpoints
+        // ===============================
+
+        // POST /api/location/ping?guildId=...
+        r.MapPost("/location/ping", async (HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
+
+            DriverPing? ping;
+            try { ping = await JsonSerializer.DeserializeAsync<DriverPing>(req.Body, JsonReadOpts); }
+            catch { ping = null; }
+
+            if (ping == null)
+                return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
+
+            ping.DriverId = (ping.DriverId ?? "").Trim();
+            ping.DriverName = (ping.DriverName ?? "").Trim();
+            ping.GuildId = guildId;
+            ping.ServerTsUtc = DateTimeOffset.UtcNow;
+
+            if (string.IsNullOrWhiteSpace(ping.DriverId))
+                return Results.Json(new { ok = false, error = "MissingDriverId" }, statusCode: 400);
+
+            var key = $"{guildId}|{ping.DriverId}";
+            lock (_latestPingsLock)
+                _latestPings[key] = ping;
+
+            return Results.Json(new { ok = true }, JsonWriteOpts);
+        });
+
+        // GET /api/location/latest?guildId=...
+        r.MapGet("/location/latest", (HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId)) guildId = "0";
+
+            List<DriverPing> list;
+            lock (_latestPingsLock)
+            {
+                list = _latestPings
+                    .Where(kv => kv.Key.StartsWith(guildId + "|", StringComparison.OrdinalIgnoreCase))
+                    .Select(kv => kv.Value)
+                    .OrderByDescending(p => p.ServerTsUtc)
+                    .ToList();
+            }
+
+            return Results.Json(new { ok = true, guildId, drivers = list }, JsonWriteOpts);
+        });
     }
 
     // -----------------------------
@@ -1932,13 +1772,13 @@ internal static class Program
     }
 
     // -----------------------------
-    // ✅ Optional Pull Refresh Loop
+    // ✅ Optional Pull Refresh Loop (failsafe)
     // -----------------------------
     private static async Task PerformancePullLoopAsync()
     {
         var baseUrl = (Environment.GetEnvironmentVariable("ELD_BASE_URL") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(baseUrl))
-            return; // no-op unless configured
+            return;
 
         if (!baseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase))
             return;
@@ -2002,10 +1842,7 @@ internal static class Program
                     catch { }
                 }
             }
-            catch
-            {
-                // swallow loop errors
-            }
+            catch { }
         }
     }
 
@@ -2043,6 +1880,7 @@ internal static class Program
         var cmd0 = (parts0.Length > 0 ? parts0[0] : "").Trim().ToLowerInvariant();
         var arg0 = (parts0.Length > 1 ? parts0[1] : "").Trim();
 
+        // ✅ !link [CODE]
         if (cmd0 == "link")
         {
             if (_linkCodeStore == null)
@@ -2173,6 +2011,7 @@ internal static class Program
             return;
         }
 
+        // ✅ ROSTER: !rosterlink @user | DriverName
         if (cmd == "rosterlink")
         {
             if (_rosterStore == null)
@@ -2253,8 +2092,8 @@ internal static class Program
                 lines.Add($"• **{d.Name}** — {link}" + (string.IsNullOrWhiteSpace(extra) ? "" : $" — {extra}"));
             }
 
-            var text = string.Join("\n", lines);
-            await msg.Channel.SendMessageAsync(text.Length > 1800 ? text.Substring(0, 1800) + "\n..." : text);
+            var textOut = string.Join("\n", lines);
+            await msg.Channel.SendMessageAsync(textOut.Length > 1800 ? textOut.Substring(0, 1800) + "\n..." : textOut);
             return;
         }
 
@@ -2482,28 +2321,11 @@ internal static class Program
         if (chan is RestThreadChannel rt && rt.IsArchived)
             await rt.ModifyAsync(p => p.Archived = false);
     }
-
-    private static string InitPmtilesDir()
-    {
-        var dir = (Environment.GetEnvironmentVariable("PMTILES_DIR") ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(dir))
-            dir = Path.Combine(AppContext.BaseDirectory, "pmtiles");
-
-        try
-        {
-            // allow relative paths
-            dir = Path.GetFullPath(dir);
-        }
-        catch
-        {
-            dir = Path.Combine(AppContext.BaseDirectory, "pmtiles");
-        }
-
-        return dir;
-    }
 }
 
-// ✅ PMTiles Range Result (single-range is enough for PMTiles clients)
+// ============================================================================
+// ✅ PMTiles byte-range IActionResult (single-range only, enough for PMTiles)
+// ============================================================================
 public sealed class PmtilesRangeResult : IActionResult
 {
     private readonly string _filePath;
