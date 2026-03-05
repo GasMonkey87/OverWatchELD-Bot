@@ -913,6 +913,9 @@ internal static class Program
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
         var app = builder.Build();
 
+        app.UseDefaultFiles();
+        app.UseStaticFiles();
+
         app.MapGet("/health", () => Results.Ok(new { ok = true }));
         app.MapGet("/build", () => Results.Ok(new { ok = true, name = "OverWatchELD.VtcBot", version = "link-eld-claim+webhook-create+performance-slash+livemap" }));
 
