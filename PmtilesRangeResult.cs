@@ -1,3 +1,7 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Net.Http.Headers;
@@ -25,11 +29,12 @@ public sealed class PmtilesRangeResult : IActionResult
             return;
         }
 
+        long total = fi.Length;
+
         response.Headers[HeaderNames.AcceptRanges] = "bytes";
         response.ContentType = _contentType;
 
-        long total = fi.Length;
-
+        // No Range header => send entire file
         if (!request.Headers.TryGetValue(HeaderNames.Range, out var rangeHeader) ||
             !RangeHeaderValue.TryParse(rangeHeader.ToString(), out var range) ||
             range == null ||
@@ -41,14 +46,25 @@ public sealed class PmtilesRangeResult : IActionResult
             return;
         }
 
-        // Single-range only (enough for PMTiles)
+        // PMTiles is happy with single-range responses
         var r = range.Ranges.First();
+
         long start = r.From ?? 0;
         long end = r.To ?? (total - 1);
+
         if (start < 0) start = 0;
         if (end >= total) end = total - 1;
 
+        // Range not satisfiable
+        if (end < start || start >= total)
+        {
+            response.StatusCode = StatusCodes.Status416RangeNotSatisfiable;
+            response.Headers[HeaderNames.ContentRange] = $"bytes */{total}";
+            return;
+        }
+
         long length = (end - start) + 1;
+
         response.StatusCode = StatusCodes.Status206PartialContent;
         response.Headers[HeaderNames.ContentRange] = $"bytes {start}-{end}/{total}";
         response.ContentLength = length;
@@ -56,13 +72,15 @@ public sealed class PmtilesRangeResult : IActionResult
         await using var fs2 = File.OpenRead(_filePath);
         fs2.Seek(start, SeekOrigin.Begin);
 
-        // copy exact bytes
         var buffer = new byte[64 * 1024];
         long remaining = length;
+
         while (remaining > 0)
         {
-            int read = await fs2.ReadAsync(buffer.AsMemory(0, (int)Math.Min(buffer.Length, remaining)));
+            int toRead = (int)Math.Min(buffer.Length, remaining);
+            int read = await fs2.ReadAsync(buffer.AsMemory(0, toRead));
             if (read <= 0) break;
+
             await response.Body.WriteAsync(buffer.AsMemory(0, read));
             remaining -= read;
         }
