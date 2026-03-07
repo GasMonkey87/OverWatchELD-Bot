@@ -40,7 +40,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-
+using Microsoft.Extensions.DependencyInjection;
 using Discord;
 using Discord.Rest;
 using Discord.WebSocket;
@@ -910,8 +910,22 @@ internal static class Program
         if (!int.TryParse(portStr, out var port)) port = 8080;
 
         var builder = WebApplication.CreateBuilder();
-        builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
-        var app = builder.Build();
+builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("LiveMapCors", policy =>
+    {
+        policy
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .SetIsOriginAllowed(_ => true);
+    });
+});
+
+var app = builder.Build();
+
+app.UseCors("LiveMapCors");
 
         app.UseDefaultFiles();
         app.UseStaticFiles();
