@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OverWatchELD Live Map</title>
+  <link rel="stylesheet" href="/css/dashboard.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div>
+        <h1>🗺️ OverWatchELD Live Map</h1>
+        <p>Simple live driver feed from /api/location/latest</p>
+      </div>
+      <div class="actions">
+        <a class="btn" href="/index.html">Dashboard</a>
+        <a class="btn" href="/">Home</a>
+      </div>
+    </header>
+
+    <section class="card">
+      <div class="toolbar">
+        <label for="mapGuildSelect">Guild</label>
+        <select id="mapGuildSelect"></select>
+        <button class="btn small" id="mapRefreshBtn">Refresh</button>
+      </div>
+      <div id="mapStatus" class="subtle">Loading driver feed...</div>
+      <div id="driverFeed" class="list"></div>
+    </section>
+  </div>
+
+  <script src="/js/live-map.js"></script>
+</body>
+</html>

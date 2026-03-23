@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OverWatchELD Dashboard</title>
+  <link rel="stylesheet" href="/css/dashboard.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div>
+        <h1>🚛 OverWatchELD Command Dashboard</h1>
+        <p>GasMonkey / Veterans Logistics live system overview</p>
+      </div>
+      <div class="actions">
+        <a class="btn" href="/">Home</a>
+        <a class="btn" href="/health">Health</a>
+        <a class="btn" href="/build">Build</a>
+        <a class="btn" href="/live-map.html">Live Map</a>
+      </div>
+    </header>
+
+    <section class="grid stats">
+      <div class="card">
+        <div class="label">Status</div>
+        <div class="value" id="statusText">Loading...</div>
+      </div>
+      <div class="card">
+        <div class="label">Guilds</div>
+        <div class="value" id="guildCount">-</div>
+      </div>
+      <div class="card">
+        <div class="label">Uptime</div>
+        <div class="value" id="uptimeText">-</div>
+      </div>
+      <div class="card">
+        <div class="label">Version</div>
+        <div class="value" id="buildText">-</div>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <div class="card">
+        <div class="card-title">Servers</div>
+        <div id="serversList" class="list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Leaderboard</div>
+        <div class="toolbar">
+          <label for="guildSelect">Guild</label>
+          <select id="guildSelect"></select>
+          <button class="btn small" id="refreshBtn">Refresh</button>
+        </div>
+        <div id="leaderboardList" class="list"></div>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <div class="card">
+        <div class="card-title">Quick Links</div>
+        <ul class="links">
+          <li><a href="/api/status">/api/status</a></li>
+          <li><a href="/api/vtc/servers">/api/vtc/servers</a></li>
+          <li><a href="/api/vtc/name">/api/vtc/name</a></li>
+          <li><a href="/api/performance/top">/api/performance/top</a></li>
+          <li><a href="/api/messages">/api/messages</a></li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Notes</div>
+        <div class="note">
+          <p>This dashboard reads your existing API endpoints. No extra auth is added in this phase.</p>
+          <p>Use this as the base for a future admin panel, driver live board, and dispatch control center.</p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>
