@@ -1,7 +1,9 @@
+using System.Text;
 using System.Text.Json;
 using Discord;
 using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using OverWatchELD.VtcBot.Commands;
 using OverWatchELD.VtcBot.Routes;
 using OverWatchELD.VtcBot.Services;
@@ -27,7 +29,7 @@ internal static class Program
     private static readonly JsonSerializerOptions JsonWriteOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
+        WriteIndented = true
     };
 
     private static readonly HttpClient _http = new()
@@ -38,42 +40,45 @@ internal static class Program
     public static async Task Main()
     {
         var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
+        var performanceDir = Path.Combine(dataDir, "performance");
+        var guildsDir = Path.Combine(dataDir, "guilds");
+
         Directory.CreateDirectory(dataDir);
-        Directory.CreateDirectory(Path.Combine(dataDir, "performance"));
+        Directory.CreateDirectory(performanceDir);
+        Directory.CreateDirectory(guildsDir);
 
-       var services = new BotServices
-{
-    ThreadStore = new ThreadMapStore(Path.Combine(dataDir, "thread_map.json")),
-    DispatchStore = new DispatchSettingsStore(
-        Path.Combine(dataDir, "dispatch_settings.json"),
-        JsonReadOpts,
-        JsonWriteOpts),
-    RosterStore = new VtcRosterStore(
-        Path.Combine(dataDir, "vtc_roster.json"),
-        JsonReadOpts,
-        JsonWriteOpts),
-    LinkCodeStore = new LinkCodeStore(
-        Path.Combine(dataDir, "link_codes.json"),
-        JsonReadOpts,
-        JsonWriteOpts),
-    LinkedDriversStore = new LinkedDriversStore(
-        Path.Combine(dataDir, "linked_drivers.json"),
-        JsonReadOpts,
-        JsonWriteOpts),
-    PerformanceStore = new PerformanceStore(
-        Path.Combine(dataDir, "performance"),
-        JsonReadOpts,
-        JsonWriteOpts),
-
-    AwardStore = new VtcAwardStore(
-        Path.Combine(dataDir, "awards.json"),
-        JsonReadOpts,
-        JsonWriteOpts),
-    DriverAwardStore = new DriverAwardStore(
-        Path.Combine(dataDir, "driver_awards.json"),
-        JsonReadOpts,
-        JsonWriteOpts)
-};
+        var services = new BotServices
+        {
+            ThreadStore = new ThreadMapStore(Path.Combine(dataDir, "thread_map.json")),
+            DispatchStore = new DispatchSettingsStore(
+                Path.Combine(dataDir, "dispatch_settings.json"),
+                JsonReadOpts,
+                JsonWriteOpts),
+            RosterStore = new VtcRosterStore(
+                Path.Combine(dataDir, "vtc_roster.json"),
+                JsonReadOpts,
+                JsonWriteOpts),
+            LinkCodeStore = new LinkCodeStore(
+                Path.Combine(dataDir, "link_codes.json"),
+                JsonReadOpts,
+                JsonWriteOpts),
+            LinkedDriversStore = new LinkedDriversStore(
+                Path.Combine(dataDir, "linked_drivers.json"),
+                JsonReadOpts,
+                JsonWriteOpts),
+            PerformanceStore = new PerformanceStore(
+                performanceDir,
+                JsonReadOpts,
+                JsonWriteOpts),
+            AwardStore = new VtcAwardStore(
+                Path.Combine(dataDir, "awards.json"),
+                JsonReadOpts,
+                JsonWriteOpts),
+            DriverAwardStore = new DriverAwardStore(
+                Path.Combine(dataDir, "driver_awards.json"),
+                JsonReadOpts,
+                JsonWriteOpts)
+        };
 
         var token = (Environment.GetEnvironmentVariable("DISCORD_TOKEN") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(token))
@@ -168,7 +173,6 @@ internal static class Program
         app.UseDefaultFiles();
         app.UseStaticFiles();
 
-        // ✅ LIVE STATUS ROOT PAGE
         app.MapGet("/", () =>
         {
             var guildCount = _client?.Guilds.Count ?? 0;
@@ -200,7 +204,7 @@ internal static class Program
                 "<div class=\"card\"><div class=\"label\">Status</div><div class=\"value\">" + statusText + "</div></div>" +
                 "<div class=\"card\"><div class=\"label\">Guilds Connected</div><div class=\"value\">" + guildCount + "</div></div>" +
                 "<div class=\"card\"><div class=\"label\">Uptime</div><div class=\"value\">" + uptimeText + "</div></div>" +
-                "<div class=\"card\"><div class=\"label\">Build</div><div class=\"value\">phase3-dashboard</div></div>" +
+                "<div class=\"card\"><div class=\"label\">Build</div><div class=\"value\">phase3-dashboard + shared-guild-store</div></div>" +
                 "</div>" +
                 "<h3>Endpoints</h3>" +
                 "<ul>" +
@@ -226,10 +230,9 @@ internal static class Program
         {
             ok = true,
             name = "OverWatchELD.VtcBot",
-            version = "phase3-dashboard"
+            version = "phase3-dashboard + shared-guild-store"
         }));
 
-        // ✅ LIVE JSON STATUS
         app.MapGet("/api/status", () =>
         {
             var guildCount = _client?.Guilds.Count ?? 0;
@@ -242,16 +245,238 @@ internal static class Program
                 guilds = guildCount,
                 uptimeSeconds = (long)uptime.TotalSeconds,
                 startedUtc = _startedUtc.UtcDateTime,
-                version = "phase3-dashboard"
+                version = "phase3-dashboard + shared-guild-store"
             });
         });
 
+        // Existing routes
         ApiRoutes.Register(app, services, JsonReadOpts, JsonWriteOpts, _http);
         DashboardRoutes.Register(app);
-        // ✅ ADD THIS LINE
         AwardRoutes.Register(app, services, JsonReadOpts);
-        
+
+        // New shared guild-scoped JSON routes
+        RegisterSharedGuildRoutes(app, guildsDir);
+
         Console.WriteLine($"🌐 HTTP API listening on 0.0.0.0:{port}");
         await app.RunAsync();
+    }
+
+    private static void RegisterSharedGuildRoutes(WebApplication app, string guildsDir)
+    {
+        app.MapGet("/api/vtc/shared/{kind}", (string kind, HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId))
+                return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
+
+            var safeKind = NormalizeKind(kind);
+            if (string.IsNullOrWhiteSpace(safeKind))
+                return Results.BadRequest(new { ok = false, error = "InvalidKind" });
+
+            var path = GetGuildFilePath(guildsDir, guildId, safeKind);
+            var json = ReadJsonOrDefault(path, GetDefaultJsonForKind(safeKind));
+
+            return Results.Content(json, "application/json", Encoding.UTF8);
+        });
+
+        app.MapPost("/api/vtc/shared/{kind}/save", async (string kind, HttpRequest req) =>
+        {
+            var safeKind = NormalizeKind(kind);
+            if (string.IsNullOrWhiteSpace(safeKind))
+                return Results.BadRequest(new { ok = false, error = "InvalidKind" });
+
+            using var reader = new StreamReader(req.Body, Encoding.UTF8);
+            var raw = (await reader.ReadToEndAsync()).Trim();
+            if (string.IsNullOrWhiteSpace(raw))
+                return Results.BadRequest(new { ok = false, error = "EmptyBody" });
+
+            JsonDocument doc;
+            try
+            {
+                doc = JsonDocument.Parse(raw);
+            }
+            catch
+            {
+                return Results.BadRequest(new { ok = false, error = "BadJson" });
+            }
+
+            using (doc)
+            {
+                var root = doc.RootElement;
+
+                var guildId =
+                    root.TryGetProperty("guildId", out var gidEl) ? (gidEl.GetString() ?? "").Trim() : "";
+
+                if (string.IsNullOrWhiteSpace(guildId))
+                    return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
+
+                var payload =
+                    root.TryGetProperty("data", out var dataEl) ? dataEl.GetRawText() : "";
+
+                if (string.IsNullOrWhiteSpace(payload))
+                    return Results.BadRequest(new { ok = false, error = "MissingData" });
+
+                var path = GetGuildFilePath(guildsDir, guildId, safeKind);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, FormatJson(payload));
+
+                return Results.Ok(new
+                {
+                    ok = true,
+                    guildId,
+                    kind = safeKind,
+                    saved = true,
+                    path = $"data/guilds/{guildId}/{safeKind}.json"
+                });
+            }
+        });
+
+        app.MapGet("/api/vtc/shared/kinds", () =>
+        {
+            return Results.Ok(new
+            {
+                ok = true,
+                kinds = new[]
+                {
+                    "branding",
+                    "events",
+                    "convoy",
+                    "fleet",
+                    "maintenance",
+                    "roster-profiles",
+                    "awards",
+                    "settings"
+                }
+            });
+        });
+    }
+
+    private static string NormalizeKind(string kind)
+    {
+        kind = (kind ?? "").Trim().ToLowerInvariant();
+
+        return kind switch
+        {
+            "branding" => "branding",
+            "events" => "events",
+            "convoy" => "convoy",
+            "fleet" => "fleet",
+            "maintenance" => "maintenance",
+            "roster-profiles" => "roster-profiles",
+            "awards" => "awards",
+            "settings" => "settings",
+            _ => ""
+        };
+    }
+
+    private static string GetGuildFilePath(string guildsDir, string guildId, string kind)
+    {
+        guildId = new string((guildId ?? "").Where(char.IsDigit).ToArray());
+        if (string.IsNullOrWhiteSpace(guildId))
+            throw new InvalidOperationException("GuildId is required.");
+
+        var dir = Path.Combine(guildsDir, guildId);
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, $"{kind}.json");
+    }
+
+    private static string ReadJsonOrDefault(string path, string fallbackJson)
+    {
+        try
+        {
+            if (!File.Exists(path))
+                return fallbackJson;
+
+            var raw = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(raw))
+                return fallbackJson;
+
+            using var _ = JsonDocument.Parse(raw);
+            return raw;
+        }
+        catch
+        {
+            return fallbackJson;
+        }
+    }
+
+    private static string FormatJson(string rawJson)
+    {
+        using var doc = JsonDocument.Parse(rawJson);
+        return JsonSerializer.Serialize(doc.RootElement, new JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+    }
+
+    private static string GetDefaultJsonForKind(string kind)
+    {
+        return kind switch
+        {
+            "branding" => """
+            {
+              "ok": true,
+              "kind": "branding",
+              "bannerImagePath": "",
+              "iconImagePath": "",
+              "updatedUtc": null
+            }
+            """,
+            "events" => """
+            {
+              "ok": true,
+              "kind": "events",
+              "items": []
+            }
+            """,
+            "convoy" => """
+            {
+              "ok": true,
+              "kind": "convoy",
+              "items": []
+            }
+            """,
+            "fleet" => """
+            {
+              "ok": true,
+              "kind": "fleet",
+              "items": []
+            }
+            """,
+            "maintenance" => """
+            {
+              "ok": true,
+              "kind": "maintenance",
+              "items": []
+            }
+            """,
+            "roster-profiles" => """
+            {
+              "ok": true,
+              "kind": "roster-profiles",
+              "items": []
+            }
+            """,
+            "awards" => """
+            {
+              "ok": true,
+              "kind": "awards",
+              "items": []
+            }
+            """,
+            "settings" => """
+            {
+              "ok": true,
+              "kind": "settings",
+              "items": {}
+            }
+            """,
+            _ => """
+            {
+              "ok": true,
+              "items": []
+            }
+            """
+        };
     }
 }
