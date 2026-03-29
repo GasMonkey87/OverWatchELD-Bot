@@ -351,6 +351,24 @@ internal static class Program
         });
     }
 
+    app.MapPost("/api/loads/pickup", async (LoadDto dto) =>
+{
+    await SaveLoad(dto);
+
+    await SendEmbed("📦 Load Picked Up", dto);
+
+    return Results.Ok(new { ok = true });
+});
+
+app.MapPost("/api/loads/complete", async (LoadDto dto) =>
+{
+    await SaveCompleted(dto);
+
+    await SendEmbed("✅ Load Completed", dto);
+
+    return Results.Ok(new { ok = true });
+});
+    
     private static string NormalizeKind(string kind)
     {
         kind = (kind ?? "").Trim().ToLowerInvariant();
