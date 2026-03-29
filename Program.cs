@@ -9,6 +9,8 @@ using OverWatchELD.VtcBot.Routes;
 using OverWatchELD.VtcBot.Services;
 using OverWatchELD.VtcBot.Stores;
 using OverWatchELD.VtcBot.Threads;
+using Discord.Webhook;
+using OverWatchELD.VtcBot.Models;
 
 namespace OverWatchELD.VtcBot;
 
