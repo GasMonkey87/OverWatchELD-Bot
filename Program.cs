@@ -45,6 +45,7 @@ internal static class Program
         var performanceDir = Path.Combine(dataDir, "performance");
         var guildsDir = Path.Combine(dataDir, "guilds");
         var completedLoadsPath = Path.Combine(dataDir, "completed_loads.json");
+        var dispatchSettingsPath = Path.Combine(dataDir, "dispatch_settings.json");
 
         Directory.CreateDirectory(dataDir);
         Directory.CreateDirectory(performanceDir);
@@ -54,7 +55,7 @@ internal static class Program
         {
             ThreadStore = new ThreadMapStore(Path.Combine(dataDir, "thread_map.json")),
             DispatchStore = new DispatchSettingsStore(
-                Path.Combine(dataDir, "dispatch_settings.json"),
+                dispatchSettingsPath,
                 JsonReadOpts,
                 JsonWriteOpts),
             RosterStore = new VtcRosterStore(
@@ -207,7 +208,7 @@ internal static class Program
                 "<div class=\"card\"><div class=\"label\">Status</div><div class=\"value\">" + statusText + "</div></div>" +
                 "<div class=\"card\"><div class=\"label\">Guilds Connected</div><div class=\"value\">" + guildCount + "</div></div>" +
                 "<div class=\"card\"><div class=\"label\">Uptime</div><div class=\"value\">" + uptimeText + "</div></div>" +
-                "<div class=\"card\"><div class=\"label\">Build</div><div class=\"value\">phase3-dashboard + shared-guild-store</div></div>" +
+                "<div class=\"card\"><div class=\"label\">Build</div><div class=\"value\">phase3-dashboard + shared-guild-store + loads</div></div>" +
                 "</div>" +
                 "<h3>Endpoints</h3>" +
                 "<ul>" +
@@ -234,7 +235,7 @@ internal static class Program
         {
             ok = true,
             name = "OverWatchELD.VtcBot",
-            version = "phase3-dashboard + shared-guild-store"
+            version = "phase3-dashboard + shared-guild-store + loads"
         }));
 
         app.MapGet("/api/status", () =>
@@ -249,19 +250,17 @@ internal static class Program
                 guilds = guildCount,
                 uptimeSeconds = (long)uptime.TotalSeconds,
                 startedUtc = _startedUtc.UtcDateTime,
-                version = "phase3-dashboard + shared-guild-store"
+                version = "phase3-dashboard + shared-guild-store + loads"
             });
         });
 
-        // Existing routes
         ApiRoutes.Register(app, services, JsonReadOpts, JsonWriteOpts, _http);
         DashboardRoutes.Register(app);
         AwardRoutes.Register(app, services, JsonReadOpts);
 
-        // Loads routes
         app.MapPost("/api/loads/pickup", async (LoadDto dto) =>
         {
-            await SendLoadEmbedAsync(services, "📦 Load Picked Up", dto);
+            await SendLoadEmbedAsync(dispatchSettingsPath, "📦 Load Picked Up", dto);
             return Results.Ok(new { ok = true });
         });
 
@@ -289,7 +288,7 @@ internal static class Program
                 Console.WriteLine("Failed to save completed load: " + ex.Message);
             }
 
-            await SendLoadEmbedAsync(services, "✅ Load Completed", dto);
+            await SendLoadEmbedAsync(dispatchSettingsPath, "✅ Load Completed", dto);
             return Results.Ok(new { ok = true });
         });
 
@@ -324,14 +323,13 @@ internal static class Program
             }
         });
 
-        // New shared guild-scoped JSON routes
         RegisterSharedGuildRoutes(app, guildsDir);
 
         Console.WriteLine($"🌐 HTTP API listening on 0.0.0.0:{port}");
         await app.RunAsync();
     }
 
-    private static async Task SendLoadEmbedAsync(BotServices services, string title, LoadDto dto)
+    private static async Task SendLoadEmbedAsync(string dispatchSettingsPath, string title, LoadDto dto)
     {
         try
         {
@@ -348,23 +346,78 @@ internal static class Program
                 .WithCurrentTimestamp()
                 .Build();
 
-            var configs = services.DispatchStore.LoadAll();
-
-            foreach (var cfg in configs)
+            if (!File.Exists(dispatchSettingsPath))
             {
-                if (string.IsNullOrWhiteSpace(cfg.LoadsWebhookUrl))
-                    continue;
+                Console.WriteLine("No dispatch_settings.json found, skipping load webhook.");
+                return;
+            }
 
+            var raw = await File.ReadAllTextAsync(dispatchSettingsPath);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                Console.WriteLine("dispatch_settings.json is empty, skipping load webhook.");
+                return;
+            }
+
+            using var doc = JsonDocument.Parse(raw);
+            var urls = new List<string>();
+
+            static void CollectWebhookUrls(JsonElement el, List<string> urls)
+            {
+                if (el.ValueKind != JsonValueKind.Object)
+                    return;
+
+                foreach (var propName in new[]
+                {
+                    "loadsWebhookUrl",
+                    "LoadsWebhookUrl",
+                    "dispatchWebhookUrl",
+                    "DispatchWebhookUrl"
+                })
+                {
+                    if (el.TryGetProperty(propName, out var p) && p.ValueKind == JsonValueKind.String)
+                    {
+                        var url = p.GetString();
+                        if (!string.IsNullOrWhiteSpace(url))
+                            urls.Add(url!);
+                    }
+                }
+            }
+
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in doc.RootElement.EnumerateArray())
+                    CollectWebhookUrls(item, urls);
+            }
+            else if (doc.RootElement.ValueKind == JsonValueKind.Object)
+            {
+                CollectWebhookUrls(doc.RootElement, urls);
+
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.Object)
+                        CollectWebhookUrls(prop.Value, urls);
+                }
+            }
+
+            var sent = false;
+
+            foreach (var webhookUrl in urls.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
                 try
                 {
-                    using var webhook = new DiscordWebhookClient(cfg.LoadsWebhookUrl);
+                    using var webhook = new DiscordWebhookClient(webhookUrl);
                     await webhook.SendMessageAsync(embeds: new[] { embed });
+                    sent = true;
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine("Failed to send load webhook: " + ex.Message);
                 }
             }
+
+            if (!sent)
+                Console.WriteLine("No usable loads/dispatch webhook found, skipping embed post.");
         }
         catch (Exception ex)
         {
