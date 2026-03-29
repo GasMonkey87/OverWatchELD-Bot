@@ -261,6 +261,40 @@ internal static class Program
         await app.RunAsync();
     }
 
+    public class LoadDto
+{
+    public string LoadNumber { get; set; } = "";
+    public string Driver { get; set; } = "";
+    public string Truck { get; set; } = "";
+    public string Cargo { get; set; } = "";
+    public double Weight { get; set; }
+    public string StartLocation { get; set; } = "";
+    public string EndLocation { get; set; } = "";
+}
+    
+    async Task SendLoadEmbed(string title, LoadDto dto)
+{
+    var embed = new EmbedBuilder()
+        .WithTitle(title)
+        .AddField("Load #", dto.LoadNumber, true)
+        .AddField("Driver", dto.Driver, true)
+        .AddField("Truck", dto.Truck, true)
+        .AddField("Cargo", dto.Cargo, false)
+        .AddField("Weight", $"{dto.Weight:n0} lbs", true)
+        .AddField("From", dto.StartLocation, true)
+        .AddField("To", string.IsNullOrWhiteSpace(dto.EndLocation) ? "In Transit" : dto.EndLocation, true)
+        .WithColor(title.Contains("Completed") ? Color.Green : Color.Blue)
+        .Build();
+
+    var webhookUrl = DispatchSettingsStore.GetWebhook("loads");
+
+    if (!string.IsNullOrWhiteSpace(webhookUrl))
+    {
+        var client = new DiscordWebhookClient(webhookUrl);
+        await client.SendMessageAsync(embeds: new[] { embed });
+    }
+}
+    
     private static void RegisterSharedGuildRoutes(WebApplication app, string guildsDir)
     {
         app.MapGet("/api/vtc/shared/{kind}", (string kind, HttpRequest req) =>
