@@ -2,15 +2,15 @@ using System.Text;
 using System.Text.Json;
 using Discord;
 using Discord.WebSocket;
+using Discord.Webhook;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OverWatchELD.VtcBot.Commands;
+using OverWatchELD.VtcBot.Models;
 using OverWatchELD.VtcBot.Routes;
 using OverWatchELD.VtcBot.Services;
 using OverWatchELD.VtcBot.Stores;
 using OverWatchELD.VtcBot.Threads;
-using Discord.Webhook;
-using OverWatchELD.VtcBot.Models;
 
 namespace OverWatchELD.VtcBot;
 
@@ -44,6 +44,7 @@ internal static class Program
         var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
         var performanceDir = Path.Combine(dataDir, "performance");
         var guildsDir = Path.Combine(dataDir, "guilds");
+        var completedLoadsPath = Path.Combine(dataDir, "completed_loads.json");
 
         Directory.CreateDirectory(dataDir);
         Directory.CreateDirectory(performanceDir);
@@ -218,6 +219,7 @@ internal static class Program
                 "<li><a href=\"/api/performance/top\">/api/performance/top</a></li>" +
                 "<li><a href=\"/dashboard\">/dashboard</a></li>" +
                 "<li><a href=\"/live-map\">/live-map</a></li>" +
+                "<li><a href=\"/api/loads/completed\">/api/loads/completed</a></li>" +
                 "</ul>" +
                 "</div>" +
                 "</body>" +
@@ -256,6 +258,72 @@ internal static class Program
         DashboardRoutes.Register(app);
         AwardRoutes.Register(app, services, JsonReadOpts);
 
+        // Loads routes
+        app.MapPost("/api/loads/pickup", async (LoadDto dto) =>
+        {
+            await SendLoadEmbedAsync(services, "📦 Load Picked Up", dto);
+            return Results.Ok(new { ok = true });
+        });
+
+        app.MapPost("/api/loads/complete", async (LoadDto dto) =>
+        {
+            try
+            {
+                var list = new List<LoadDto>();
+
+                if (File.Exists(completedLoadsPath))
+                {
+                    var raw = await File.ReadAllTextAsync(completedLoadsPath);
+                    if (!string.IsNullOrWhiteSpace(raw))
+                        list = JsonSerializer.Deserialize<List<LoadDto>>(raw, JsonReadOpts) ?? new List<LoadDto>();
+                }
+
+                list.Add(dto);
+
+                await File.WriteAllTextAsync(
+                    completedLoadsPath,
+                    JsonSerializer.Serialize(list, JsonWriteOpts));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Failed to save completed load: " + ex.Message);
+            }
+
+            await SendLoadEmbedAsync(services, "✅ Load Completed", dto);
+            return Results.Ok(new { ok = true });
+        });
+
+        app.MapGet("/api/loads/completed", async () =>
+        {
+            try
+            {
+                if (!File.Exists(completedLoadsPath))
+                    return Results.Ok(new { ok = true, count = 0, items = Array.Empty<LoadDto>() });
+
+                var raw = await File.ReadAllTextAsync(completedLoadsPath);
+                var items = string.IsNullOrWhiteSpace(raw)
+                    ? new List<LoadDto>()
+                    : (JsonSerializer.Deserialize<List<LoadDto>>(raw, JsonReadOpts) ?? new List<LoadDto>());
+
+                return Results.Ok(new
+                {
+                    ok = true,
+                    count = items.Count,
+                    items
+                });
+            }
+            catch (Exception ex)
+            {
+                return Results.Ok(new
+                {
+                    ok = false,
+                    error = ex.Message,
+                    count = 0,
+                    items = Array.Empty<LoadDto>()
+                });
+            }
+        });
+
         // New shared guild-scoped JSON routes
         RegisterSharedGuildRoutes(app, guildsDir);
 
@@ -263,40 +331,47 @@ internal static class Program
         await app.RunAsync();
     }
 
-    public class LoadDto
-{
-    public string LoadNumber { get; set; } = "";
-    public string Driver { get; set; } = "";
-    public string Truck { get; set; } = "";
-    public string Cargo { get; set; } = "";
-    public double Weight { get; set; }
-    public string StartLocation { get; set; } = "";
-    public string EndLocation { get; set; } = "";
-}
-    
-    async Task SendLoadEmbed(string title, LoadDto dto)
-{
-    var embed = new EmbedBuilder()
-        .WithTitle(title)
-        .AddField("Load #", dto.LoadNumber, true)
-        .AddField("Driver", dto.Driver, true)
-        .AddField("Truck", dto.Truck, true)
-        .AddField("Cargo", dto.Cargo, false)
-        .AddField("Weight", $"{dto.Weight:n0} lbs", true)
-        .AddField("From", dto.StartLocation, true)
-        .AddField("To", string.IsNullOrWhiteSpace(dto.EndLocation) ? "In Transit" : dto.EndLocation, true)
-        .WithColor(title.Contains("Completed") ? Color.Green : Color.Blue)
-        .Build();
-
-    var webhookUrl = DispatchSettingsStore.GetWebhook("loads");
-
-    if (!string.IsNullOrWhiteSpace(webhookUrl))
+    private static async Task SendLoadEmbedAsync(BotServices services, string title, LoadDto dto)
     {
-        var client = new DiscordWebhookClient(webhookUrl);
-        await client.SendMessageAsync(embeds: new[] { embed });
+        try
+        {
+            var embed = new EmbedBuilder()
+                .WithTitle(title)
+                .AddField("Load #", string.IsNullOrWhiteSpace(dto.LoadNumber) ? "Unknown" : dto.LoadNumber, true)
+                .AddField("Driver", string.IsNullOrWhiteSpace(dto.Driver) ? "Unknown" : dto.Driver, true)
+                .AddField("Truck", string.IsNullOrWhiteSpace(dto.Truck) ? "Unknown" : dto.Truck, true)
+                .AddField("Cargo", string.IsNullOrWhiteSpace(dto.Cargo) ? "Unknown" : dto.Cargo, false)
+                .AddField("Weight", $"{dto.Weight:n0} lbs", true)
+                .AddField("From", string.IsNullOrWhiteSpace(dto.StartLocation) ? "Unknown" : dto.StartLocation, true)
+                .AddField("To", string.IsNullOrWhiteSpace(dto.EndLocation) ? "In Transit" : dto.EndLocation, true)
+                .WithColor(title.Contains("Completed", StringComparison.OrdinalIgnoreCase) ? Color.Green : Color.Blue)
+                .WithCurrentTimestamp()
+                .Build();
+
+            var configs = services.DispatchStore.LoadAll();
+
+            foreach (var cfg in configs)
+            {
+                if (string.IsNullOrWhiteSpace(cfg.LoadsWebhookUrl))
+                    continue;
+
+                try
+                {
+                    using var webhook = new DiscordWebhookClient(cfg.LoadsWebhookUrl);
+                    await webhook.SendMessageAsync(embeds: new[] { embed });
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Failed to send load webhook: " + ex.Message);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Load embed failed: " + ex.Message);
+        }
     }
-}
-    
+
     private static void RegisterSharedGuildRoutes(WebApplication app, string guildsDir)
     {
         app.MapGet("/api/vtc/shared/{kind}", (string kind, HttpRequest req) =>
@@ -387,24 +462,6 @@ internal static class Program
         });
     }
 
-    app.MapPost("/api/loads/pickup", async (LoadDto dto) =>
-{
-    await SaveLoad(dto);
-
-    await SendEmbed("📦 Load Picked Up", dto);
-
-    return Results.Ok(new { ok = true });
-});
-
-app.MapPost("/api/loads/complete", async (LoadDto dto) =>
-{
-    await SaveCompleted(dto);
-
-    await SendEmbed("✅ Load Completed", dto);
-
-    return Results.Ok(new { ok = true });
-});
-    
     private static string NormalizeKind(string kind)
     {
         kind = (kind ?? "").Trim().ToLowerInvariant();
