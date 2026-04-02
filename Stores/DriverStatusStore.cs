@@ -65,13 +65,6 @@ public sealed class DriverStatusStore
             .ToList();
     }
 
-    public DriverStatusEntry? Get(string guildId, string discordUserId)
-    {
-        return LoadAll().FirstOrDefault(x =>
-            string.Equals(x.GuildId, guildId, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
-    }
-
     public void Upsert(DriverStatusEntry entry)
     {
         var list = LoadAll();
