@@ -104,14 +104,21 @@ public static class Program
         await _client.StartAsync();
 
         var builder = WebApplication.CreateBuilder(args);
-
+        builder.Services.AddDistributedMemoryCache();
+builder.Services.AddSession(options =>
+{
+    options.Cookie.HttpOnly = true;
+    options.Cookie.IsEssential = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.IdleTimeout = TimeSpan.FromHours(12);
+});
         var portStr = Environment.GetEnvironmentVariable("PORT") ?? "8080";
         if (!int.TryParse(portStr, out var port))
             port = 8080;
 
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
         var app = builder.Build();
-
+        app.UseSession();
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         if (Directory.Exists(wwwroot))
         {
@@ -153,7 +160,7 @@ public static class Program
         app.MapGet("/", () => Results.Redirect("/index.html"));
 
         DashboardRoutes.Register(app, services, JsonWriteOpts);
-
+        AuthRoutes.Register(app);
         var loadThreadStore = new ProgramLoadThreadStore(Path.Combine(dataDir, "load_threads.json"), JsonWriteOpts);
         var loadApiLogPath = Path.Combine(dataDir, "load_api_log.txt");
 
@@ -244,7 +251,7 @@ public static class Program
                 return Results.Json(new { ok = false, error = ex.Message }, statusCode: 500);
             }
         });
-
+        
         Console.WriteLine($"Bot running on :{port}");
         await app.RunAsync();
     }
