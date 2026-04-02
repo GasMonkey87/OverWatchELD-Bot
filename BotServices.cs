@@ -15,6 +15,7 @@ public sealed class BotServices
     public LinkedDriversStore? LinkedDriversStore { get; set; }
     public PerformanceStore? PerformanceStore { get; set; }
     public DriverStatusStore? DriverStatusStore { get; set; }
+    
     public VtcAwardStore? AwardStore { get; set; }
     public DriverAwardStore? DriverAwardStore { get; set; }
 
