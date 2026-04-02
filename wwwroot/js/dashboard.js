@@ -48,22 +48,13 @@ function yesNo(value) {
   return value ? "YES" : "NO";
 }
 
-async function getBotGuildIds() {
-  const data = await getJson("/api/vtc/servers");
-  return new Set((data.servers || []).map(x => x.id));
-}
-
-async function populateGuilds(guilds) {
+function populateGuilds(guilds) {
   const sel = document.getElementById("guildSelect");
   if (!sel) return;
 
   sel.innerHTML = "";
 
-  const botGuildIds = await getBotGuildIds();
-
   for (const g of guilds || []) {
-    if (!botGuildIds.has(g.id)) continue;
-
     let perms = 0n;
     try {
       perms = BigInt(g.permissions_new || g.permissions || "0");
@@ -239,10 +230,8 @@ window.addEventListener("DOMContentLoaded", async () => {
     const auth = await checkAuth();
     if (!auth) return;
 
-    console.log("AUTH DATA:", auth);
-
-    await populateGuilds(auth.guilds || []);
     await refreshStatus();
+    populateGuilds(auth.guilds || []);
     await loadDashboard();
   } catch (err) {
     console.error(err);
