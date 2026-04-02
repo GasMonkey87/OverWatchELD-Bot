@@ -3,6 +3,7 @@ using System.Linq;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Discord.WebSocket;
+using OverWatchELD.VtcBot.Services;
 
 namespace OverWatchELD.VtcBot.Routes;
 
