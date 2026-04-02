@@ -11,11 +11,17 @@ public static class DashboardRoutes
 {
     public static void Register(WebApplication app, BotServices services, System.Text.Json.JsonSerializerOptions jsonOpts)
     {
-        app.MapGet("/api/dashboard/summary", (HttpRequest req) =>
+        app.MapGet("/api/dashboard/summary", (HttpContext ctx, HttpRequest req) =>
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             if (string.IsNullOrWhiteSpace(guildId))
-                guildId = services.Client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+            if (!AuthGuard.IsLoggedIn(ctx))
+                return Results.Json(new { ok = false, error = "Unauthorized" }, statusCode: 401);
+
+            if (!AuthGuard.CanManageGuild(ctx, guildId))
+                return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
 
             var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
             var linked = services.LinkedDriversStore?.List(guildId) ?? new();
@@ -53,11 +59,17 @@ public static class DashboardRoutes
             });
         });
 
-        app.MapGet("/api/dashboard/drivers", (HttpRequest req) =>
+        app.MapGet("/api/dashboard/drivers", (HttpContext ctx, HttpRequest req) =>
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             if (string.IsNullOrWhiteSpace(guildId))
-                guildId = services.Client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+            if (!AuthGuard.IsLoggedIn(ctx))
+                return Results.Json(new { ok = false, error = "Unauthorized" }, statusCode: 401);
+
+            if (!AuthGuard.CanManageGuild(ctx, guildId))
+                return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
 
             var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
             if (guild == null)
@@ -100,11 +112,17 @@ public static class DashboardRoutes
             });
         });
 
-        app.MapGet("/api/dashboard/performance", (HttpRequest req) =>
+        app.MapGet("/api/dashboard/performance", (HttpContext ctx, HttpRequest req) =>
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             if (string.IsNullOrWhiteSpace(guildId))
-                guildId = services.Client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+            if (!AuthGuard.IsLoggedIn(ctx))
+                return Results.Json(new { ok = false, error = "Unauthorized" }, statusCode: 401);
+
+            if (!AuthGuard.CanManageGuild(ctx, guildId))
+                return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
 
             var take = 10;
             if (int.TryParse(req.Query["take"], out var parsed) && parsed > 0)
@@ -140,11 +158,17 @@ public static class DashboardRoutes
             });
         });
 
-        app.MapGet("/api/dashboard/settings", (HttpRequest req) =>
+        app.MapGet("/api/dashboard/settings", (HttpContext ctx, HttpRequest req) =>
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             if (string.IsNullOrWhiteSpace(guildId))
-                guildId = services.Client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+            if (!AuthGuard.IsLoggedIn(ctx))
+                return Results.Json(new { ok = false, error = "Unauthorized" }, statusCode: 401);
+
+            if (!AuthGuard.CanManageGuild(ctx, guildId))
+                return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
 
             var settings = services.DispatchStore?.Get(guildId);
 
@@ -156,7 +180,7 @@ public static class DashboardRoutes
             });
         });
 
-        app.MapPut("/api/dashboard/settings", async (HttpRequest req) =>
+        app.MapPut("/api/dashboard/settings", async (HttpContext ctx, HttpRequest req) =>
         {
             try
             {
@@ -166,6 +190,15 @@ public static class DashboardRoutes
                 var guildId = root.TryGetProperty("guildId", out var guildProp)
                     ? (guildProp.GetString() ?? "").Trim()
                     : "";
+
+                if (string.IsNullOrWhiteSpace(guildId))
+                    return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+                if (!AuthGuard.IsLoggedIn(ctx))
+                    return Results.Json(new { ok = false, error = "Unauthorized" }, statusCode: 401);
+
+                if (!AuthGuard.CanManageGuild(ctx, guildId))
+                    return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
 
                 var dispatchChannelId = root.TryGetProperty("dispatchChannelId", out var dispatchChannelProp)
                     ? (dispatchChannelProp.GetString() ?? "").Trim()
@@ -182,9 +215,6 @@ public static class DashboardRoutes
                 var announcementWebhookUrl = root.TryGetProperty("announcementWebhookUrl", out var announcementWebhookProp)
                     ? (announcementWebhookProp.GetString() ?? "").Trim()
                     : "";
-
-                if (string.IsNullOrWhiteSpace(guildId))
-                    return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
 
                 if (ulong.TryParse(dispatchChannelId, out var dispatchChannel) && dispatchChannel > 0)
                     services.DispatchStore?.SetDispatchChannel(guildId, dispatchChannel);
