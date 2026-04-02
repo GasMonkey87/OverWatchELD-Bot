@@ -4,7 +4,6 @@ using System.Linq;
 using Discord;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using OverWatchELD.VtcBot.Models;
 using OverWatchELD.VtcBot.Services;
 
 namespace OverWatchELD.VtcBot.Routes;
@@ -29,21 +28,41 @@ public static class DashboardRoutes
             if (guild == null)
                 return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
 
-            var linked = services.LinkedDriversStore?.List(guildId) ?? new List<LinkedDriverEntry>();
-            var perf = services.PerformanceStore?.GetTop(guildId, 5) ?? new List<DriverPerformance>();
+            var linkedIds = services.LinkedDriversStore != null
+                ? services.LinkedDriversStore
+                    .List(guildId)
+                    .Select(x => x.DiscordUserId ?? "")
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var perfTop = services.PerformanceStore != null
+                ? services.PerformanceStore.GetTop(guildId, 5)
+                    .Select(p => new
+                    {
+                        discordUserId = p.DiscordUserId,
+                        score = p.Score,
+                        milesWeek = p.MilesWeek,
+                        loadsWeek = p.LoadsWeek,
+                        performancePct = p.PerformancePct
+                    })
+                    .ToList()
+                : new List<object>();
+
             var settings = services.DispatchStore?.Get(guildId);
 
-            var topDrivers = perf.Select(p =>
+            var topDrivers = perfTop.Select(p =>
             {
-                var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
+                dynamic pd = p;
+                var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == (string)pd.discordUserId);
                 return new
                 {
-                    discordUserId = p.DiscordUserId,
-                    name = user?.DisplayName ?? p.DiscordUserId,
-                    score = p.Score,
-                    milesWeek = p.MilesWeek,
-                    loadsWeek = p.LoadsWeek,
-                    performancePct = p.PerformancePct
+                    discordUserId = (string)pd.discordUserId,
+                    name = user?.DisplayName ?? (string)pd.discordUserId,
+                    score = pd.score,
+                    milesWeek = pd.milesWeek,
+                    loadsWeek = pd.loadsWeek,
+                    performancePct = pd.performancePct
                 };
             }).ToList();
 
@@ -57,7 +76,7 @@ public static class DashboardRoutes
                     u.Status == UserStatus.Online ||
                     u.Status == UserStatus.Idle ||
                     u.Status == UserStatus.DoNotDisturb),
-                pairedDrivers = linked.Count,
+                pairedDrivers = linkedIds.Count,
                 dispatchReady = !string.IsNullOrWhiteSpace(settings?.DispatchChannelId),
                 announcementsReady = !string.IsNullOrWhiteSpace(settings?.AnnouncementChannelId),
                 topDrivers
@@ -82,8 +101,26 @@ public static class DashboardRoutes
                 if (guild == null)
                     return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
 
-                var linked = services.LinkedDriversStore?.List(guildId) ?? new List<LinkedDriverEntry>();
-                var perf = services.PerformanceStore?.GetTop(guildId, 500) ?? new List<DriverPerformance>();
+                var linkedIds = services.LinkedDriversStore != null
+                    ? services.LinkedDriversStore
+                        .List(guildId)
+                        .Select(x => x.DiscordUserId ?? "")
+                        .Where(x => !string.IsNullOrWhiteSpace(x))
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                var perfMap = services.PerformanceStore != null
+                    ? services.PerformanceStore.GetTop(guildId, 500)
+                        .ToDictionary(
+                            x => x.DiscordUserId ?? "",
+                            x => (object)new
+                            {
+                                x.Score,
+                                x.MilesWeek,
+                                x.LoadsWeek
+                            },
+                            StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
                 var drivers = guild.Users
                     .OrderBy(u => u.DisplayName)
@@ -91,11 +128,8 @@ public static class DashboardRoutes
                     {
                         var discordUserId = user.Id.ToString();
 
-                        var isPaired = linked.Any(x =>
-                            string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
-
-                        var p = perf.FirstOrDefault(x =>
-                            string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
+                        perfMap.TryGetValue(discordUserId, out var perfObj);
+                        dynamic? p = perfObj;
 
                         return new
                         {
@@ -103,7 +137,7 @@ public static class DashboardRoutes
                             name = user.DisplayName,
                             role = "driver",
                             status = user.Status.ToString().ToLowerInvariant(),
-                            paired = isPaired,
+                            paired = linkedIds.Contains(discordUserId),
                             truck = "",
                             loadNumber = "",
                             location = "",
@@ -151,26 +185,28 @@ public static class DashboardRoutes
             if (guild == null)
                 return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
 
-            var perf = services.PerformanceStore?.GetTop(guildId, take) ?? new List<DriverPerformance>();
-
-            var rows = perf.Select(p =>
-            {
-                var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
-                return new
-                {
-                    discordUserId = p.DiscordUserId,
-                    driverName = user?.DisplayName ?? p.DiscordUserId,
-                    milesWeek = p.MilesWeek,
-                    milesMonth = p.MilesMonth,
-                    milesTotal = p.MilesTotal,
-                    loadsWeek = p.LoadsWeek,
-                    loadsMonth = p.LoadsMonth,
-                    loadsTotal = p.LoadsTotal,
-                    performancePct = p.PerformancePct,
-                    score = p.Score,
-                    updatedUtc = p.UpdatedUtc
-                };
-            }).ToList();
+            var rows = services.PerformanceStore != null
+                ? services.PerformanceStore.GetTop(guildId, take)
+                    .Select(p =>
+                    {
+                        var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
+                        return new
+                        {
+                            discordUserId = p.DiscordUserId,
+                            driverName = user?.DisplayName ?? p.DiscordUserId,
+                            milesWeek = p.MilesWeek,
+                            milesMonth = p.MilesMonth,
+                            milesTotal = p.MilesTotal,
+                            loadsWeek = p.LoadsWeek,
+                            loadsMonth = p.LoadsMonth,
+                            loadsTotal = p.LoadsTotal,
+                            performancePct = p.PerformancePct,
+                            score = p.Score,
+                            updatedUtc = p.UpdatedUtc
+                        };
+                    })
+                    .ToList()
+                : new List<object>();
 
             return Results.Ok(new
             {
