@@ -48,15 +48,18 @@ function yesNo(value) {
   return value ? "YES" : "NO";
 }
 
-function populateGuilds(guilds) {
+async function populateGuilds(guilds) {
   const sel = document.getElementById("guildSelect");
   if (!sel) return;
 
   sel.innerHTML = "";
 
-  for (const g of guilds || []) {
-    let perms = 0n;
+  const botGuildIds = await getBotGuildIds();
 
+  for (const g of guilds || []) {
+    if (!botGuildIds.has(g.id)) continue;
+
+    let perms = 0n;
     try {
       perms = BigInt(g.permissions_new || g.permissions || "0");
     } catch {
@@ -68,9 +71,11 @@ function populateGuilds(guilds) {
     const isOwner = g.owner === true;
     const isManager = isOwner || isAdmin || canManage;
 
+    if (!isManager) continue;
+
     const opt = document.createElement("option");
     opt.value = g.id;
-    opt.textContent = g.name + (isManager ? " ✅" : "");
+    opt.textContent = g.name;
     sel.appendChild(opt);
   }
 
