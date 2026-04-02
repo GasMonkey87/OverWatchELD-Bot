@@ -1,8 +1,8 @@
 using System;
 using System.Linq;
+using Discord;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Discord.WebSocket;
 using OverWatchELD.VtcBot.Services;
 
 namespace OverWatchELD.VtcBot.Routes;
@@ -11,19 +11,30 @@ public static class DashboardRoutes
 {
     public static void Register(WebApplication app, BotServices services, System.Text.Json.JsonSerializerOptions jsonOpts)
     {
-        // -----------------------------
-        // SUMMARY
-        // -----------------------------
         app.MapGet("/api/dashboard/summary", (HttpRequest req) =>
         {
-            var guildId = req.Query["guildId"].ToString().Trim();
-
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             if (string.IsNullOrWhiteSpace(guildId))
                 guildId = services.Client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
 
             var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
-
+            var linked = services.LinkedDriversStore?.List(guildId) ?? new();
             var perf = services.PerformanceStore?.GetTop(guildId, 5) ?? new();
+            var settings = services.DispatchStore?.Get(guildId);
+
+            var topDrivers = perf.Select(p =>
+            {
+                var user = guild?.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
+                return new
+                {
+                    discordUserId = p.DiscordUserId,
+                    name = user?.DisplayName ?? p.DiscordUserId,
+                    score = p.Score,
+                    milesWeek = p.MilesWeek,
+                    loadsWeek = p.LoadsWeek,
+                    performancePct = p.PerformancePct
+                };
+            }).ToList();
 
             return Results.Ok(new
             {
@@ -32,62 +43,54 @@ public static class DashboardRoutes
                 vtcName = guild?.Name ?? "Unknown",
                 driversTotal = guild?.Users.Count ?? 0,
                 driversOnline = guild?.Users.Count(u =>
-                    u.Status == Discord.UserStatus.Online ||
-                    u.Status == Discord.UserStatus.Idle ||
-                    u.Status == Discord.UserStatus.DoNotDisturb) ?? 0,
-                pairedDrivers = services.LinkedDriversStore?.GetAll()
-                    ?.Count(x => x.GuildId == guildId) ?? 0,
-                dispatchReady = true,
-                announcementsReady = true,
-                topDrivers = perf.Select(p => new
-                {
-                    name = p.DriverName ?? p.DriverId,
-                    score = p.Score,
-                    milesWeek = p.MilesWeek,
-                    loadsWeek = p.LoadsWeek
-                })
+                    u.Status == UserStatus.Online ||
+                    u.Status == UserStatus.Idle ||
+                    u.Status == UserStatus.DoNotDisturb) ?? 0,
+                pairedDrivers = linked.Count,
+                dispatchReady = !string.IsNullOrWhiteSpace(settings?.DispatchChannelId),
+                announcementsReady = !string.IsNullOrWhiteSpace(settings?.AnnouncementChannelId),
+                topDrivers
             });
         });
 
-        // -----------------------------
-        // DRIVERS
-        // -----------------------------
         app.MapGet("/api/dashboard/drivers", (HttpRequest req) =>
         {
-            var guildId = req.Query["guildId"].ToString().Trim();
-
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             if (string.IsNullOrWhiteSpace(guildId))
                 guildId = services.Client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
 
             var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
             if (guild == null)
-                return Results.Ok(new { ok = true, drivers = Array.Empty<object>() });
+                return Results.Ok(new { ok = true, guildId, drivers = Array.Empty<object>() });
 
-            var linked = services.LinkedDriversStore?.GetAll()
-                ?.Where(x => x.GuildId == guildId)
-                .ToList() ?? new();
-
+            var linked = services.LinkedDriversStore?.List(guildId) ?? new();
             var perf = services.PerformanceStore?.GetTop(guildId, 500) ?? new();
 
-            var drivers = guild.Users.Select(user =>
-            {
-                var id = user.Id.ToString();
-
-                var link = linked.FirstOrDefault(x => x.DiscordUserId == id);
-                var p = perf.FirstOrDefault(x => x.DriverId == id);
-
-                return new
+            var drivers = guild.Users
+                .OrderBy(u => u.DisplayName)
+                .Select(user =>
                 {
-                    name = user.DisplayName,
-                    role = "driver",
-                    status = user.Status.ToString().ToLowerInvariant(),
-                    paired = link != null,
-                    truck = "",
-                    score = p?.Score ?? 0,
-                    weekMiles = p?.MilesWeek ?? 0,
-                    loads = p?.LoadsWeek ?? 0
-                };
-            });
+                    var discordUserId = user.Id.ToString();
+                    var link = linked.FirstOrDefault(x =>
+                        string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
+
+                    var p = perf.FirstOrDefault(x =>
+                        string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
+
+                    return new
+                    {
+                        discordUserId,
+                        name = user.DisplayName,
+                        role = "driver",
+                        status = user.Status.ToString().ToLowerInvariant(),
+                        paired = link != null,
+                        truck = "",
+                        score = p?.Score ?? 0,
+                        weekMiles = p?.MilesWeek ?? 0,
+                        loads = p?.LoadsWeek ?? 0
+                    };
+                })
+                .ToList();
 
             return Results.Ok(new
             {
@@ -97,41 +100,59 @@ public static class DashboardRoutes
             });
         });
 
-        // -----------------------------
-        // PERFORMANCE
-        // -----------------------------
         app.MapGet("/api/dashboard/performance", (HttpRequest req) =>
         {
-            var guildId = req.Query["guildId"].ToString().Trim();
-
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             if (string.IsNullOrWhiteSpace(guildId))
                 guildId = services.Client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
 
             var take = 10;
-            int.TryParse(req.Query["take"], out take);
+            if (int.TryParse(req.Query["take"], out var parsed) && parsed > 0)
+                take = parsed;
 
+            var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
             var perf = services.PerformanceStore?.GetTop(guildId, take) ?? new();
+
+            var rows = perf.Select(p =>
+            {
+                var user = guild?.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
+                return new
+                {
+                    discordUserId = p.DiscordUserId,
+                    driverName = user?.DisplayName ?? p.DiscordUserId,
+                    milesWeek = p.MilesWeek,
+                    milesMonth = p.MilesMonth,
+                    milesTotal = p.MilesTotal,
+                    loadsWeek = p.LoadsWeek,
+                    loadsMonth = p.LoadsMonth,
+                    loadsTotal = p.LoadsTotal,
+                    performancePct = p.PerformancePct,
+                    score = p.Score,
+                    updatedUtc = p.UpdatedUtc
+                };
+            }).ToList();
 
             return Results.Ok(new
             {
                 ok = true,
-                rows = perf
+                guildId,
+                rows
             });
         });
 
-        // -----------------------------
-        // SETTINGS
-        // -----------------------------
         app.MapGet("/api/dashboard/settings", (HttpRequest req) =>
         {
-            var guildId = req.Query["guildId"].ToString().Trim();
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId))
+                guildId = services.Client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
 
-            var s = services.DispatchStore?.Get(guildId);
+            var settings = services.DispatchStore?.Get(guildId);
 
             return Results.Ok(new
             {
                 ok = true,
-                settings = s ?? new { }
+                guildId,
+                settings
             });
         });
 
@@ -139,22 +160,49 @@ public static class DashboardRoutes
         {
             try
             {
-                var body = await System.Text.Json.JsonDocument.ParseAsync(req.Body);
+                using var body = await System.Text.Json.JsonDocument.ParseAsync(req.Body);
                 var root = body.RootElement;
 
-                var guildId = root.GetProperty("guildId").GetString() ?? "";
-                var channelId = root.GetProperty("dispatchChannelId").GetString() ?? "";
+                var guildId = root.TryGetProperty("guildId", out var guildProp)
+                    ? (guildProp.GetString() ?? "").Trim()
+                    : "";
 
-                if (ulong.TryParse(channelId, out var ch))
-                {
-                    services.DispatchStore?.SetDispatchChannel(guildId, ch);
-                }
+                var dispatchChannelId = root.TryGetProperty("dispatchChannelId", out var dispatchChannelProp)
+                    ? (dispatchChannelProp.GetString() ?? "").Trim()
+                    : "";
+
+                var dispatchWebhookUrl = root.TryGetProperty("dispatchWebhookUrl", out var dispatchWebhookProp)
+                    ? (dispatchWebhookProp.GetString() ?? "").Trim()
+                    : "";
+
+                var announcementChannelId = root.TryGetProperty("announcementChannelId", out var announcementChannelProp)
+                    ? (announcementChannelProp.GetString() ?? "").Trim()
+                    : "";
+
+                var announcementWebhookUrl = root.TryGetProperty("announcementWebhookUrl", out var announcementWebhookProp)
+                    ? (announcementWebhookProp.GetString() ?? "").Trim()
+                    : "";
+
+                if (string.IsNullOrWhiteSpace(guildId))
+                    return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+                if (ulong.TryParse(dispatchChannelId, out var dispatchChannel) && dispatchChannel > 0)
+                    services.DispatchStore?.SetDispatchChannel(guildId, dispatchChannel);
+
+                if (!string.IsNullOrWhiteSpace(dispatchWebhookUrl))
+                    services.DispatchStore?.SetDispatchWebhook(guildId, dispatchWebhookUrl);
+
+                if (ulong.TryParse(announcementChannelId, out var announcementChannel) && announcementChannel > 0)
+                    services.DispatchStore?.SetAnnouncementChannel(guildId, announcementChannel);
+
+                if (!string.IsNullOrWhiteSpace(announcementWebhookUrl))
+                    services.DispatchStore?.SetAnnouncementWebhook(guildId, announcementWebhookUrl);
 
                 return Results.Ok(new { ok = true });
             }
             catch (Exception ex)
             {
-                return Results.Json(new { ok = false, error = ex.Message });
+                return Results.Json(new { ok = false, error = ex.Message }, statusCode: 500);
             }
         });
     }
