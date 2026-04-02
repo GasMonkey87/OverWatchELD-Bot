@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OverWatchELD Dashboard</title>
+  <link rel="stylesheet" href="/css/dashboard.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="hero">
+      <div>
+        <h1>🚛 OverWatchELD Command Dashboard</h1>
+        <p>Manager dashboard backend wired into your live bot API</p>
+      </div>
+      <div class="actions">
+        <a class="btn" href="/">Home</a>
+        <a class="btn" href="/health">Health</a>
+        <a class="btn" href="/build">Build</a>
+        <a class="btn" href="/live-map.html">Live Map</a>
+      </div>
+    </header>
+
+    <section class="grid stats">
+      <div class="card"><div class="label">Status</div><div class="value" id="statusText">Loading...</div></div>
+      <div class="card"><div class="label">Guilds</div><div class="value" id="guildCount">-</div></div>
+      <div class="card"><div class="label">Uptime</div><div class="value" id="uptimeText">-</div></div>
+      <div class="card"><div class="label">Version</div><div class="value" id="buildText">-</div></div>
+    </section>
+
+    <section class="grid two">
+      <div class="card">
+        <div class="card-title">Servers</div>
+        <p>Click a server to load its manager dashboard.</p>
+        <div id="serversList" class="list"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Guild Selector</div>
+        <div class="toolbar">
+          <label for="guildSelect">Guild</label>
+          <select id="guildSelect"></select>
+          <button class="btn small" id="refreshBtn">Refresh</button>
+        </div>
+        <div id="dashboardError" class="note"></div>
+      </div>
+    </section>
+
+    <section class="grid stats">
+      <div class="card"><div class="label">VTC</div><div class="value" id="vtcName">-</div></div>
+      <div class="card"><div class="label">Drivers</div><div class="value" id="driversTotal">-</div></div>
+      <div class="card"><div class="label">Online</div><div class="value" id="driversOnline">-</div></div>
+      <div class="card"><div class="label">Paired</div><div class="value" id="pairedDrivers">-</div></div>
+      <div class="card"><div class="label">Dispatch Ready</div><div class="value" id="dispatchReady">-</div></div>
+      <div class="card"><div class="label">Announcements Ready</div><div class="value" id="announcementsReady">-</div></div>
+    </section>
+
+    <section class="grid two">
+      <div class="card">
+        <div class="card-title">Top Drivers</div>
+        <div id="leaderboardList" class="list"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Performance</div>
+        <div id="performanceList" class="list"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">Drivers</div>
+      <div style="overflow:auto;">
+        <table style="width:100%; border-collapse:collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; padding:10px;">Name</th>
+              <th style="text-align:left; padding:10px;">Role</th>
+              <th style="text-align:left; padding:10px;">Status</th>
+              <th style="text-align:left; padding:10px;">Paired</th>
+              <th style="text-align:left; padding:10px;">Truck</th>
+              <th style="text-align:left; padding:10px;">Score</th>
+              <th style="text-align:left; padding:10px;">Week Miles / Loads</th>
+            </tr>
+          </thead>
+          <tbody id="driversBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-title">Settings</div>
+      <div class="grid two">
+        <div>
+          <label>Dispatch Channel ID</label>
+          <input id="dispatchChannelId" style="width:100%; margin:6px 0 14px 0;" />
+
+          <label>Dispatch Webhook URL</label>
+          <input id="dispatchWebhookUrl" style="width:100%; margin:6px 0 14px 0;" />
+        </div>
+        <div>
+          <label>Announcement Channel ID</label>
+          <input id="announcementChannelId" style="width:100%; margin:6px 0 14px 0;" />
+
+          <label>Announcement Webhook URL</label>
+          <input id="announcementWebhookUrl" style="width:100%; margin:6px 0 14px 0;" />
+        </div>
+      </div>
+      <button class="btn" id="saveSettingsBtn">Save Settings</button>
+    </section>
+  </div>
+
+  <script src="/js/dashboard.js"></script>
+</body>
+</html>
