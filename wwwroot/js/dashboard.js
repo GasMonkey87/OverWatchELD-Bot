@@ -48,6 +48,11 @@ function yesNo(value) {
   return value ? "YES" : "NO";
 }
 
+async function getBotGuildIds() {
+  const data = await getJson("/api/vtc/servers");
+  return new Set((data.servers || []).map(x => x.id));
+}
+
 async function populateGuilds(guilds) {
   const sel = document.getElementById("guildSelect");
   if (!sel) return;
@@ -236,7 +241,7 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     console.log("AUTH DATA:", auth);
 
-    populateGuilds(auth.guilds || []);
+    await populateGuilds(auth.guilds || []);
     await refreshStatus();
     await loadDashboard();
   } catch (err) {
