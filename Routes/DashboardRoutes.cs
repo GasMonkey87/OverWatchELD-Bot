@@ -51,48 +51,59 @@ public static class DashboardRoutes
             }, jsonWrite);
         });
 
-        app.MapGet("/api/dashboard/drivers", async (HttpRequest req) =>
+        app.MapGet("/api/dashboard/drivers", (HttpRequest req) =>
+{
+    var guildId = req.Query["guildId"].ToString().Trim();
+
+    if (string.IsNullOrWhiteSpace(guildId))
+        guildId = services.Client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+
+    if (string.IsNullOrWhiteSpace(guildId))
+        return Results.Ok(new { ok = true, drivers = Array.Empty<object>() });
+
+    var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
+
+    var roster = services.RosterStore?.GetRoster(guildId) ?? new List<VtcDriver>();
+    var linked = services.LinkedDriversStore?.GetAll()
+        ?.Where(x => string.Equals(x.GuildId, guildId, StringComparison.OrdinalIgnoreCase))
+        .ToList() ?? new List<LinkedDriverEntry>();
+
+    var perf = services.PerformanceStore?.GetTop(guildId, 500) ?? new List<PerformanceEntry>();
+
+    var drivers = new List<object>();
+
+    // 🔥 IMPORTANT: include ALL Discord users if roster empty
+    var guildUsers = guild?.Users ?? new List<SocketGuildUser>();
+
+    foreach (var user in guildUsers)
+    {
+        var discordId = user.Id.ToString();
+
+        var rosterEntry = roster.FirstOrDefault(r => r.DiscordUserId == discordId);
+        var link = linked.FirstOrDefault(l => l.DiscordUserId == discordId);
+        var p = perf.FirstOrDefault(x => x.DriverId == discordId);
+
+        drivers.Add(new
         {
-            var guildId = ResolveGuildId(req, services);
-            var guild = ResolveGuild(services, guildId);
-            if (guild != null)
-            {
-                try { await guild.DownloadUsersAsync(); } catch { }
-            }
+            name = rosterEntry?.DriverName ?? user.DisplayName,
+            role = rosterEntry?.Role ?? "driver",
+            status = user.Status.ToString().ToLowerInvariant(),
+            paired = link != null,
+            truck = "",
+            score = p?.Score ?? 0,
+            weekMiles = p?.MilesWeek ?? 0,
+            loads = p?.LoadsWeek ?? 0,
+            discordUserId = discordId
+        });
+    }
 
-            var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
-            var linked = services.LinkedDriversStore?.List(guildId) ?? new List<LinkedDriverEntry>();
-            var perfById = (services.PerformanceStore?.Load(guildId) ?? new Dictionary<string, DriverPerformance>(StringComparer.OrdinalIgnoreCase))
-                .ToDictionary(k => k.Key, v => v.Value, StringComparer.OrdinalIgnoreCase);
-
-            var rows = new List<object>();
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var driver in roster.OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
-            {
-                var userId = (driver.DiscordUserId ?? "").Trim();
-                if (!string.IsNullOrWhiteSpace(userId))
-                    seen.Add(userId);
-
-                perfById.TryGetValue(userId, out var perf);
-                var linkedEntry = !string.IsNullOrWhiteSpace(userId)
-                    ? linked.FirstOrDefault(x => string.Equals(x.DiscordUserId, userId, StringComparison.OrdinalIgnoreCase))
-                    : null;
-                var guildUser = ResolveGuildUser(guild, userId);
-
-                rows.Add(new
-                {
-                    name = string.IsNullOrWhiteSpace(driver.Name) ? (guildUser?.DisplayName ?? guildUser?.Username ?? "Unknown Driver") : driver.Name,
-                    role = string.IsNullOrWhiteSpace(driver.Role) ? "driver" : driver.Role,
-                    status = NormalizeStatus(driver.Status, guildUser?.Status),
-                    paired = linkedEntry != null,
-                    truck = driver.TruckNumber ?? "",
-                    score = perf?.Score ?? 0,
-                    weekMiles = perf?.MilesWeek ?? 0,
-                    loads = perf?.LoadsWeek ?? 0,
-                    discordUserId = userId
-                });
-            }
+    return Results.Ok(new
+    {
+        ok = true,
+        guildId,
+        drivers
+    });
+});
 
             foreach (var extra in linked.Where(x => !seen.Contains(x.DiscordUserId)))
             {
