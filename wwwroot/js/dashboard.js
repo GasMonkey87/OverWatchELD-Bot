@@ -123,7 +123,7 @@ function renderDrivers(drivers) {
   body.innerHTML = "";
 
   if (!drivers || drivers.length === 0) {
-    body.innerHTML = `<tr><td colspan="7">No drivers found</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9">No drivers found</td></tr>`;
     return;
   }
 
@@ -135,6 +135,8 @@ function renderDrivers(drivers) {
       <td>${d.status || "offline"}</td>
       <td>${d.paired ? "Yes" : "No"}</td>
       <td>${d.truck || ""}</td>
+      <td>${d.loadNumber || ""}</td>
+      <td>${d.location || ""}</td>
       <td>${Math.round(d.score ?? 0)}</td>
       <td>${Math.round(d.weekMiles ?? 0)} / ${d.loads ?? 0}</td>`;
     body.appendChild(tr);
