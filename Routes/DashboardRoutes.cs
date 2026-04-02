@@ -36,35 +36,25 @@ public static class DashboardRoutes
                     .ToHashSet(StringComparer.OrdinalIgnoreCase)
                 : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            var perfTop = services.PerformanceStore != null
-                ? services.PerformanceStore.GetTop(guildId, 5)
-                    .Select(p => new
+            var topDrivers = new List<object>();
+            if (services.PerformanceStore != null)
+            {
+                foreach (var p in services.PerformanceStore.GetTop(guildId, 5))
+                {
+                    var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
+                    topDrivers.Add(new
                     {
                         discordUserId = p.DiscordUserId,
+                        name = user?.DisplayName ?? p.DiscordUserId,
                         score = p.Score,
                         milesWeek = p.MilesWeek,
                         loadsWeek = p.LoadsWeek,
                         performancePct = p.PerformancePct
-                    })
-                    .ToList()
-                : new List<object>();
+                    });
+                }
+            }
 
             var settings = services.DispatchStore?.Get(guildId);
-
-            var topDrivers = perfTop.Select(p =>
-            {
-                dynamic pd = p;
-                var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == (string)pd.discordUserId);
-                return new
-                {
-                    discordUserId = (string)pd.discordUserId,
-                    name = user?.DisplayName ?? (string)pd.discordUserId,
-                    score = pd.score,
-                    milesWeek = pd.milesWeek,
-                    loadsWeek = pd.loadsWeek,
-                    performancePct = pd.performancePct
-                };
-            }).ToList();
 
             return Results.Ok(new
             {
@@ -109,27 +99,23 @@ public static class DashboardRoutes
                         .ToHashSet(StringComparer.OrdinalIgnoreCase)
                     : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                var perfMap = services.PerformanceStore != null
-                    ? services.PerformanceStore.GetTop(guildId, 500)
-                        .ToDictionary(
-                            x => x.DiscordUserId ?? "",
-                            x => (object)new
-                            {
-                                x.Score,
-                                x.MilesWeek,
-                                x.LoadsWeek
-                            },
-                            StringComparer.OrdinalIgnoreCase)
-                    : new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+                var perfMap = new Dictionary<string, (double Score, double MilesWeek, int LoadsWeek)>(StringComparer.OrdinalIgnoreCase);
+                if (services.PerformanceStore != null)
+                {
+                    foreach (var p in services.PerformanceStore.GetTop(guildId, 500))
+                    {
+                        var key = p.DiscordUserId ?? "";
+                        if (!string.IsNullOrWhiteSpace(key))
+                            perfMap[key] = (p.Score, p.MilesWeek, p.LoadsWeek);
+                    }
+                }
 
                 var drivers = guild.Users
                     .OrderBy(u => u.DisplayName)
                     .Select(user =>
                     {
                         var discordUserId = user.Id.ToString();
-
-                        perfMap.TryGetValue(discordUserId, out var perfObj);
-                        dynamic? p = perfObj;
+                        perfMap.TryGetValue(discordUserId, out var perf);
 
                         return new
                         {
@@ -141,9 +127,9 @@ public static class DashboardRoutes
                             truck = "",
                             loadNumber = "",
                             location = "",
-                            score = p?.Score ?? 0,
-                            weekMiles = p?.MilesWeek ?? 0,
-                            loads = p?.LoadsWeek ?? 0
+                            score = perf.Score,
+                            weekMiles = perf.MilesWeek,
+                            loads = perf.LoadsWeek
                         };
                     })
                     .ToList();
@@ -185,28 +171,28 @@ public static class DashboardRoutes
             if (guild == null)
                 return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
 
-            var rows = services.PerformanceStore != null
-                ? services.PerformanceStore.GetTop(guildId, take)
-                    .Select(p =>
+            var rows = new List<object>();
+            if (services.PerformanceStore != null)
+            {
+                foreach (var p in services.PerformanceStore.GetTop(guildId, take))
+                {
+                    var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
+                    rows.Add(new
                     {
-                        var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
-                        return new
-                        {
-                            discordUserId = p.DiscordUserId,
-                            driverName = user?.DisplayName ?? p.DiscordUserId,
-                            milesWeek = p.MilesWeek,
-                            milesMonth = p.MilesMonth,
-                            milesTotal = p.MilesTotal,
-                            loadsWeek = p.LoadsWeek,
-                            loadsMonth = p.LoadsMonth,
-                            loadsTotal = p.LoadsTotal,
-                            performancePct = p.PerformancePct,
-                            score = p.Score,
-                            updatedUtc = p.UpdatedUtc
-                        };
-                    })
-                    .ToList()
-                : new List<object>();
+                        discordUserId = p.DiscordUserId,
+                        driverName = user?.DisplayName ?? p.DiscordUserId,
+                        milesWeek = p.MilesWeek,
+                        milesMonth = p.MilesMonth,
+                        milesTotal = p.MilesTotal,
+                        loadsWeek = p.LoadsWeek,
+                        loadsMonth = p.LoadsMonth,
+                        loadsTotal = p.LoadsTotal,
+                        performancePct = p.PerformancePct,
+                        score = p.Score,
+                        updatedUtc = p.UpdatedUtc
+                    });
+                }
+            }
 
             return Results.Ok(new
             {
