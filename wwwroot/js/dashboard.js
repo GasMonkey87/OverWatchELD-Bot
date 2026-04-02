@@ -48,14 +48,13 @@ function yesNo(value) {
   return value ? "YES" : "NO";
 }
 
-// 🔥 NEW: Only manager/admin guilds
 function populateGuilds(guilds) {
   const sel = document.getElementById("guildSelect");
   if (!sel) return;
 
   sel.innerHTML = "";
 
-  for (const g of guilds) {
+  for (const g of guilds || []) {
     let perms = 0n;
 
     try {
@@ -67,7 +66,6 @@ function populateGuilds(guilds) {
     const isAdmin = (perms & 0x8n) !== 0n;
     const canManage = (perms & 0x20n) !== 0n;
     const isOwner = g.owner === true;
-
     const isManager = isOwner || isAdmin || canManage;
 
     const opt = document.createElement("option");
@@ -76,8 +74,12 @@ function populateGuilds(guilds) {
     sel.appendChild(opt);
   }
 
-  if (sel.options.length > 0)
+  const urlGuild = qs("guildId");
+  if (urlGuild) sel.value = urlGuild;
+
+  if (!sel.value && sel.options.length > 0) {
     sel.selectedIndex = 0;
+  }
 }
 
 function renderTopDrivers(top) {
@@ -150,7 +152,7 @@ async function refreshStatus() {
   const status = await getJson("/api/status");
   setText("statusText", status.discordReady ? "ONLINE ✅" : "STARTING ⏳");
   setText("guildCount", status.guilds ?? 0);
-  setText("uptimeText", uptimeText(status.uptime ?? 0));
+  setText("uptimeText", uptimeText(status.uptimeSeconds ?? 0));
   setText("buildText", status.version ?? "-");
 }
 
@@ -160,6 +162,8 @@ async function loadSummary() {
   setText("driversTotal", data.driversTotal ?? 0);
   setText("driversOnline", data.driversOnline ?? 0);
   setText("pairedDrivers", data.pairedDrivers ?? 0);
+  setText("dispatchReady", yesNo(data.dispatchReady));
+  setText("announcementsReady", yesNo(data.announcementsReady));
   renderTopDrivers(data.topDrivers || []);
 }
 
@@ -176,10 +180,42 @@ async function loadPerformance() {
 async function loadSettings() {
   const data = await getJson(apiUrl("/api/dashboard/settings"));
   const s = data.settings || {};
-  document.getElementById("dispatchChannelId").value = s.dispatchChannelId || "";
+
+  const dispatchChannelId = document.getElementById("dispatchChannelId");
+  const dispatchWebhookUrl = document.getElementById("dispatchWebhookUrl");
+  const announcementChannelId = document.getElementById("announcementChannelId");
+  const announcementWebhookUrl = document.getElementById("announcementWebhookUrl");
+
+  if (dispatchChannelId) dispatchChannelId.value = s.dispatchChannelId || "";
+  if (dispatchWebhookUrl) dispatchWebhookUrl.value = s.dispatchWebhookUrl || "";
+  if (announcementChannelId) announcementChannelId.value = s.announcementChannelId || "";
+  if (announcementWebhookUrl) announcementWebhookUrl.value = s.announcementWebhookUrl || "";
+}
+
+async function saveSettings() {
+  const payload = {
+    guildId: currentGuildId(),
+    dispatchChannelId: document.getElementById("dispatchChannelId")?.value.trim() || "",
+    dispatchWebhookUrl: document.getElementById("dispatchWebhookUrl")?.value.trim() || "",
+    announcementChannelId: document.getElementById("announcementChannelId")?.value.trim() || "",
+    announcementWebhookUrl: document.getElementById("announcementWebhookUrl")?.value.trim() || ""
+  };
+
+  const data = await getJson("/api/dashboard/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+
+  if (!data.ok) throw new Error(data.error || "Failed to save settings");
+  await loadSummary();
+  await loadSettings();
+  alert("Settings saved.");
 }
 
 async function loadDashboard() {
+  if (!currentGuildId()) return;
+
   await Promise.all([
     loadSummary(),
     loadDrivers(),
@@ -188,23 +224,41 @@ async function loadDashboard() {
   ]);
 }
 
-// 🚀 NEW BOOT (uses Discord login)
 window.addEventListener("DOMContentLoaded", async () => {
   try {
     const auth = await checkAuth();
     if (!auth) return;
 
-    populateGuilds(auth.guilds);
+    console.log("AUTH DATA:", auth);
+
+    populateGuilds(auth.guilds || []);
     await refreshStatus();
     await loadDashboard();
   } catch (err) {
     console.error(err);
+    const errEl = document.getElementById("dashboardError");
+    if (errEl) errEl.textContent = `Dashboard error: ${err.message || err}`;
+  }
+});
+
+document.getElementById("refreshBtn")?.addEventListener("click", async () => {
+  await refreshStatus();
+  await loadDashboard();
+});
+
+document.getElementById("saveSettingsBtn")?.addEventListener("click", async () => {
+  try {
+    await saveSettings();
+  } catch (err) {
+    alert(`Save failed: ${err.message || err}`);
   }
 });
 
 document.getElementById("guildSelect")?.addEventListener("change", async () => {
   const u = new URL(window.location.href);
-  u.searchParams.set("guildId", currentGuildId());
+  if (currentGuildId()) u.searchParams.set("guildId", currentGuildId());
   window.history.replaceState({}, "", u.toString());
   await loadDashboard();
 });
+
+setInterval(refreshStatus, 15000);
