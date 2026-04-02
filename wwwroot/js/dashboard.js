@@ -56,24 +56,27 @@ function populateGuilds(guilds) {
   sel.innerHTML = "";
 
   for (const g of guilds) {
-    const perms = parseInt(g.permissions || "0", 10);
+    let perms = 0n;
 
-    const isManager =
-      (perms & 0x8) !== 0 ||     // ADMIN
-      (perms & 0x20) !== 0;      // MANAGE_GUILD
+    try {
+      perms = BigInt(g.permissions_new || g.permissions || "0");
+    } catch {
+      perms = 0n;
+    }
 
-    if (!isManager) continue;
+    const isAdmin = (perms & 0x8n) !== 0n;
+    const canManage = (perms & 0x20n) !== 0n;
+    const isOwner = g.owner === true;
+
+    const isManager = isOwner || isAdmin || canManage;
 
     const opt = document.createElement("option");
     opt.value = g.id;
-    opt.textContent = g.name;
+    opt.textContent = g.name + (isManager ? " ✅" : "");
     sel.appendChild(opt);
   }
 
-  const urlGuild = qs("guildId");
-  if (urlGuild) sel.value = urlGuild;
-
-  if (!sel.value && sel.options.length > 0)
+  if (sel.options.length > 0)
     sel.selectedIndex = 0;
 }
 
