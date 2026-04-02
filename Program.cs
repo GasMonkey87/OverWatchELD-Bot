@@ -40,17 +40,19 @@ public static class Program
         var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
         Directory.CreateDirectory(dataDir);
 
-        var services = new BotServices
-        {
-            ThreadStore = new ThreadMapStore(Path.Combine(dataDir, "thread_map.json")),
-            DispatchStore = new DispatchSettingsStore(Path.Combine(dataDir, "dispatch_settings.json"), JsonReadOpts, JsonWriteOpts),
-            RosterStore = new VtcRosterStore(Path.Combine(dataDir, "vtc_roster.json"), JsonReadOpts, JsonWriteOpts),
-            LinkCodeStore = new LinkCodeStore(Path.Combine(dataDir, "link_codes.json"), JsonReadOpts, JsonWriteOpts),
-            LinkedDriversStore = new LinkedDriversStore(Path.Combine(dataDir, "linked_drivers.json"), JsonReadOpts, JsonWriteOpts),
-            PerformanceStore = new PerformanceStore(Path.Combine(dataDir, "performance"), JsonReadOpts, JsonWriteOpts),
-            AwardStore = new VtcAwardStore(Path.Combine(dataDir, "vtc_awards.json"), JsonReadOpts, JsonWriteOpts),
-            DriverAwardStore = new DriverAwardStore(Path.Combine(dataDir, "driver_awards.json"), JsonReadOpts, JsonWriteOpts)
-        };
+        
+            var services = new BotServices
+{
+    ThreadStore = new ThreadMapStore(Path.Combine(dataDir, "thread_map.json")),
+    DispatchStore = new DispatchSettingsStore(Path.Combine(dataDir, "dispatch_settings.json"), JsonReadOpts, JsonWriteOpts),
+    RosterStore = new VtcRosterStore(Path.Combine(dataDir, "vtc_roster.json"), JsonReadOpts, JsonWriteOpts),
+    LinkCodeStore = new LinkCodeStore(Path.Combine(dataDir, "link_codes.json"), JsonReadOpts, JsonWriteOpts),
+    LinkedDriversStore = new LinkedDriversStore(Path.Combine(dataDir, "linked_drivers.json"), JsonReadOpts, JsonWriteOpts),
+    PerformanceStore = new PerformanceStore(Path.Combine(dataDir, "performance"), JsonReadOpts, JsonWriteOpts),
+    AwardStore = new VtcAwardStore(Path.Combine(dataDir, "vtc_awards.json"), JsonReadOpts, JsonWriteOpts),
+    DriverAwardStore = new DriverAwardStore(Path.Combine(dataDir, "driver_awards.json"), JsonReadOpts, JsonWriteOpts),
+    DriverStatusStore = new DriverStatusStore(Path.Combine(dataDir, "driver_status.json"), JsonReadOpts, JsonWriteOpts)
+};
 
         var token = (Environment.GetEnvironmentVariable("DISCORD_TOKEN") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(token))
@@ -145,6 +147,7 @@ builder.Services.AddSession(options =>
             discordReady = services.DiscordReady
         }));
 
+        
         app.MapGet("/api/status", () => Results.Ok(new
         {
             ok = true,
@@ -251,7 +254,101 @@ builder.Services.AddSession(options =>
                 return Results.Json(new { ok = false, error = ex.Message }, statusCode: 500);
             }
         });
-        
+        app.MapMethods("/api/eld/driver/status", new[] { "POST" }, async (HttpRequest req) =>
+{
+    try
+    {
+        using var doc = await JsonDocument.ParseAsync(req.Body);
+        var root = doc.RootElement;
+
+        string ReadString(params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (root.TryGetProperty(name, out var p))
+                {
+                    var s = p.ToString()?.Trim() ?? "";
+                    if (!string.IsNullOrWhiteSpace(s))
+                        return s;
+                }
+            }
+            return "";
+        }
+
+        var guildId = ReadString("guildId", "GuildId");
+        if (string.IsNullOrWhiteSpace(guildId))
+            guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+
+        var discordUserId = ReadString("discordUserId", "DiscordUserId", "userId", "UserId");
+        var driverName = ReadString("driverName", "DriverName", "discordUsername", "DiscordUsername", "name", "Name");
+        var dutyStatus = ReadString("dutyStatus", "DutyStatus", "duty", "Duty");
+        var truck = ReadString("truck", "Truck", "truckId", "TruckId");
+        var loadNumber = ReadString("loadNumber", "LoadNumber", "currentLoadNumber", "CurrentLoadNumber");
+        var location = ReadString("location", "Location", "locationText", "LocationText");
+
+        double speedMph = 0;
+        var speedText = ReadString("speedMph", "SpeedMph", "speed", "Speed");
+        if (!string.IsNullOrWhiteSpace(speedText))
+            double.TryParse(speedText, out speedMph);
+
+        if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(discordUserId))
+        {
+            return Results.Json(new
+            {
+                ok = false,
+                error = "MissingGuildIdOrDiscordUserId"
+            }, statusCode: 400);
+        }
+
+        services.DriverStatusStore?.Upsert(new DriverStatusStore.DriverStatusEntry
+        {
+            GuildId = guildId,
+            DiscordUserId = discordUserId,
+            DriverName = driverName,
+            DutyStatus = dutyStatus,
+            Truck = truck,
+            LoadNumber = loadNumber,
+            Location = location,
+            SpeedMph = speedMph,
+            LastSeenUtc = DateTimeOffset.UtcNow
+        });
+
+        return Results.Ok(new
+        {
+            ok = true,
+            guildId,
+            discordUserId,
+            updatedUtc = DateTimeOffset.UtcNow
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            ok = false,
+            error = ex.Message
+        }, statusCode: 500);
+    }
+});
+
+app.MapGet("/api/eld/driver/status", (HttpRequest req) =>
+{
+    var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+    if (string.IsNullOrWhiteSpace(guildId))
+        guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+
+    if (string.IsNullOrWhiteSpace(guildId))
+        return Results.Ok(new { ok = true, rows = Array.Empty<object>() });
+
+    var rows = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
+
+    return Results.Ok(new
+    {
+        ok = true,
+        guildId,
+        rows
+    });
+});
         Console.WriteLine($"Bot running on :{port}");
         await app.RunAsync();
     }
