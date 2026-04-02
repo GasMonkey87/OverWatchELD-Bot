@@ -74,82 +74,101 @@ public static class DashboardRoutes
         });
 
         app.MapGet("/api/dashboard/drivers", (HttpContext ctx, HttpRequest req) =>
+{
+    try
+    {
+        var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(guildId))
+            return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+        if (!AuthGuard.IsLoggedIn(ctx))
+            return Results.Json(new { ok = false, error = "Unauthorized" }, statusCode: 401);
+
+        if (!AuthGuard.CanManageGuild(ctx, guildId))
+            return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
+
+        var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
+        if (guild == null)
+            return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
+
+        var linkedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
         {
-            try
+            if (services.LinkedDriversStore != null)
             {
-                var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-                if (string.IsNullOrWhiteSpace(guildId))
-                    return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
-
-                if (!AuthGuard.IsLoggedIn(ctx))
-                    return Results.Json(new { ok = false, error = "Unauthorized" }, statusCode: 401);
-
-                if (!AuthGuard.CanManageGuild(ctx, guildId))
-                    return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
-
-                var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
-                if (guild == null)
-                    return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
-
-                var linkedIds = services.LinkedDriversStore != null
-                    ? services.LinkedDriversStore
-                        .List(guildId)
-                        .Select(x => x.DiscordUserId ?? "")
-                        .Where(x => !string.IsNullOrWhiteSpace(x))
-                        .ToHashSet(StringComparer.OrdinalIgnoreCase)
-                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                var perfMap = new Dictionary<string, (double Score, double MilesWeek, int LoadsWeek)>(StringComparer.OrdinalIgnoreCase);
-                if (services.PerformanceStore != null)
+                foreach (var x in services.LinkedDriversStore.List(guildId))
                 {
-                    foreach (var p in services.PerformanceStore.GetTop(guildId, 500))
-                    {
-                        var key = p.DiscordUserId ?? "";
-                        if (!string.IsNullOrWhiteSpace(key))
-                            perfMap[key] = (p.Score, p.MilesWeek, p.LoadsWeek);
-                    }
+                    var id = x?.DiscordUserId?.Trim() ?? "";
+                    if (!string.IsNullOrWhiteSpace(id))
+                        linkedIds.Add(id);
                 }
-
-                var drivers = guild.Users
-                    .OrderBy(u => u.DisplayName)
-                    .Select(user =>
-                    {
-                        var discordUserId = user.Id.ToString();
-                        perfMap.TryGetValue(discordUserId, out var perf);
-
-                        return new
-                        {
-                            discordUserId,
-                            name = user.DisplayName,
-                            role = "driver",
-                            status = user.Status.ToString().ToLowerInvariant(),
-                            paired = linkedIds.Contains(discordUserId),
-                            truck = "",
-                            loadNumber = "",
-                            location = "",
-                            score = perf.Score,
-                            weekMiles = perf.MilesWeek,
-                            loads = perf.LoadsWeek
-                        };
-                    })
-                    .ToList();
-
-                return Results.Ok(new
-                {
-                    ok = true,
-                    guildId,
-                    drivers
-                });
             }
-            catch (Exception ex)
+        }
+        catch
+        {
+            // keep empty fallback
+        }
+
+        var perfMap = new Dictionary<string, (double Score, double MilesWeek, int LoadsWeek)>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            if (services.PerformanceStore != null)
             {
-                return Results.Json(new
+                foreach (var p in services.PerformanceStore.GetTop(guildId, 500))
                 {
-                    ok = false,
-                    error = ex.Message
-                }, statusCode: 500);
+                    var id = p?.DiscordUserId?.Trim() ?? "";
+                    if (!string.IsNullOrWhiteSpace(id))
+                        perfMap[id] = (p.Score, p.MilesWeek, p.LoadsWeek);
+                }
             }
+        }
+        catch
+        {
+            // keep empty fallback
+        }
+
+        var drivers = guild.Users
+            .OrderBy(u => u.DisplayName)
+            .Select(user =>
+            {
+                var discordUserId = user.Id.ToString();
+
+                perfMap.TryGetValue(discordUserId, out var perf);
+
+                return new
+                {
+                    discordUserId,
+                    name = user.DisplayName ?? user.Username ?? discordUserId,
+                    role = "driver",
+                    status = user.Status.ToString().ToLowerInvariant(),
+                    paired = linkedIds.Contains(discordUserId),
+                    truck = "",
+                    loadNumber = "",
+                    location = "",
+                    score = perf.Score,
+                    weekMiles = perf.MilesWeek,
+                    loads = perf.LoadsWeek
+                };
+            })
+            .ToList();
+
+        return Results.Ok(new
+        {
+            ok = true,
+            guildId,
+            drivers
         });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            ok = false,
+            error = ex.Message,
+            errorType = ex.GetType().FullName
+        }, statusCode: 500);
+    }
+});
 
         app.MapGet("/api/dashboard/performance", (HttpContext ctx, HttpRequest req) =>
         {
