@@ -4,6 +4,7 @@ using System.Linq;
 using Discord;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using OverWatchELD.VtcBot.Models;
 using OverWatchELD.VtcBot.Services;
 
 namespace OverWatchELD.VtcBot.Routes;
@@ -25,13 +26,16 @@ public static class DashboardRoutes
                 return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
 
             var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
-            var linked = services.LinkedDriversStore?.List(guildId) ?? new();
-            var perf = services.PerformanceStore?.GetTop(guildId, 5) ?? new();
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
+
+            var linked = services.LinkedDriversStore?.List(guildId) ?? new List<LinkedDriverEntry>();
+            var perf = services.PerformanceStore?.GetTop(guildId, 5) ?? new List<DriverPerformance>();
             var settings = services.DispatchStore?.Get(guildId);
 
             var topDrivers = perf.Select(p =>
             {
-                var user = guild?.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
+                var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
                 return new
                 {
                     discordUserId = p.DiscordUserId,
@@ -47,12 +51,12 @@ public static class DashboardRoutes
             {
                 ok = true,
                 guildId,
-                vtcName = guild?.Name ?? "Unknown",
-                driversTotal = guild?.Users.Count ?? 0,
-                driversOnline = guild?.Users.Count(u =>
+                vtcName = guild.Name,
+                driversTotal = guild.Users.Count,
+                driversOnline = guild.Users.Count(u =>
                     u.Status == UserStatus.Online ||
                     u.Status == UserStatus.Idle ||
-                    u.Status == UserStatus.DoNotDisturb) ?? 0,
+                    u.Status == UserStatus.DoNotDisturb),
                 pairedDrivers = linked.Count,
                 dispatchReady = !string.IsNullOrWhiteSpace(settings?.DispatchChannelId),
                 announcementsReady = !string.IsNullOrWhiteSpace(settings?.AnnouncementChannelId),
@@ -60,72 +64,72 @@ public static class DashboardRoutes
             });
         });
 
-       app.MapGet("/api/dashboard/drivers", (HttpContext ctx, HttpRequest req) =>
-{
-    try
-    {
-        var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-        if (string.IsNullOrWhiteSpace(guildId))
-            return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
-
-        if (!AuthGuard.IsLoggedIn(ctx))
-            return Results.Json(new { ok = false, error = "Unauthorized" }, statusCode: 401);
-
-        if (!AuthGuard.CanManageGuild(ctx, guildId))
-            return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
-
-        var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
-        if (guild == null)
-            return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
-
-        var linked = services.LinkedDriversStore?.List(guildId) ?? new List<dynamic>();
-        var perf = services.PerformanceStore?.GetTop(guildId, 500) ?? new List<dynamic>();
-
-        var drivers = guild.Users
-            .OrderBy(u => u.DisplayName)
-            .Select(user =>
+        app.MapGet("/api/dashboard/drivers", (HttpContext ctx, HttpRequest req) =>
+        {
+            try
             {
-                var discordUserId = user.Id.ToString();
+                var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+                if (string.IsNullOrWhiteSpace(guildId))
+                    return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
 
-                var isPaired = linked.Any(x =>
-                    string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
+                if (!AuthGuard.IsLoggedIn(ctx))
+                    return Results.Json(new { ok = false, error = "Unauthorized" }, statusCode: 401);
 
-                var p = perf.FirstOrDefault(x =>
-                    string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
+                if (!AuthGuard.CanManageGuild(ctx, guildId))
+                    return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
 
-                return new
+                var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
+                if (guild == null)
+                    return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
+
+                var linked = services.LinkedDriversStore?.List(guildId) ?? new List<LinkedDriverEntry>();
+                var perf = services.PerformanceStore?.GetTop(guildId, 500) ?? new List<DriverPerformance>();
+
+                var drivers = guild.Users
+                    .OrderBy(u => u.DisplayName)
+                    .Select(user =>
+                    {
+                        var discordUserId = user.Id.ToString();
+
+                        var isPaired = linked.Any(x =>
+                            string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
+
+                        var p = perf.FirstOrDefault(x =>
+                            string.Equals(x.DiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase));
+
+                        return new
+                        {
+                            discordUserId,
+                            name = user.DisplayName,
+                            role = "driver",
+                            status = user.Status.ToString().ToLowerInvariant(),
+                            paired = isPaired,
+                            truck = "",
+                            loadNumber = "",
+                            location = "",
+                            score = p?.Score ?? 0,
+                            weekMiles = p?.MilesWeek ?? 0,
+                            loads = p?.LoadsWeek ?? 0
+                        };
+                    })
+                    .ToList();
+
+                return Results.Ok(new
                 {
-                    discordUserId,
-                    name = user.DisplayName,
-                    role = "driver",
-                    status = user.Status.ToString().ToLowerInvariant(),
-                    paired = isPaired,
-                    truck = "",
-                    loadNumber = "",
-                    location = "",
-                    score = p?.Score ?? 0,
-                    weekMiles = p?.MilesWeek ?? 0,
-                    loads = p?.LoadsWeek ?? 0
-                };
-            })
-            .ToList();
-
-        return Results.Ok(new
-        {
-            ok = true,
-            guildId,
-            drivers
+                    ok = true,
+                    guildId,
+                    drivers
+                });
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(new
+                {
+                    ok = false,
+                    error = ex.Message
+                }, statusCode: 500);
+            }
         });
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new
-        {
-            ok = false,
-            error = ex.Message
-        }, statusCode: 500);
-    }
-});
 
         app.MapGet("/api/dashboard/performance", (HttpContext ctx, HttpRequest req) =>
         {
@@ -144,11 +148,14 @@ public static class DashboardRoutes
                 take = parsed;
 
             var guild = services.Client?.Guilds.FirstOrDefault(g => g.Id.ToString() == guildId);
-            var perf = services.PerformanceStore?.GetTop(guildId, take) ?? new();
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "BotNotInGuild", guildId }, statusCode: 404);
+
+            var perf = services.PerformanceStore?.GetTop(guildId, take) ?? new List<DriverPerformance>();
 
             var rows = perf.Select(p =>
             {
-                var user = guild?.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
+                var user = guild.Users.FirstOrDefault(u => u.Id.ToString() == p.DiscordUserId);
                 return new
                 {
                     discordUserId = p.DiscordUserId,
