@@ -1,16 +1,23 @@
+using System;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
+
+namespace OverWatchELD.VtcBot.Routes;
 
 public static class AuthRoutes
 {
     public static void Register(WebApplication app)
     {
-        var clientId = Environment.GetEnvironmentVariable("DISCORD_CLIENT_ID");
-        var redirect = Environment.GetEnvironmentVariable("DISCORD_REDIRECT_URI");
+        var clientId = Environment.GetEnvironmentVariable("DISCORD_CLIENT_ID") ?? "";
+        var redirect = Environment.GetEnvironmentVariable("DISCORD_REDIRECT_URI") ?? "";
 
         var oauth = new DiscordOAuthService();
 
         app.MapGet("/auth/login", () =>
         {
+            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(redirect))
+                return Results.Redirect("/login.html?error=missing_oauth_config");
+
             var url =
                 $"https://discord.com/api/oauth2/authorize?client_id={clientId}" +
                 $"&response_type=code&redirect_uri={Uri.EscapeDataString(redirect)}" +
@@ -23,37 +30,57 @@ public static class AuthRoutes
         {
             var code = ctx.Request.Query["code"].ToString();
             if (string.IsNullOrWhiteSpace(code))
-                return Results.Redirect("/login.html");
+                return Results.Redirect("/login.html?error=missing_code");
 
-            var token = await oauth.ExchangeCodeAsync(
-                code,
-                Environment.GetEnvironmentVariable("DISCORD_CLIENT_ID")!,
-                Environment.GetEnvironmentVariable("DISCORD_CLIENT_SECRET")!,
-                Environment.GetEnvironmentVariable("DISCORD_REDIRECT_URI")!
-            );
+            var clientSecret = Environment.GetEnvironmentVariable("DISCORD_CLIENT_SECRET") ?? "";
+            var redirectUri = Environment.GetEnvironmentVariable("DISCORD_REDIRECT_URI") ?? "";
 
-            var user = await oauth.GetUserAsync(token);
-            var guilds = await oauth.GetGuildsAsync(token);
+            if (string.IsNullOrWhiteSpace(clientId) ||
+                string.IsNullOrWhiteSpace(clientSecret) ||
+                string.IsNullOrWhiteSpace(redirectUri))
+            {
+                return Results.Redirect("/login.html?error=missing_oauth_config");
+            }
 
-            ctx.Session.SetString("discord_user", user.ToString());
-            ctx.Session.SetString("discord_guilds", guilds.ToString());
+            try
+            {
+                var token = await oauth.ExchangeCodeAsync(
+                    code,
+                    clientId,
+                    clientSecret,
+                    redirectUri
+                );
 
-            return Results.Redirect("/index.html");
+                var user = await oauth.GetUserAsync(token);
+                var guilds = await oauth.GetGuildsAsync(token);
+
+                ctx.Session.SetString("discord_user", user.GetRawText());
+                ctx.Session.SetString("discord_guilds", guilds.GetRawText());
+
+                return Results.Redirect("/index.html");
+            }
+            catch
+            {
+                return Results.Redirect("/login.html?error=oauth_failed");
+            }
         });
 
         app.MapGet("/api/auth/me", (HttpContext ctx) =>
         {
-            var user = ctx.Session.GetString("discord_user");
-            var guilds = ctx.Session.GetString("discord_guilds");
+            var userJson = ctx.Session.GetString("discord_user");
+            var guildsJson = ctx.Session.GetString("discord_guilds");
 
-            if (user == null)
+            if (string.IsNullOrWhiteSpace(userJson) || string.IsNullOrWhiteSpace(guildsJson))
                 return Results.Json(new { ok = false });
+
+            using var userDoc = JsonDocument.Parse(userJson);
+            using var guildsDoc = JsonDocument.Parse(guildsJson);
 
             return Results.Json(new
             {
                 ok = true,
-                user = JsonDocument.Parse(user).RootElement,
-                guilds = JsonDocument.Parse(guilds!).RootElement
+                user = userDoc.RootElement.Clone(),
+                guilds = guildsDoc.RootElement.Clone()
             });
         });
 
