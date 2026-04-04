@@ -169,6 +169,16 @@ public static class Program
         var loadThreadStore = new ProgramLoadThreadStore(Path.Combine(dataDir, "load_threads.json"), JsonWriteOpts);
         var loadApiLogPath = Path.Combine(dataDir, "load_api_log.txt");
 
+        var dispatchLoadStore = new DispatchLoadStore(
+        Path.Combine(dataDir, "dispatch_loads.json"),
+        JsonReadOpts,
+        JsonWriteOpts);
+
+        var dispatchMessageStore = new DispatchMessageStore(
+        Path.Combine(dataDir, "dispatch_messages.json"),
+        JsonReadOpts,
+        JsonWriteOpts);
+
         app.MapMethods("/api/loads/pickup", new[] { "POST", "GET" }, async (HttpRequest req) =>
         {
             var dto = await ReadLoadDtoAsync(req, loadApiLogPath, "pickup");
@@ -222,7 +232,8 @@ public static class Program
         };
 
         ApiRoutes.Register(app, services, JsonReadOpts, JsonWriteOpts, sharedHttp);
-        AwardRoutes.Register(app, services, JsonWriteOpts);
+AwardRoutes.Register(app, services, JsonWriteOpts);
+DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatchMessageStore);
 
         app.MapPost("/api/vtc/loadboard/settings", async (HttpRequest req) =>
         {
