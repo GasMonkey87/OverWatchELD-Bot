@@ -30,6 +30,9 @@ public sealed class DriverStatusStore
         public string Location { get; set; } = "";
         public double SpeedMph { get; set; }
         public DateTimeOffset LastSeenUtc { get; set; } = DateTimeOffset.UtcNow;
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+        public double Heading { get; set; }
     }
 
     private List<DriverStatusEntry> LoadAll()
