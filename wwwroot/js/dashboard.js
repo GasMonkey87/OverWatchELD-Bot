@@ -95,13 +95,13 @@ function populateGuilds(botServers, authGuilds) {
 
   sel.innerHTML = "";
 
-  const manageableAuthGuildIds = new Set(
+  const authManageableIds = new Set(
     (authGuilds || [])
       .filter(g => canManageGuild(g))
       .map(g => g.id)
   );
 
-  const allowedServers = (botServers || []).filter(s => manageableAuthGuildIds.has(s.id));
+  const allowedServers = (botServers || []).filter(s => authManageableIds.has(s.id));
 
   for (const s of allowedServers) {
     const opt = document.createElement("option");
