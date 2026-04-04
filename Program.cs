@@ -40,19 +40,18 @@ public static class Program
         var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
         Directory.CreateDirectory(dataDir);
 
-        
-            var services = new BotServices
-{
-    ThreadStore = new ThreadMapStore(Path.Combine(dataDir, "thread_map.json")),
-    DispatchStore = new DispatchSettingsStore(Path.Combine(dataDir, "dispatch_settings.json"), JsonReadOpts, JsonWriteOpts),
-    RosterStore = new VtcRosterStore(Path.Combine(dataDir, "vtc_roster.json"), JsonReadOpts, JsonWriteOpts),
-    LinkCodeStore = new LinkCodeStore(Path.Combine(dataDir, "link_codes.json"), JsonReadOpts, JsonWriteOpts),
-    LinkedDriversStore = new LinkedDriversStore(Path.Combine(dataDir, "linked_drivers.json"), JsonReadOpts, JsonWriteOpts),
-    PerformanceStore = new PerformanceStore(Path.Combine(dataDir, "performance"), JsonReadOpts, JsonWriteOpts),
-    AwardStore = new VtcAwardStore(Path.Combine(dataDir, "vtc_awards.json"), JsonReadOpts, JsonWriteOpts),
-    DriverAwardStore = new DriverAwardStore(Path.Combine(dataDir, "driver_awards.json"), JsonReadOpts, JsonWriteOpts),
-    DriverStatusStore = new DriverStatusStore(Path.Combine(dataDir, "driver_status.json"), JsonReadOpts, JsonWriteOpts)
-};
+        var services = new BotServices
+        {
+            ThreadStore = new ThreadMapStore(Path.Combine(dataDir, "thread_map.json")),
+            DispatchStore = new DispatchSettingsStore(Path.Combine(dataDir, "dispatch_settings.json"), JsonReadOpts, JsonWriteOpts),
+            RosterStore = new VtcRosterStore(Path.Combine(dataDir, "vtc_roster.json"), JsonReadOpts, JsonWriteOpts),
+            LinkCodeStore = new LinkCodeStore(Path.Combine(dataDir, "link_codes.json"), JsonReadOpts, JsonWriteOpts),
+            LinkedDriversStore = new LinkedDriversStore(Path.Combine(dataDir, "linked_drivers.json"), JsonReadOpts, JsonWriteOpts),
+            PerformanceStore = new PerformanceStore(Path.Combine(dataDir, "performance"), JsonReadOpts, JsonWriteOpts),
+            AwardStore = new VtcAwardStore(Path.Combine(dataDir, "vtc_awards.json"), JsonReadOpts, JsonWriteOpts),
+            DriverAwardStore = new DriverAwardStore(Path.Combine(dataDir, "driver_awards.json"), JsonReadOpts, JsonWriteOpts),
+            DriverStatusStore = new DriverStatusStore(Path.Combine(dataDir, "driver_status.json"), JsonReadOpts, JsonWriteOpts)
+        };
 
         var token = (Environment.GetEnvironmentVariable("DISCORD_TOKEN") ?? "").Trim();
         if (string.IsNullOrWhiteSpace(token))
@@ -107,20 +106,23 @@ public static class Program
 
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddDistributedMemoryCache();
-builder.Services.AddSession(options =>
-{
-    options.Cookie.HttpOnly = true;
-    options.Cookie.IsEssential = true;
-    options.Cookie.SameSite = SameSiteMode.Lax;
-    options.IdleTimeout = TimeSpan.FromHours(12);
-});
+        builder.Services.AddSession(options =>
+        {
+            options.Cookie.HttpOnly = true;
+            options.Cookie.IsEssential = true;
+            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.IdleTimeout = TimeSpan.FromHours(12);
+        });
+
         var portStr = Environment.GetEnvironmentVariable("PORT") ?? "8080";
         if (!int.TryParse(portStr, out var port))
             port = 8080;
 
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
         var app = builder.Build();
+
         app.UseSession();
+
         var wwwroot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
         if (Directory.Exists(wwwroot))
         {
@@ -147,7 +149,6 @@ builder.Services.AddSession(options =>
             discordReady = services.DiscordReady
         }));
 
-        
         app.MapGet("/api/status", () => Results.Ok(new
         {
             ok = true,
@@ -164,6 +165,7 @@ builder.Services.AddSession(options =>
 
         DashboardRoutes.Register(app, services, JsonWriteOpts);
         AuthRoutes.Register(app);
+
         var loadThreadStore = new ProgramLoadThreadStore(Path.Combine(dataDir, "load_threads.json"), JsonWriteOpts);
         var loadApiLogPath = Path.Combine(dataDir, "load_api_log.txt");
 
@@ -254,199 +256,158 @@ builder.Services.AddSession(options =>
                 return Results.Json(new { ok = false, error = ex.Message }, statusCode: 500);
             }
         });
+
         app.MapMethods("/api/eld/driver/status", new[] { "POST" }, async (HttpRequest req) =>
-{
-    try
-    {
-        using var doc = await JsonDocument.ParseAsync(req.Body);
-        var root = doc.RootElement;
-
-        string ReadString(params string[] names)
         {
-            foreach (var name in names)
+            try
             {
-                if (root.TryGetProperty(name, out var p))
+                using var doc = await JsonDocument.ParseAsync(req.Body);
+                var root = doc.RootElement;
+
+                string ReadString(params string[] names)
                 {
-                    var s = p.ToString()?.Trim() ?? "";
-                    if (!string.IsNullOrWhiteSpace(s))
-                        return s;
+                    foreach (var name in names)
+                    {
+                        if (root.TryGetProperty(name, out var p))
+                        {
+                            var s = p.ToString()?.Trim() ?? "";
+                            if (!string.IsNullOrWhiteSpace(s))
+                                return s;
+                        }
+                    }
+                    return "";
                 }
-            }
-            return "";
-        }
 
-        double ReadDouble(params string[] names)
-        {
-            var text = ReadString(names);
-            if (!string.IsNullOrWhiteSpace(text) && double.TryParse(text, out var value))
-                return value;
-            return 0;
-        }
-
-        var guildId = ReadString("guildId", "GuildId");
-        if (string.IsNullOrWhiteSpace(guildId))
-            guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
-
-        var discordUserId = ReadString("discordUserId", "DiscordUserId", "userId", "UserId");
-        var driverName = ReadString("driverName", "DriverName", "discordUsername", "DiscordUsername", "name", "Name");
-        var dutyStatus = ReadString("dutyStatus", "DutyStatus", "duty", "Duty");
-        var truck = ReadString("truck", "Truck", "truckId", "TruckId");
-        var loadNumber = ReadString("loadNumber", "LoadNumber", "currentLoadNumber", "CurrentLoadNumber");
-        var location = ReadString("location", "Location", "locationText", "LocationText");
-
-        var speedMph = ReadDouble("speedMph", "SpeedMph", "speed", "Speed");
-        var latitude = ReadDouble("latitude", "Latitude", "lat", "Lat");
-        var longitude = ReadDouble("longitude", "Longitude", "lon", "Lon", "lng", "Lng");
-        var heading = ReadDouble("heading", "Heading");
-
-        if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(discordUserId))
-        {
-            return Results.Json(new
-            {
-                ok = false,
-                error = "MissingGuildIdOrDiscordUserId"
-            }, statusCode: 400);
-        }
-
-        services.DriverStatusStore?.Upsert(new DriverStatusStore.DriverStatusEntry
-        {
-            GuildId = guildId,
-            DiscordUserId = discordUserId,
-            DriverName = driverName,
-            DutyStatus = dutyStatus,
-            Truck = truck,
-            LoadNumber = loadNumber,
-            Location = location,
-            SpeedMph = speedMph,
-            Latitude = latitude,
-            Longitude = longitude,
-            Heading = heading,
-            LastSeenUtc = DateTimeOffset.UtcNow
-        });
-
-        return Results.Ok(new
-        {
-            ok = true,
-            guildId,
-            discordUserId,
-            updatedUtc = DateTimeOffset.UtcNow
-        });
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new
-        {
-            ok = false,
-            error = ex.Message
-        }, statusCode: 500);
-    }
-});
-
-app.MapGet("/api/eld/driver/status", (HttpRequest req) =>
-{
-    var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-    if (string.IsNullOrWhiteSpace(guildId))
-        guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
-
-    if (string.IsNullOrWhiteSpace(guildId))
-        return Results.Ok(new { ok = true, rows = Array.Empty<object>() });
-
-    var rows = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
-
-    return Results.Ok(new
-    {
-        ok = true,
-        guildId,
-        rows
-    });
-});
-    app.MapMethods("/api/eld/driver/status", new[] { "POST" }, async (HttpRequest req) =>
-{
-    try
-    {
-        using var doc = await JsonDocument.ParseAsync(req.Body);
-        var root = doc.RootElement;
-
-        string ReadString(params string[] names)
-        {
-            foreach (var name in names)
-            {
-                if (root.TryGetProperty(name, out var p))
+                double ReadDouble(params string[] names)
                 {
-                    var s = p.ToString()?.Trim() ?? "";
-                    if (!string.IsNullOrWhiteSpace(s))
-                        return s;
+                    var text = ReadString(names);
+                    if (!string.IsNullOrWhiteSpace(text) && double.TryParse(text, out var value))
+                        return value;
+                    return 0;
                 }
+
+                var guildId = ReadString("guildId", "GuildId");
+                if (string.IsNullOrWhiteSpace(guildId))
+                    guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+
+                var discordUserId = ReadString("discordUserId", "DiscordUserId", "userId", "UserId");
+                var driverName = ReadString("driverName", "DriverName", "discordUsername", "DiscordUsername", "name", "Name");
+                var dutyStatus = ReadString("dutyStatus", "DutyStatus", "duty", "Duty");
+                var truck = ReadString("truck", "Truck", "truckId", "TruckId");
+                var loadNumber = ReadString("loadNumber", "LoadNumber", "currentLoadNumber", "CurrentLoadNumber");
+                var location = ReadString("location", "Location", "locationText", "LocationText");
+
+                var speedMph = ReadDouble("speedMph", "SpeedMph", "speed", "Speed");
+                var latitude = ReadDouble("latitude", "Latitude", "lat", "Lat");
+                var longitude = ReadDouble("longitude", "Longitude", "lon", "Lon", "lng", "Lng");
+                var heading = ReadDouble("heading", "Heading");
+
+                if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(discordUserId))
+                {
+                    return Results.Json(new
+                    {
+                        ok = false,
+                        error = "MissingGuildIdOrDiscordUserId"
+                    }, statusCode: 400);
+                }
+
+                services.DriverStatusStore?.Upsert(new DriverStatusStore.DriverStatusEntry
+                {
+                    GuildId = guildId,
+                    DiscordUserId = discordUserId,
+                    DriverName = driverName,
+                    DutyStatus = dutyStatus,
+                    Truck = truck,
+                    LoadNumber = loadNumber,
+                    Location = location,
+                    SpeedMph = speedMph,
+                    Latitude = latitude,
+                    Longitude = longitude,
+                    Heading = heading,
+                    LastSeenUtc = DateTimeOffset.UtcNow
+                });
+
+                return Results.Ok(new
+                {
+                    ok = true,
+                    guildId,
+                    discordUserId,
+                    updatedUtc = DateTimeOffset.UtcNow
+                });
             }
-            return "";
-        }
-
-        double ReadDouble(params string[] names)
-        {
-            var text = ReadString(names);
-            if (!string.IsNullOrWhiteSpace(text) && double.TryParse(text, out var value))
-                return value;
-            return 0;
-        }
-
-        var guildId = ReadString("guildId", "GuildId");
-        if (string.IsNullOrWhiteSpace(guildId))
-            guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
-
-        var discordUserId = ReadString("discordUserId", "DiscordUserId", "userId", "UserId");
-        var driverName = ReadString("driverName", "DriverName", "discordUsername", "DiscordUsername", "name", "Name");
-        var dutyStatus = ReadString("dutyStatus", "DutyStatus", "duty", "Duty");
-        var truck = ReadString("truck", "Truck", "truckId", "TruckId");
-        var loadNumber = ReadString("loadNumber", "LoadNumber", "currentLoadNumber", "CurrentLoadNumber");
-        var location = ReadString("location", "Location", "locationText", "LocationText");
-
-        var speedMph = ReadDouble("speedMph", "SpeedMph", "speed", "Speed");
-        var latitude = ReadDouble("latitude", "Latitude", "lat", "Lat");
-        var longitude = ReadDouble("longitude", "Longitude", "lon", "Lon", "lng", "Lng");
-        var heading = ReadDouble("heading", "Heading");
-
-        if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(discordUserId))
-        {
-            return Results.Json(new
+            catch (Exception ex)
             {
-                ok = false,
-                error = "MissingGuildIdOrDiscordUserId"
-            }, statusCode: 400);
-        }
-
-        services.DriverStatusStore?.Upsert(new DriverStatusStore.DriverStatusEntry
-        {
-            GuildId = guildId,
-            DiscordUserId = discordUserId,
-            DriverName = driverName,
-            DutyStatus = dutyStatus,
-            Truck = truck,
-            LoadNumber = loadNumber,
-            Location = location,
-            SpeedMph = speedMph,
-            Latitude = latitude,
-            Longitude = longitude,
-            Heading = heading,
-            LastSeenUtc = DateTimeOffset.UtcNow
+                return Results.Json(new
+                {
+                    ok = false,
+                    error = ex.Message
+                }, statusCode: 500);
+            }
         });
 
-        return Results.Ok(new
+        app.MapGet("/api/eld/driver/status", (HttpRequest req) =>
         {
-            ok = true,
-            guildId,
-            discordUserId,
-            updatedUtc = DateTimeOffset.UtcNow
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId))
+                guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+
+            if (string.IsNullOrWhiteSpace(guildId))
+                return Results.Ok(new { ok = true, rows = Array.Empty<object>() });
+
+            var rows = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                rows
+            });
         });
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new
+
+        app.MapGet("/api/map/live", (HttpRequest req) =>
         {
-            ok = false,
-            error = ex.Message
-        }, statusCode: 500);
-    }
-});
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId))
+                guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+
+            if (string.IsNullOrWhiteSpace(guildId))
+            {
+                return Results.Ok(new
+                {
+                    ok = true,
+                    guildId = "",
+                    points = Array.Empty<object>()
+                });
+            }
+
+            var rows = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
+
+            var points = rows
+                .Where(x => Math.Abs(x.Latitude) > 0.000001 || Math.Abs(x.Longitude) > 0.000001)
+                .Select(x => new
+                {
+                    discordUserId = x.DiscordUserId,
+                    driverName = x.DriverName,
+                    dutyStatus = x.DutyStatus,
+                    truck = x.Truck,
+                    loadNumber = x.LoadNumber,
+                    location = x.Location,
+                    speedMph = x.SpeedMph,
+                    latitude = x.Latitude,
+                    longitude = x.Longitude,
+                    heading = x.Heading,
+                    lastSeenUtc = x.LastSeenUtc
+                })
+                .ToList();
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                points
+            });
+        });
+
         Console.WriteLine($"Bot running on :{port}");
         await app.RunAsync();
     }
