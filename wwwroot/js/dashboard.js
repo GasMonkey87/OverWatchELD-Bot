@@ -12,8 +12,20 @@ async function checkAuth() {
 
 async function getJson(url, options) {
   const res = await fetch(url, options);
-  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
-  return await res.json();
+  const text = await res.text();
+
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`${url} -> ${res.status} (${text || "invalid json"})`);
+  }
+
+  if (!res.ok) {
+    throw new Error(`${url} -> ${res.status} (${data.error || text || "request failed"})`);
+  }
+
+  return data;
 }
 
 function qs(name) {
@@ -48,30 +60,30 @@ function yesNo(value) {
   return value ? "YES" : "NO";
 }
 
-function populateGuilds(guilds) {
+function showError(message) {
+  const errEl = document.getElementById("dashboardError");
+  if (errEl) errEl.textContent = message || "";
+}
+
+function clearError() {
+  showError("");
+}
+
+async function loadBotServers() {
+  const data = await getJson("/api/vtc/servers");
+  return data.servers || [];
+}
+
+function populateGuilds(servers) {
   const sel = document.getElementById("guildSelect");
   if (!sel) return;
 
   sel.innerHTML = "";
 
-  for (const g of guilds || []) {
-    let perms = 0n;
-    try {
-      perms = BigInt(g.permissions_new || g.permissions || "0");
-    } catch {
-      perms = 0n;
-    }
-
-    const isAdmin = (perms & 0x8n) !== 0n;
-    const canManage = (perms & 0x20n) !== 0n;
-    const isOwner = g.owner === true;
-    const isManager = isOwner || isAdmin || canManage;
-
-    if (!isManager) continue;
-
+  for (const s of servers || []) {
     const opt = document.createElement("option");
-    opt.value = g.id;
-    opt.textContent = g.name;
+    opt.value = s.id;
+    opt.textContent = s.name;
     sel.appendChild(opt);
   }
 
@@ -215,14 +227,25 @@ async function saveSettings() {
 }
 
 async function loadDashboard() {
-  if (!currentGuildId()) return;
+  clearError();
+
+  if (!currentGuildId()) {
+    showError("No Discord server selected.");
+    return;
+  }
+
+  const errors = [];
 
   await Promise.all([
-    loadSummary(),
-    loadDrivers(),
-    loadPerformance(),
-    loadSettings()
+    loadSummary().catch(err => errors.push(`Summary: ${err.message || err}`)),
+    loadDrivers().catch(err => errors.push(`Drivers: ${err.message || err}`)),
+    loadPerformance().catch(err => errors.push(`Performance: ${err.message || err}`)),
+    loadSettings().catch(err => errors.push(`Settings: ${err.message || err}`))
   ]);
+
+  if (errors.length > 0) {
+    showError(errors.join(" | "));
+  }
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -231,12 +254,14 @@ window.addEventListener("DOMContentLoaded", async () => {
     if (!auth) return;
 
     await refreshStatus();
-    populateGuilds(auth.guilds || []);
+
+    const servers = await loadBotServers();
+    populateGuilds(servers);
+
     await loadDashboard();
   } catch (err) {
     console.error(err);
-    const errEl = document.getElementById("dashboardError");
-    if (errEl) errEl.textContent = `Dashboard error: ${err.message || err}`;
+    showError(`Dashboard error: ${err.message || err}`);
   }
 });
 
