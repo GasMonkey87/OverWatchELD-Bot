@@ -69,18 +69,41 @@ function clearError() {
   showError("");
 }
 
+function canManageGuild(g) {
+  let perms = 0n;
+  try {
+    perms = BigInt(g.permissions_new || g.permissions || "0");
+  } catch {
+    perms = 0n;
+  }
+
+  const isAdmin = (perms & 0x8n) !== 0n;
+  const canManage = (perms & 0x20n) !== 0n;
+  const isOwner = g.owner === true;
+
+  return isOwner || isAdmin || canManage;
+}
+
 async function loadBotServers() {
   const data = await getJson("/api/vtc/servers");
   return data.servers || [];
 }
 
-function populateGuilds(servers) {
+function populateGuilds(botServers, authGuilds) {
   const sel = document.getElementById("guildSelect");
   if (!sel) return;
 
   sel.innerHTML = "";
 
-  for (const s of servers || []) {
+  const manageableAuthGuildIds = new Set(
+    (authGuilds || [])
+      .filter(g => canManageGuild(g))
+      .map(g => g.id)
+  );
+
+  const allowedServers = (botServers || []).filter(s => manageableAuthGuildIds.has(s.id));
+
+  for (const s of allowedServers) {
     const opt = document.createElement("option");
     opt.value = s.id;
     opt.textContent = s.name;
@@ -88,7 +111,9 @@ function populateGuilds(servers) {
   }
 
   const urlGuild = qs("guildId");
-  if (urlGuild) sel.value = urlGuild;
+  if (urlGuild && allowedServers.some(s => s.id === urlGuild)) {
+    sel.value = urlGuild;
+  }
 
   if (!sel.value && sel.options.length > 0) {
     sel.selectedIndex = 0;
@@ -255,8 +280,8 @@ window.addEventListener("DOMContentLoaded", async () => {
 
     await refreshStatus();
 
-    const servers = await loadBotServers();
-    populateGuilds(servers);
+    const botServers = await loadBotServers();
+    populateGuilds(botServers, auth.guilds || []);
 
     await loadDashboard();
   } catch (err) {
