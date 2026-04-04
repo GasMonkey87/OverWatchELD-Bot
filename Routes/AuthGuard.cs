@@ -1,5 +1,4 @@
-// Routes/AuthGuard.cs
-using System.Linq;
+using System;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 
@@ -35,19 +34,79 @@ public static class AuthGuard
 
         foreach (var g in guilds.EnumerateArray())
         {
-            var id = g.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? "" : "";
-            if (!string.Equals(id, guildId, System.StringComparison.OrdinalIgnoreCase))
+            var id = ReadJsonString(g, "id");
+            if (!string.Equals(id, guildId, StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            var permsText = g.TryGetProperty("permissions", out var p) ? p.GetString() ?? "0" : "0";
-            if (!ulong.TryParse(permsText, out var perms))
-                perms = 0;
+            var isOwner = ReadJsonBool(g, "owner");
+
+            var perms =
+                ReadJsonULong(g, "permissions_new") ??
+                ReadJsonULong(g, "permissions") ??
+                0UL;
 
             var isAdmin = (perms & 0x8UL) != 0;
             var canManageGuild = (perms & 0x20UL) != 0;
-            return isAdmin || canManageGuild;
+
+            return isOwner || isAdmin || canManageGuild;
         }
 
         return false;
+    }
+
+    private static string ReadJsonString(JsonElement obj, string propertyName)
+    {
+        if (!obj.TryGetProperty(propertyName, out var p))
+            return "";
+
+        return p.ValueKind switch
+        {
+            JsonValueKind.String => p.GetString() ?? "",
+            JsonValueKind.Number => p.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => p.ToString() ?? ""
+        };
+    }
+
+    private static bool ReadJsonBool(JsonElement obj, string propertyName)
+    {
+        if (!obj.TryGetProperty(propertyName, out var p))
+            return false;
+
+        return p.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String => bool.TryParse(p.GetString(), out var b) && b,
+            JsonValueKind.Number => p.GetRawText() == "1",
+            _ => false
+        };
+    }
+
+    private static ulong? ReadJsonULong(JsonElement obj, string propertyName)
+    {
+        if (!obj.TryGetProperty(propertyName, out var p))
+            return null;
+
+        if (p.ValueKind == JsonValueKind.Number)
+        {
+            if (p.TryGetUInt64(out var n))
+                return n;
+
+            if (ulong.TryParse(p.GetRawText(), out var n2))
+                return n2;
+
+            return null;
+        }
+
+        if (p.ValueKind == JsonValueKind.String)
+        {
+            var s = p.GetString();
+            if (ulong.TryParse(s, out var n))
+                return n;
+        }
+
+        return null;
     }
 }
