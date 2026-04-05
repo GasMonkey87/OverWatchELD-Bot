@@ -1,9 +1,9 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Text.Json;
+using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OverWatchELD.VtcBot.Models;
@@ -19,17 +19,63 @@ public static class ManagementRoutes
         BotServices services,
         DispatchMessageStore messageStore)
     {
-        app.MapGet("/api/management/drivers", (HttpContext ctx, HttpRequest req) =>
+        app.MapGet("/api/management/summary", async (HttpContext ctx, HttpRequest req) =>
         {
             var guildId = ResolveGuildId(req, services);
             var auth = RequireManagementAccess(ctx, guildId);
             if (auth != null) return auth;
 
-            var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+            var guild = DiscordThreadService.ResolveGuild(services.Client, guildId);
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            try { await guild.DownloadUsersAsync(); } catch { }
+
+            var manual = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+            var merged = RosterMerge.BuildMergedDiscordRoster(guild, manual).ToList();
+            var live = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
+            var msgs = messageStore.List(guildId);
+
+            var unread = msgs.Count(x =>
+                string.Equals((x.Direction ?? "").Trim(), "from_driver", StringComparison.OrdinalIgnoreCase) &&
+                !x.IsRead);
+
+            var staleCount = live.Count(x => (DateTimeOffset.UtcNow - x.LastSeenUtc).TotalMinutes >= 5);
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                counts = new
+                {
+                    drivers = merged.Count,
+                    live = live.Count,
+                    stale = staleCount,
+                    unreadDispatch = unread,
+                    managers = merged.Count(x => IsManagerLike(x.Role)),
+                    dispatchers = merged.Count(x => IsDispatchLike(x.Role))
+                }
+            });
+        });
+
+        app.MapGet("/api/management/drivers", async (HttpContext ctx, HttpRequest req) =>
+        {
+            var guildId = ResolveGuildId(req, services);
+            var auth = RequireManagementAccess(ctx, guildId);
+            if (auth != null) return auth;
+
+            var guild = DiscordThreadService.ResolveGuild(services.Client, guildId);
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            try { await guild.DownloadUsersAsync(); } catch { }
+
+            var manual = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+            var merged = RosterMerge.BuildMergedDiscordRoster(guild, manual).ToList();
             var statusRows = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
             var convoRows = messageStore.List(guildId);
 
-            var drivers = roster
+            var drivers = merged
                 .Select(r =>
                 {
                     var live = statusRows.FirstOrDefault(x =>
@@ -47,6 +93,20 @@ public static class ManagementRoutes
                         .OrderByDescending(x => x.CreatedUtc)
                         .FirstOrDefault();
 
+                    string resolvedRole;
+                    try
+                    {
+                        SocketGuildUser? user = null;
+                        if (!string.IsNullOrWhiteSpace(r.DiscordUserId) && ulong.TryParse(r.DiscordUserId, out var uid))
+                            user = guild.GetUser(uid);
+
+                        resolvedRole = ResolveGuildRoleLikeVtcRoster(guild, user, r.Role);
+                    }
+                    catch
+                    {
+                        resolvedRole = string.IsNullOrWhiteSpace(r.Role) ? "Driver" : r.Role.Trim();
+                    }
+
                     return new
                     {
                         driverId = r.DriverId ?? "",
@@ -55,7 +115,7 @@ public static class ManagementRoutes
                         discordUserId = r.DiscordUserId ?? "",
                         discordUsername = r.DiscordUsername ?? "",
                         truckNumber = r.TruckNumber ?? "",
-                        role = string.IsNullOrWhiteSpace(r.Role) ? "Driver" : r.Role,
+                        role = resolvedRole,
                         status = r.Status ?? "",
                         notes = r.Notes ?? "",
 
@@ -81,14 +141,22 @@ public static class ManagementRoutes
             });
         });
 
-        app.MapGet("/api/management/drivers/{driverDiscordUserId}", (HttpContext ctx, string driverDiscordUserId, HttpRequest req) =>
+        app.MapGet("/api/management/drivers/{driverDiscordUserId}", async (HttpContext ctx, string driverDiscordUserId, HttpRequest req) =>
         {
             var guildId = ResolveGuildId(req, services);
             var auth = RequireManagementAccess(ctx, guildId);
             if (auth != null) return auth;
 
-            var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
-            var row = roster.FirstOrDefault(x =>
+            var guild = DiscordThreadService.ResolveGuild(services.Client, guildId);
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            try { await guild.DownloadUsersAsync(); } catch { }
+
+            var manual = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+            var merged = RosterMerge.BuildMergedDiscordRoster(guild, manual).ToList();
+
+            var row = merged.FirstOrDefault(x =>
                 string.Equals((x.DiscordUserId ?? "").Trim(), (driverDiscordUserId ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
 
             if (row == null)
@@ -99,6 +167,20 @@ public static class ManagementRoutes
                     string.Equals((x.DiscordUserId ?? "").Trim(), (driverDiscordUserId ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
 
             var messages = messageStore.ListConversation(guildId, driverDiscordUserId);
+
+            string resolvedRole;
+            try
+            {
+                SocketGuildUser? user = null;
+                if (!string.IsNullOrWhiteSpace(row.DiscordUserId) && ulong.TryParse(row.DiscordUserId, out var uid))
+                    user = guild.GetUser(uid);
+
+                resolvedRole = ResolveGuildRoleLikeVtcRoster(guild, user, row.Role);
+            }
+            catch
+            {
+                resolvedRole = string.IsNullOrWhiteSpace(row.Role) ? "Driver" : row.Role.Trim();
+            }
 
             return Results.Ok(new
             {
@@ -112,7 +194,7 @@ public static class ManagementRoutes
                     discordUserId = row.DiscordUserId ?? "",
                     discordUsername = row.DiscordUsername ?? "",
                     truckNumber = row.TruckNumber ?? "",
-                    role = string.IsNullOrWhiteSpace(row.Role) ? "Driver" : row.Role,
+                    role = resolvedRole,
                     status = row.Status ?? "",
                     notes = row.Notes ?? "",
                     createdUtc = row.CreatedUtc,
@@ -154,7 +236,7 @@ public static class ManagementRoutes
                 string.Equals((x.DiscordUserId ?? "").Trim(), driverDiscordUserId.Trim(), StringComparison.OrdinalIgnoreCase));
 
             if (driver == null)
-                return Results.Json(new { ok = false, error = "DriverNotFound" }, statusCode: 404);
+                return Results.Json(new { ok = false, error = "DriverNotFoundInManualRoster" }, statusCode: 404);
 
             driver.Role = role.Trim();
             TouchUpdatedUtc(driver);
@@ -190,7 +272,7 @@ public static class ManagementRoutes
                 string.Equals((x.DiscordUserId ?? "").Trim(), driverDiscordUserId.Trim(), StringComparison.OrdinalIgnoreCase));
 
             if (driver == null)
-                return Results.Json(new { ok = false, error = "DriverNotFound" }, statusCode: 404);
+                return Results.Json(new { ok = false, error = "DriverNotFoundInManualRoster" }, statusCode: 404);
 
             driver.Notes = notes ?? "";
             TouchUpdatedUtc(driver);
@@ -221,10 +303,17 @@ public static class ManagementRoutes
             if (string.IsNullOrWhiteSpace(text))
                 return Results.Json(new { ok = false, error = "MissingText" }, statusCode: 400);
 
-            var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+            var guild = DiscordThreadService.ResolveGuild(services.Client, guildId);
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+            try { await guild.DownloadUsersAsync(); } catch { }
+
+            var manual = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+            var merged = RosterMerge.BuildMergedDiscordRoster(guild, manual).ToList();
 
             var sent = 0;
-            foreach (var driver in roster)
+            foreach (var driver in merged)
             {
                 if (string.IsNullOrWhiteSpace(driver.DiscordUserId))
                     continue;
@@ -248,38 +337,6 @@ public static class ManagementRoutes
                 ok = true,
                 guildId,
                 sent
-            });
-        });
-
-        app.MapGet("/api/management/summary", (HttpContext ctx, HttpRequest req) =>
-        {
-            var guildId = ResolveGuildId(req, services);
-            var auth = RequireManagementAccess(ctx, guildId);
-            if (auth != null) return auth;
-
-            var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
-            var live = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
-            var msgs = messageStore.List(guildId);
-
-            var unread = msgs.Count(x =>
-                string.Equals((x.Direction ?? "").Trim(), "from_driver", StringComparison.OrdinalIgnoreCase) &&
-                !x.IsRead);
-
-            var staleCount = live.Count(x => (DateTimeOffset.UtcNow - x.LastSeenUtc).TotalMinutes >= 5);
-
-            return Results.Ok(new
-            {
-                ok = true,
-                guildId,
-                counts = new
-                {
-                    drivers = roster.Count,
-                    live = live.Count,
-                    stale = staleCount,
-                    unreadDispatch = unread,
-                    managers = roster.Count(x => IsManagerLike(x.Role)),
-                    dispatchers = roster.Count(x => IsDispatchLike(x.Role))
-                }
             });
         });
     }
@@ -338,9 +395,7 @@ public static class ManagementRoutes
                 return true;
             }
         }
-        catch
-        {
-        }
+        catch { }
 
         try
         {
@@ -351,9 +406,7 @@ public static class ManagementRoutes
                 return true;
             }
         }
-        catch
-        {
-        }
+        catch { }
 
         try
         {
@@ -364,9 +417,7 @@ public static class ManagementRoutes
                 return true;
             }
         }
-        catch
-        {
-        }
+        catch { }
 
         try
         {
@@ -377,22 +428,14 @@ public static class ManagementRoutes
                 return true;
             }
         }
-        catch
-        {
-        }
+        catch { }
 
         return false;
     }
 
     private static void TouchUpdatedUtc(VtcDriver driver)
     {
-        try
-        {
-            driver.UpdatedUtc = DateTimeOffset.UtcNow;
-        }
-        catch
-        {
-        }
+        try { driver.UpdatedUtc = DateTimeOffset.UtcNow; } catch { }
     }
 
     private static bool IsManagerLike(string? role)
@@ -412,5 +455,39 @@ public static class ManagementRoutes
                v.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
                v.Equals("Administrator", StringComparison.OrdinalIgnoreCase) ||
                v.Equals("Owner", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveGuildRoleLikeVtcRoster(SocketGuild guild, SocketGuildUser? user, string? storedRole)
+    {
+        var role = (storedRole ?? "").Trim();
+        if (guild.OwnerId == user?.Id)
+            return "Owner";
+
+        var names = user?.Roles?
+            .Where(x => !string.Equals(x.Name, "@everyone", StringComparison.OrdinalIgnoreCase))
+            .Select(x => x.Name)
+            .ToList() ?? new List<string>();
+
+        if (names.Any(x =>
+                x.Equals("Owner", StringComparison.OrdinalIgnoreCase) ||
+                x.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
+                x.Equals("Administrator", StringComparison.OrdinalIgnoreCase) ||
+                x.Equals("Staff", StringComparison.OrdinalIgnoreCase) ||
+                x.Equals("VTC Admin", StringComparison.OrdinalIgnoreCase)))
+            return "Admin";
+
+        if (names.Any(x =>
+                x.Equals("Manager", StringComparison.OrdinalIgnoreCase) ||
+                x.Equals("Supervisor", StringComparison.OrdinalIgnoreCase) ||
+                x.Equals("Fleet Manager", StringComparison.OrdinalIgnoreCase) ||
+                x.Equals("Roster Manager", StringComparison.OrdinalIgnoreCase)))
+            return "Manager";
+
+        if (names.Any(x =>
+                x.Equals("Dispatch", StringComparison.OrdinalIgnoreCase) ||
+                x.Equals("Dispatch Admin", StringComparison.OrdinalIgnoreCase)))
+            return "Dispatch";
+
+        return string.IsNullOrWhiteSpace(role) ? "Driver" : role;
     }
 }
