@@ -12,7 +12,11 @@ async function getJson(url, options) {
   const res = await fetch(url, options);
   const text = await res.text();
   let data = {};
-  try { data = text ? JSON.parse(text) : {}; } catch { throw new Error(text || "invalid json"); }
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(text || "invalid json");
+  }
   if (!res.ok) throw new Error(data.error || `${url} -> ${res.status}`);
   return data;
 }
@@ -28,7 +32,10 @@ function currentGuildId() {
 
 function canManageGuild(g) {
   let perms = 0n;
-  try { perms = BigInt(g.permissions_new || g.permissions || "0"); } catch {}
+  try {
+    perms = BigInt(g.permissions_new || g.permissions || "0");
+  } catch {
+  }
   const isAdmin = (perms & 0x8n) !== 0n;
   const canManage = (perms & 0x20n) !== 0n;
   return g.owner === true || isAdmin || canManage;
@@ -41,9 +48,14 @@ async function loadBotServers() {
 
 function populateGuilds(botServers, authGuilds) {
   const sel = document.getElementById("guildSelect");
+  if (!sel) return;
+
   sel.innerHTML = "";
 
-  const authManageableIds = new Set((authGuilds || []).filter(canManageGuild).map(g => g.id));
+  const authManageableIds = new Set(
+    (authGuilds || []).filter(canManageGuild).map(g => g.id)
+  );
+
   const allowedServers = (botServers || []).filter(s => authManageableIds.has(s.id));
 
   for (const s of allowedServers) {
@@ -54,8 +66,13 @@ function populateGuilds(botServers, authGuilds) {
   }
 
   const urlGuild = qs("guildId");
-  if (urlGuild && allowedServers.some(s => s.id === urlGuild)) sel.value = urlGuild;
-  if (!sel.value && sel.options.length > 0) sel.selectedIndex = 0;
+  if (urlGuild && allowedServers.some(s => s.id === urlGuild)) {
+    sel.value = urlGuild;
+  }
+
+  if (!sel.value && sel.options.length > 0) {
+    sel.selectedIndex = 0;
+  }
 }
 
 function apiUrl(path) {
@@ -80,13 +97,18 @@ function fillLoadEditor(load) {
 
 async function loadBoard() {
   const data = await getJson(apiUrl("/api/dispatch/board"));
-  document.getElementById("boardCounts").textContent =
-    `Unassigned: ${data.counts.unassigned} | Assigned: ${data.counts.assigned} | In Transit: ${data.counts.inTransit} | Delivered: ${data.counts.delivered} | Delayed: ${data.counts.delayed} | Stale Drivers: ${data.staleDrivers}`;
+  const boardCounts = document.getElementById("boardCounts");
+  if (boardCounts) {
+    boardCounts.textContent =
+      `Unassigned: ${data.counts.unassigned} | Assigned: ${data.counts.assigned} | In Transit: ${data.counts.inTransit} | Delivered: ${data.counts.delivered} | Delayed: ${data.counts.delayed} | Stale Drivers: ${data.staleDrivers}`;
+  }
 }
 
 async function loadLoads() {
   const data = await getJson(apiUrl("/api/dispatch/loads"));
   const el = document.getElementById("loadList");
+  if (!el) return;
+
   el.innerHTML = "";
 
   for (const load of (data.rows || [])) {
@@ -98,7 +120,9 @@ async function loadLoads() {
       <div class="muted">Driver: ${load.driverName || "-"} | Truck: ${load.truckId || "-"}</div>`;
     div.addEventListener("click", async () => {
       fillLoadEditor(load);
-      if (load.driverDiscordUserId) await loadConversation(load.driverDiscordUserId);
+      if (load.driverDiscordUserId) {
+        await loadConversation(load.driverDiscordUserId);
+      }
     });
     el.appendChild(div);
   }
@@ -107,6 +131,8 @@ async function loadLoads() {
 async function loadConversations() {
   const data = await getJson(apiUrl("/api/dispatch/conversations"));
   const el = document.getElementById("conversationList");
+  if (!el) return;
+
   el.innerHTML = "";
 
   for (const row of (data.rows || [])) {
@@ -127,6 +153,8 @@ async function loadConversations() {
 async function loadConversation(driverDiscordUserId) {
   const data = await getJson(apiUrl(`/api/dispatch/conversations/${encodeURIComponent(driverDiscordUserId)}`));
   const el = document.getElementById("messageThread");
+  if (!el) return;
+
   el.innerHTML = "";
 
   for (const m of (data.rows || [])) {
@@ -151,6 +179,8 @@ async function loadConversation(driverDiscordUserId) {
 async function loadDrivers() {
   const data = await getJson(apiUrl("/api/dispatch/drivers/live"));
   const el = document.getElementById("driverList");
+  if (!el) return;
+
   el.innerHTML = "";
 
   for (const d of (data.rows || [])) {
@@ -190,7 +220,7 @@ function collectLoad() {
 async function saveLoad() {
   const load = collectLoad();
   const endpoint = load.id ? "/api/dispatch/loads/update" : "/api/dispatch/loads/create";
-  await getJson(endpoint + `?guildId=${encodeURIComponent(currentGuildId())}`, {
+  await getJson(`${endpoint}?guildId=${encodeURIComponent(currentGuildId())}`, {
     method: load.id ? "PUT" : "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(load)
@@ -204,11 +234,13 @@ async function assignLoad() {
     alert("Save the load first.");
     return;
   }
+
   await getJson(`/api/dispatch/loads/assign?guildId=${encodeURIComponent(currentGuildId())}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(load)
   });
+
   await refreshAll();
 }
 
@@ -218,11 +250,13 @@ async function markStatus(status) {
     alert("Select a load first.");
     return;
   }
+
   await getJson(`/api/dispatch/loads/status?guildId=${encodeURIComponent(currentGuildId())}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id, status })
   });
+
   await refreshAll();
 }
 
@@ -230,27 +264,40 @@ async function sendMessage() {
   const driverDiscordUserId = document.getElementById("driverDiscordUserId").value.trim();
   const driverName = document.getElementById("driverName").value.trim();
   const text = document.getElementById("messageText").value.trim();
-  const loadNumber = document.getElementById("loadNumber").value.trim();
+
   if (!driverDiscordUserId || !text) {
     alert("Pick a driver and type a message.");
     return;
   }
-  await getJson(`/api/dispatch/messages/send?guildId=${encodeURIComponent(currentGuildId())}`, {
+
+  await getJson("/api/hub/messages/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ driverDiscordUserId, driverName, text, loadNumber })
+    body: JSON.stringify({
+      guildId: currentGuildId(),
+      discordUserId: driverDiscordUserId,
+      driverName: driverName,
+      text: text
+    })
   });
+
   document.getElementById("messageText").value = "";
   await loadConversation(driverDiscordUserId);
 }
 
 async function refreshAll() {
-  await Promise.all([loadBoard(), loadLoads(), loadConversations(), loadDrivers()]);
+  await Promise.all([
+    loadBoard(),
+    loadLoads(),
+    loadConversations(),
+    loadDrivers()
+  ]);
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
   const auth = await checkAuth();
   if (!auth) return;
+
   const botServers = await loadBotServers();
   populateGuilds(botServers, auth.guilds || []);
   await refreshAll();
@@ -262,6 +309,7 @@ document.getElementById("guildSelect")?.addEventListener("change", async () => {
   window.history.replaceState({}, "", u.toString());
   await refreshAll();
 });
+
 document.getElementById("refreshBtn")?.addEventListener("click", refreshAll);
 document.getElementById("newLoadBtn")?.addEventListener("click", () => fillLoadEditor(null));
 document.getElementById("saveLoadBtn")?.addEventListener("click", saveLoad);
@@ -269,4 +317,5 @@ document.getElementById("assignLoadBtn")?.addEventListener("click", assignLoad);
 document.getElementById("markAssignedBtn")?.addEventListener("click", () => markStatus("assigned"));
 document.getElementById("markTransitBtn")?.addEventListener("click", () => markStatus("in_transit"));
 document.getElementById("sendMessageBtn")?.addEventListener("click", sendMessage);
+
 setInterval(refreshAll, 15000);
