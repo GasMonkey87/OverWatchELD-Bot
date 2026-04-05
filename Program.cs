@@ -178,7 +178,11 @@ public static class Program
             Path.Combine(dataDir, "dispatch_messages.json"),
             JsonReadOpts,
             JsonWriteOpts);
-
+        var driverDisciplineStore = new DriverDisciplineStore(
+    Path.Combine(dataDir, "driver_discipline.json"),
+    JsonReadOpts,
+    JsonWriteOpts);
+        
         app.MapMethods("/api/loads/pickup", new[] { "POST", "GET" }, async (HttpRequest req) =>
         {
             var dto = await ReadLoadDtoAsync(req, loadApiLogPath, "pickup");
@@ -234,7 +238,7 @@ public static class Program
         ApiRoutes.Register(app, services, JsonReadOpts, JsonWriteOpts, sharedHttp);
         AwardRoutes.Register(app, services, JsonWriteOpts);
         DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatchMessageStore);
-        ManagementRoutes.Register(app, services, dispatchMessageStore);
+        ManagementRoutes.Register(app, services, dispatchMessageStore, driverDisciplineStore);
         
         app.MapPost("/api/vtc/loadboard/settings", async (HttpRequest req) =>
         {
