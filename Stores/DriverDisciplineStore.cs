@@ -49,10 +49,7 @@ namespace OverWatchELD.VtcBot.Stores
             lock (_gate)
             {
                 return LoadInternal()
-                    .Where(x => string.Equals(
-                        (x.GuildId ?? "").Trim(),
-                        (guildId ?? "").Trim(),
-                        StringComparison.OrdinalIgnoreCase))
+                    .Where(x => string.Equals((x.GuildId ?? "").Trim(), (guildId ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
                     .OrderByDescending(x => x.CreatedUtc)
                     .ToList();
             }
@@ -81,4 +78,65 @@ namespace OverWatchELD.VtcBot.Stores
                 entry.GuildId = (entry.GuildId ?? "").Trim();
                 entry.DriverDiscordUserId = (entry.DriverDiscordUserId ?? "").Trim();
                 entry.DriverName = (entry.DriverName ?? "").Trim();
-                entry.Level = string.IsNullOrWhiteSpace(entry
+                entry.Level = string.IsNullOrWhiteSpace(entry.Level) ? "warning" : entry.Level.Trim();
+                entry.Category = (entry.Category ?? "").Trim();
+                entry.Reason = (entry.Reason ?? "").Trim();
+                entry.ActionTaken = (entry.ActionTaken ?? "").Trim();
+                entry.CreatedBy = (entry.CreatedBy ?? "").Trim();
+                entry.CreatedUtc = entry.CreatedUtc == default ? DateTimeOffset.UtcNow : entry.CreatedUtc;
+
+                rows.Add(entry);
+                SaveInternal(rows);
+                return entry;
+            }
+        }
+
+        public DriverDisciplineEntry? Resolve(string guildId, string id, string resolutionNotes)
+        {
+            lock (_gate)
+            {
+                var rows = LoadInternal();
+
+                var row = rows.FirstOrDefault(x =>
+                    string.Equals((x.GuildId ?? "").Trim(), (guildId ?? "").Trim(), StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals((x.Id ?? "").Trim(), (id ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+
+                if (row == null)
+                    return null;
+
+                row.IsActive = false;
+                row.ResolutionNotes = (resolutionNotes ?? "").Trim();
+                row.ResolvedUtc = DateTimeOffset.UtcNow;
+
+                SaveInternal(rows);
+                return row;
+            }
+        }
+
+        private List<DriverDisciplineEntry> LoadInternal()
+        {
+            try
+            {
+                if (!File.Exists(_path))
+                    return new List<DriverDisciplineEntry>();
+
+                var json = File.ReadAllText(_path);
+                if (string.IsNullOrWhiteSpace(json))
+                    return new List<DriverDisciplineEntry>();
+
+                return JsonSerializer.Deserialize<List<DriverDisciplineEntry>>(json, _readOpts)
+                       ?? new List<DriverDisciplineEntry>();
+            }
+            catch
+            {
+                return new List<DriverDisciplineEntry>();
+            }
+        }
+
+        private void SaveInternal(List<DriverDisciplineEntry> rows)
+        {
+            var json = JsonSerializer.Serialize(rows, _writeOpts);
+            File.WriteAllText(_path, json);
+        }
+    }
+}
