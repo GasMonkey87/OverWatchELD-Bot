@@ -468,54 +468,77 @@ public static class Program
         });
 
         app.MapPost("/api/messages/send", async (HttpRequest req) =>
+{
+    try
+    {
+        using var doc = await JsonDocument.ParseAsync(req.Body);
+        var root = doc.RootElement;
+
+        string Read(params string[] names)
         {
-            using var doc = await JsonDocument.ParseAsync(req.Body);
-            var root = doc.RootElement;
-
-            string Read(params string[] names)
+            foreach (var n in names)
             {
-                foreach (var n in names)
+                if (root.TryGetProperty(n, out var v))
                 {
-                    if (root.TryGetProperty(n, out var v))
-                    {
-                        var s = v.ToString()?.Trim();
-                        if (!string.IsNullOrWhiteSpace(s))
-                            return s;
-                    }
+                    var s = v.ToString()?.Trim();
+                    if (!string.IsNullOrWhiteSpace(s))
+                        return s;
                 }
-                return "";
             }
+            return "";
+        }
 
-            var guildId = Read("guildId", "GuildId");
-            var discordUserId = Read("discordUserId", "DiscordUserId");
-            var driverName = Read("driverName", "DriverName", "discordUsername", "DiscordUsername");
-            var text = Read("text", "Text", "message", "Message");
-            var loadNumber = Read("loadNumber", "LoadNumber");
+        var guildId = Read("guildId", "GuildId");
+        var discordUserId = Read("discordUserId", "DiscordUserId", "userId", "UserId");
+        var driverName = Read("driverName", "DriverName", "discordUsername", "DiscordUsername", "name", "Name");
+        var text = Read("text", "Text", "message", "Message", "body", "Body", "content", "Content");
+        var loadNumber = Read("loadNumber", "LoadNumber");
 
-            if (string.IsNullOrWhiteSpace(guildId) ||
-                string.IsNullOrWhiteSpace(discordUserId) ||
-                string.IsNullOrWhiteSpace(text))
-            {
-                return Results.Json(new { ok = false, error = "MissingFields" }, statusCode: 400);
-            }
+        guildId = guildId.Trim();
+        discordUserId = discordUserId.Trim();
+        driverName = driverName.Trim();
+        text = text.Trim();
+        loadNumber = loadNumber.Trim();
 
-            var saved = dispatchMessageStore.Add(new DispatchMessage
-            {
-                GuildId = guildId,
-                DriverDiscordUserId = discordUserId,
-                DriverName = driverName,
-                Direction = "from_driver",
-                Text = text,
-                LoadNumber = loadNumber,
-                IsRead = false
-            });
+        if (string.IsNullOrWhiteSpace(guildId))
+            return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
 
-            return Results.Ok(new
-            {
-                ok = true,
-                message = saved
-            });
+        if (string.IsNullOrWhiteSpace(discordUserId))
+            return Results.Json(new { ok = false, error = "MissingDiscordUserId" }, statusCode: 400);
+
+        if (string.IsNullOrWhiteSpace(text))
+            return Results.Json(new { ok = false, error = "MissingText" }, statusCode: 400);
+
+        if (string.IsNullOrWhiteSpace(driverName))
+            driverName = "Driver";
+
+        var saved = dispatchMessageStore.Add(new DispatchMessage
+        {
+            GuildId = guildId,
+            DriverDiscordUserId = discordUserId,
+            DriverName = driverName,
+            Direction = "from_driver",
+            Text = text,
+            LoadNumber = loadNumber,
+            IsRead = false
         });
+
+        return Results.Ok(new
+        {
+            ok = true,
+            message = saved
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            ok = false,
+            error = ex.Message,
+            errorType = ex.GetType().FullName
+        }, statusCode: 500);
+    }
+});
 
         Console.WriteLine($"Bot running on :{port}");
         await app.RunAsync();
