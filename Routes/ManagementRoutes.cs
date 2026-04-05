@@ -17,7 +17,8 @@ public static class ManagementRoutes
     public static void Register(
         WebApplication app,
         BotServices services,
-        DispatchMessageStore messageStore)
+        DispatchMessageStore messageStore,
+        DriverDisciplineStore disciplineStore)
     {
         app.MapGet("/api/management/summary", async (HttpContext ctx, HttpRequest req) =>
         {
@@ -35,12 +36,15 @@ public static class ManagementRoutes
             var merged = RosterMerge.BuildMergedDiscordRoster(guild, manual).ToList();
             var live = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
             var msgs = messageStore.List(guildId);
+            var discipline = disciplineStore.List(guildId);
 
             var unread = msgs.Count(x =>
                 string.Equals((x.Direction ?? "").Trim(), "from_driver", StringComparison.OrdinalIgnoreCase) &&
                 !x.IsRead);
 
             var staleCount = live.Count(x => (DateTimeOffset.UtcNow - x.LastSeenUtc).TotalMinutes >= 5);
+            var activeWarnings = discipline.Count(x => x.IsActive && string.Equals(x.Level, "warning", StringComparison.OrdinalIgnoreCase));
+            var activeSuspensions = discipline.Count(x => x.IsActive && string.Equals(x.Level, "suspension", StringComparison.OrdinalIgnoreCase));
 
             return Results.Ok(new
             {
@@ -53,7 +57,9 @@ public static class ManagementRoutes
                     stale = staleCount,
                     unreadDispatch = unread,
                     managers = merged.Count(x => IsManagerLike(x.Role)),
-                    dispatchers = merged.Count(x => IsDispatchLike(x.Role))
+                    dispatchers = merged.Count(x => IsDispatchLike(x.Role)),
+                    activeWarnings,
+                    activeSuspensions
                 }
             });
         });
@@ -74,6 +80,7 @@ public static class ManagementRoutes
             var merged = RosterMerge.BuildMergedDiscordRoster(guild, manual).ToList();
             var statusRows = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
             var convoRows = messageStore.List(guildId);
+            var disciplineRows = disciplineStore.List(guildId);
 
             var drivers = merged
                 .Select(r =>
@@ -92,6 +99,14 @@ public static class ManagementRoutes
                     var lastMsg = driverMsgs
                         .OrderByDescending(x => x.CreatedUtc)
                         .FirstOrDefault();
+
+                    var driverDiscipline = disciplineRows
+                        .Where(x => string.Equals((x.DriverDiscordUserId ?? "").Trim(), (r.DiscordUserId ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+
+                    var activeWarnings = driverDiscipline.Count(x => x.IsActive && string.Equals(x.Level, "warning", StringComparison.OrdinalIgnoreCase));
+                    var activeSuspensions = driverDiscipline.Count(x => x.IsActive && string.Equals(x.Level, "suspension", StringComparison.OrdinalIgnoreCase));
+                    var lastDisciplineUtc = driverDiscipline.OrderByDescending(x => x.CreatedUtc).FirstOrDefault()?.CreatedUtc;
 
                     string resolvedRole;
                     try
@@ -127,7 +142,11 @@ public static class ManagementRoutes
 
                         unreadDispatchCount = unread,
                         lastMessageUtc = lastMsg?.CreatedUtc,
-                        lastMessageText = lastMsg?.Text ?? ""
+                        lastMessageText = lastMsg?.Text ?? "",
+
+                        activeWarnings,
+                        activeSuspensions,
+                        lastDisciplineUtc
                     };
                 })
                 .OrderBy(x => x.name, StringComparer.OrdinalIgnoreCase)
@@ -141,115 +160,6 @@ public static class ManagementRoutes
             });
         });
 
-        app.MapPost("/api/management/message/selected", async (HttpContext ctx, HttpRequest req) =>
-{
-    var guildId = ResolveGuildId(req, services);
-    var auth = RequireManagementAccess(ctx, guildId);
-    if (auth != null) return auth;
-
-    using var doc = await JsonDocument.ParseAsync(req.Body);
-    var root = doc.RootElement;
-
-    var text = ReadString(root, "text", "Text", "message", "Message", "body", "Body", "content", "Content");
-    if (string.IsNullOrWhiteSpace(text))
-        return Results.Json(new { ok = false, error = "MissingText" }, statusCode: 400);
-
-    if (!root.TryGetProperty("driverDiscordUserIds", out var idsEl) || idsEl.ValueKind != JsonValueKind.Array)
-        return Results.Json(new { ok = false, error = "MissingDriverDiscordUserIds" }, statusCode: 400);
-
-    var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
-
-    var ids = idsEl.EnumerateArray()
-        .Select(x => x.ToString()?.Trim() ?? "")
-        .Where(x => !string.IsNullOrWhiteSpace(x))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToList();
-
-    var sent = 0;
-
-    foreach (var id in ids)
-    {
-        var driver = roster.FirstOrDefault(x =>
-            string.Equals((x.DiscordUserId ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
-
-        messageStore.Add(new DispatchMessage
-        {
-            GuildId = guildId,
-            DriverDiscordUserId = id,
-            DriverName = driver?.Name ?? "",
-            Direction = "to_driver",
-            Text = text.Trim(),
-            IsRead = false
-        });
-
-        sent++;
-    }
-
-    return Results.Ok(new
-    {
-        ok = true,
-        guildId,
-        sent
-    });
-});
-
-app.MapPost("/api/management/driver/role/bulk", async (HttpContext ctx, HttpRequest req) =>
-{
-    var guildId = ResolveGuildId(req, services);
-    var auth = RequireManagementAccess(ctx, guildId);
-    if (auth != null) return auth;
-
-    using var doc = await JsonDocument.ParseAsync(req.Body);
-    var root = doc.RootElement;
-
-    var role = ReadString(root, "role", "Role");
-    if (string.IsNullOrWhiteSpace(role))
-        return Results.Json(new { ok = false, error = "MissingRole" }, statusCode: 400);
-
-    if (!root.TryGetProperty("driverDiscordUserIds", out var idsEl) || idsEl.ValueKind != JsonValueKind.Array)
-        return Results.Json(new { ok = false, error = "MissingDriverDiscordUserIds" }, statusCode: 400);
-
-    var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
-
-    var ids = idsEl.EnumerateArray()
-        .Select(x => x.ToString()?.Trim() ?? "")
-        .Where(x => !string.IsNullOrWhiteSpace(x))
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToList();
-
-    var updated = 0;
-
-    foreach (var id in ids)
-    {
-        var driver = roster.FirstOrDefault(x =>
-            string.Equals((x.DiscordUserId ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
-
-        if (driver == null)
-            continue;
-
-        driver.Role = role.Trim();
-        TouchUpdatedUtc(driver);
-        updated++;
-    }
-
-    var persisted = false;
-    if (updated > 0)
-    {
-        var firstChanged = roster.FirstOrDefault(x => ids.Contains((x.DiscordUserId ?? "").Trim(), StringComparer.OrdinalIgnoreCase));
-        if (firstChanged != null)
-            persisted = TryPersistRoster(services.RosterStore, roster, firstChanged);
-    }
-
-    return Results.Ok(new
-    {
-        ok = true,
-        guildId,
-        updated,
-        persisted,
-        role = role.Trim()
-    });
-});
-        
         app.MapGet("/api/management/drivers/{driverDiscordUserId}", async (HttpContext ctx, string driverDiscordUserId, HttpRequest req) =>
         {
             var guildId = ResolveGuildId(req, services);
@@ -276,6 +186,7 @@ app.MapPost("/api/management/driver/role/bulk", async (HttpContext ctx, HttpRequ
                     string.Equals((x.DiscordUserId ?? "").Trim(), (driverDiscordUserId ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
 
             var messages = messageStore.ListConversation(guildId, driverDiscordUserId);
+            var discipline = disciplineStore.ListForDriver(guildId, driverDiscordUserId);
 
             string resolvedRole;
             try
@@ -321,7 +232,8 @@ app.MapPost("/api/management/driver/role/bulk", async (HttpContext ctx, HttpRequ
                     heading = live.Heading,
                     lastSeenUtc = live.LastSeenUtc
                 },
-                messages
+                messages,
+                discipline
             });
         });
 
@@ -358,6 +270,63 @@ app.MapPost("/api/management/driver/role/bulk", async (HttpContext ctx, HttpRequ
                 persisted,
                 driverDiscordUserId = driver.DiscordUserId ?? "",
                 role = driver.Role ?? ""
+            });
+        });
+
+        app.MapPost("/api/management/driver/role/bulk", async (HttpContext ctx, HttpRequest req) =>
+        {
+            var guildId = ResolveGuildId(req, services);
+            var auth = RequireManagementAccess(ctx, guildId);
+            if (auth != null) return auth;
+
+            using var doc = await JsonDocument.ParseAsync(req.Body);
+            var root = doc.RootElement;
+
+            var role = ReadString(root, "role", "Role");
+            if (string.IsNullOrWhiteSpace(role))
+                return Results.Json(new { ok = false, error = "MissingRole" }, statusCode: 400);
+
+            if (!root.TryGetProperty("driverDiscordUserIds", out var idsEl) || idsEl.ValueKind != JsonValueKind.Array)
+                return Results.Json(new { ok = false, error = "MissingDriverDiscordUserIds" }, statusCode: 400);
+
+            var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+
+            var ids = idsEl.EnumerateArray()
+                .Select(x => x.ToString()?.Trim() ?? "")
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var updated = 0;
+
+            foreach (var id in ids)
+            {
+                var driver = roster.FirstOrDefault(x =>
+                    string.Equals((x.DiscordUserId ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
+
+                if (driver == null)
+                    continue;
+
+                driver.Role = role.Trim();
+                TouchUpdatedUtc(driver);
+                updated++;
+            }
+
+            var persisted = false;
+            if (updated > 0)
+            {
+                var firstChanged = roster.FirstOrDefault(x => ids.Contains((x.DiscordUserId ?? "").Trim(), StringComparer.OrdinalIgnoreCase));
+                if (firstChanged != null)
+                    persisted = TryPersistRoster(services.RosterStore, roster, firstChanged);
+            }
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                updated,
+                persisted,
+                role = role.Trim()
             });
         });
 
@@ -446,6 +415,148 @@ app.MapPost("/api/management/driver/role/bulk", async (HttpContext ctx, HttpRequ
                 ok = true,
                 guildId,
                 sent
+            });
+        });
+
+        app.MapPost("/api/management/message/selected", async (HttpContext ctx, HttpRequest req) =>
+        {
+            var guildId = ResolveGuildId(req, services);
+            var auth = RequireManagementAccess(ctx, guildId);
+            if (auth != null) return auth;
+
+            using var doc = await JsonDocument.ParseAsync(req.Body);
+            var root = doc.RootElement;
+
+            var text = ReadString(root, "text", "Text", "message", "Message", "body", "Body", "content", "Content");
+            if (string.IsNullOrWhiteSpace(text))
+                return Results.Json(new { ok = false, error = "MissingText" }, statusCode: 400);
+
+            if (!root.TryGetProperty("driverDiscordUserIds", out var idsEl) || idsEl.ValueKind != JsonValueKind.Array)
+                return Results.Json(new { ok = false, error = "MissingDriverDiscordUserIds" }, statusCode: 400);
+
+            var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+
+            var ids = idsEl.EnumerateArray()
+                .Select(x => x.ToString()?.Trim() ?? "")
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var sent = 0;
+
+            foreach (var id in ids)
+            {
+                var driver = roster.FirstOrDefault(x =>
+                    string.Equals((x.DiscordUserId ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
+
+                messageStore.Add(new DispatchMessage
+                {
+                    GuildId = guildId,
+                    DriverDiscordUserId = id,
+                    DriverName = driver?.Name ?? "",
+                    Direction = "to_driver",
+                    Text = text.Trim(),
+                    IsRead = false
+                });
+
+                sent++;
+            }
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                sent
+            });
+        });
+
+        app.MapPost("/api/management/discipline/add", async (HttpContext ctx, HttpRequest req) =>
+        {
+            var guildId = ResolveGuildId(req, services);
+            var auth = RequireManagementAccess(ctx, guildId);
+            if (auth != null) return auth;
+
+            using var doc = await JsonDocument.ParseAsync(req.Body);
+            var root = doc.RootElement;
+
+            var driverDiscordUserId = ReadString(root, "driverDiscordUserId", "discordUserId");
+            var driverName = ReadString(root, "driverName", "name");
+            var level = ReadString(root, "level", "Level");
+            var category = ReadString(root, "category", "Category");
+            var reason = ReadString(root, "reason", "Reason");
+            var actionTaken = ReadString(root, "actionTaken", "ActionTaken");
+            var createdBy = ReadString(root, "createdBy", "CreatedBy");
+
+            if (string.IsNullOrWhiteSpace(driverDiscordUserId) ||
+                string.IsNullOrWhiteSpace(level) ||
+                string.IsNullOrWhiteSpace(reason))
+            {
+                return Results.Json(new { ok = false, error = "MissingDriverLevelOrReason" }, statusCode: 400);
+            }
+
+            var saved = disciplineStore.Add(new DriverDisciplineStore.DriverDisciplineEntry
+            {
+                GuildId = guildId,
+                DriverDiscordUserId = driverDiscordUserId.Trim(),
+                DriverName = driverName.Trim(),
+                Level = level.Trim(),
+                Category = category.Trim(),
+                Reason = reason.Trim(),
+                ActionTaken = actionTaken.Trim(),
+                CreatedBy = createdBy.Trim(),
+                IsActive = true
+            });
+
+            return Results.Ok(new
+            {
+                ok = true,
+                entry = saved
+            });
+        });
+
+        app.MapPost("/api/management/discipline/resolve", async (HttpContext ctx, HttpRequest req) =>
+        {
+            var guildId = ResolveGuildId(req, services);
+            var auth = RequireManagementAccess(ctx, guildId);
+            if (auth != null) return auth;
+
+            using var doc = await JsonDocument.ParseAsync(req.Body);
+            var root = doc.RootElement;
+
+            var id = ReadString(root, "id", "Id");
+            var resolutionNotes = ReadString(root, "resolutionNotes", "ResolutionNotes", "notes", "Notes");
+
+            if (string.IsNullOrWhiteSpace(id))
+                return Results.Json(new { ok = false, error = "MissingId" }, statusCode: 400);
+
+            var resolved = disciplineStore.Resolve(guildId, id, resolutionNotes);
+            if (resolved == null)
+                return Results.Json(new { ok = false, error = "EntryNotFound" }, statusCode: 404);
+
+            return Results.Ok(new
+            {
+                ok = true,
+                entry = resolved
+            });
+        });
+
+        app.MapGet("/api/management/discipline", (HttpContext ctx, HttpRequest req) =>
+        {
+            var guildId = ResolveGuildId(req, services);
+            var auth = RequireManagementAccess(ctx, guildId);
+            if (auth != null) return auth;
+
+            var driverDiscordUserId = (req.Query["driverDiscordUserId"].ToString() ?? "").Trim();
+
+            var rows = string.IsNullOrWhiteSpace(driverDiscordUserId)
+                ? disciplineStore.List(guildId)
+                : disciplineStore.ListForDriver(guildId, driverDiscordUserId);
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                rows
             });
         });
     }
