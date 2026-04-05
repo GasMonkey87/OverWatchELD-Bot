@@ -147,6 +147,7 @@
       padding:16px 18px;
       border-bottom:1px solid var(--border);
       background:rgba(255,255,255,.02);
+      flex-wrap:wrap;
     }
 
     .panel-header h2 {
@@ -167,7 +168,7 @@
     table {
       width:100%;
       border-collapse:collapse;
-      min-width:1100px;
+      min-width:1160px;
     }
 
     th, td {
@@ -345,6 +346,30 @@
 
     .hidden { display:none !important; }
 
+    .bulk-actions {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .selected-count {
+      color:var(--muted);
+      font-size:12px;
+      margin-left:4px;
+    }
+
+    .check-cell {
+      width:40px;
+      text-align:center;
+    }
+
+    .row-check {
+      width:16px;
+      height:16px;
+      cursor:pointer;
+    }
+
     @media (max-width: 1200px) {
       .layout { grid-template-columns:1fr; }
       .cards { grid-template-columns:repeat(3, minmax(0,1fr)); }
@@ -404,6 +429,15 @@
             <h2>Drivers</h2>
             <div class="sub" id="tableSub">Loading…</div>
           </div>
+
+          <div class="bulk-actions">
+            <button class="btn" id="selectAllBtn">Select All</button>
+            <button class="btn" id="clearSelectedBtn">Clear</button>
+            <button class="btn" id="messageSelectedBtn">Message Selected</button>
+            <button class="btn warn" id="roleSelectedBtn">Set Role</button>
+            <span class="selected-count" id="selectedCountText">Selected: 0</span>
+          </div>
+
           <div class="toolbar-note" id="guildLabel"></div>
         </div>
 
@@ -411,6 +445,7 @@
           <table>
             <thead>
               <tr>
+                <th class="check-cell"></th>
                 <th>Driver</th>
                 <th>Role</th>
                 <th>Truck</th>
@@ -423,7 +458,7 @@
               </tr>
             </thead>
             <tbody id="driversBody">
-              <tr><td colspan="9" class="empty">Loading drivers…</td></tr>
+              <tr><td colspan="10" class="empty">Loading drivers…</td></tr>
             </tbody>
           </table>
         </div>
@@ -454,7 +489,8 @@
       drivers: [],
       filtered: [],
       selectedDriverId: "",
-      selectedDetails: null
+      selectedDetails: null,
+      selectedIds: new Set()
     };
 
     const els = {
@@ -473,7 +509,12 @@
       countLive: document.getElementById("countLive"),
       countStale: document.getElementById("countStale"),
       countUnread: document.getElementById("countUnread"),
-      countMgmt: document.getElementById("countMgmt")
+      countMgmt: document.getElementById("countMgmt"),
+      selectAllBtn: document.getElementById("selectAllBtn"),
+      clearSelectedBtn: document.getElementById("clearSelectedBtn"),
+      messageSelectedBtn: document.getElementById("messageSelectedBtn"),
+      roleSelectedBtn: document.getElementById("roleSelectedBtn"),
+      selectedCountText: document.getElementById("selectedCountText")
     };
 
     function esc(v) {
@@ -560,6 +601,10 @@
       return data;
     }
 
+    function updateSelectedCount() {
+      els.selectedCountText.textContent = `Selected: ${state.selectedIds.size}`;
+    }
+
     function populateFilters() {
       const roles = [...new Set(state.drivers.map(x => safe(x.role, "Driver")).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       const duties = [...new Set(state.drivers.map(x => safe(x.dutyStatus)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -620,9 +665,10 @@
 
     function renderTable() {
       els.tableSub.textContent = `${state.filtered.length} of ${state.drivers.length} driver(s) shown`;
+      updateSelectedCount();
 
       if (!state.filtered.length) {
-        els.driversBody.innerHTML = '<tr><td colspan="9" class="empty">No drivers match the current filters.</td></tr>';
+        els.driversBody.innerHTML = '<tr><td colspan="10" class="empty">No drivers match the current filters.</td></tr>';
         return;
       }
 
@@ -632,9 +678,18 @@
 
         const lastSeenLabel = d.lastSeenUtc ? `${fmtDate(d.lastSeenUtc)}` : "—";
         const unread = Number(d.unreadDispatchCount || 0);
+        const checked = state.selectedIds.has(d.discordUserId);
 
         return `
           <tr class="data-row ${selected ? "selected" : ""}" data-driver-id="${esc(d.discordUserId)}">
+            <td class="check-cell">
+              <input
+                type="checkbox"
+                class="row-check"
+                data-id="${esc(d.discordUserId)}"
+                ${checked ? "checked" : ""}
+              />
+            </td>
             <td>
               <div style="font-weight:700">${esc(d.name || d.driverName || "Unknown Driver")}</div>
               <div class="muted" style="font-size:12px">${esc(d.discordUsername || d.discordUserId || "")}</div>
@@ -657,6 +712,20 @@
           state.selectedDriverId = driverId;
           renderTable();
           loadDriverDetails(driverId);
+        });
+
+        tr.querySelector(".row-check")?.addEventListener("click", (e) => {
+          e.stopPropagation();
+
+          const id = e.target.getAttribute("data-id");
+          if (!id) return;
+
+          if (e.target.checked)
+            state.selectedIds.add(id);
+          else
+            state.selectedIds.delete(id);
+
+          updateSelectedCount();
         });
       });
     }
@@ -888,10 +957,64 @@
       }
     }
 
+    async function sendMessageToSelected() {
+      if (!state.selectedIds.size) {
+        alert("No drivers selected");
+        return;
+      }
+
+      const text = prompt("Message selected drivers:");
+      if (!text || !text.trim()) return;
+
+      try {
+        const data = await fetchJson("/api/management/message/selected", {
+          method: "POST",
+          body: JSON.stringify({
+            guildId: state.guildId,
+            driverDiscordUserIds: [...state.selectedIds],
+            text: text.trim()
+          })
+        });
+
+        alert(`Sent to ${data.sent || 0} driver(s).`);
+        state.selectedIds.clear();
+        await reloadAll(false);
+      } catch (err) {
+        alert("Unable to send selected message: " + (err.message || err));
+      }
+    }
+
+    async function setRoleForSelected() {
+      if (!state.selectedIds.size) {
+        alert("No drivers selected");
+        return;
+      }
+
+      const role = prompt("Enter role for selected drivers:");
+      if (!role || !role.trim()) return;
+
+      try {
+        const data = await fetchJson("/api/management/driver/role/bulk", {
+          method: "POST",
+          body: JSON.stringify({
+            guildId: state.guildId,
+            driverDiscordUserIds: [...state.selectedIds],
+            role: role.trim()
+          })
+        });
+
+        alert(`Updated ${data.updated || 0} driver(s).`);
+        state.selectedIds.clear();
+        await reloadAll(false);
+      } catch (err) {
+        alert("Unable to update selected roles: " + (err.message || err));
+      }
+    }
+
     async function reloadAll(showLoading = true) {
       if (!state.guildId) {
         els.tableSub.textContent = "Missing guildId in query string.";
-        els.driversBody.innerHTML = '<tr><td colspan="9" class="empty">Open this page with ?guildId=YOUR_GUILD_ID</td></tr>';
+        els.driversBody.innerHTML = '<tr><td colspan="10" class="empty">Open this page with ?guildId=YOUR_GUILD_ID</td></tr>';
         els.detailPane.innerHTML = '<div class="empty">Missing guildId in query string.</div>';
         return;
       }
@@ -904,7 +1027,7 @@
         await Promise.all([loadSummary(), loadDrivers()]);
       } catch (err) {
         els.tableSub.textContent = "Unable to load data.";
-        els.driversBody.innerHTML = `<tr><td colspan="9" class="empty">Load failed: ${esc(err.message || err)}</td></tr>`;
+        els.driversBody.innerHTML = `<tr><td colspan="10" class="empty">Load failed: ${esc(err.message || err)}</td></tr>`;
         els.detailPane.innerHTML = `<div class="empty">Load failed: ${esc(err.message || err)}</div>`;
       }
     }
@@ -922,6 +1045,21 @@
       els.dutyFilter.value = "";
       applyFilters();
     });
+
+    els.selectAllBtn.addEventListener("click", () => {
+      state.filtered.forEach(d => {
+        if (d && d.discordUserId) state.selectedIds.add(d.discordUserId);
+      });
+      renderTable();
+    });
+
+    els.clearSelectedBtn.addEventListener("click", () => {
+      state.selectedIds.clear();
+      renderTable();
+    });
+
+    els.messageSelectedBtn.addEventListener("click", sendMessageToSelected);
+    els.roleSelectedBtn.addEventListener("click", setRoleForSelected);
 
     reloadAll(true);
   </script>
