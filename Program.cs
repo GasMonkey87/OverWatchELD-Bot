@@ -170,14 +170,14 @@ public static class Program
         var loadApiLogPath = Path.Combine(dataDir, "load_api_log.txt");
 
         var dispatchLoadStore = new DispatchLoadStore(
-        Path.Combine(dataDir, "dispatch_loads.json"),
-        JsonReadOpts,
-        JsonWriteOpts);
+            Path.Combine(dataDir, "dispatch_loads.json"),
+            JsonReadOpts,
+            JsonWriteOpts);
 
         var dispatchMessageStore = new DispatchMessageStore(
-        Path.Combine(dataDir, "dispatch_messages.json"),
-        JsonReadOpts,
-        JsonWriteOpts);
+            Path.Combine(dataDir, "dispatch_messages.json"),
+            JsonReadOpts,
+            JsonWriteOpts);
 
         app.MapMethods("/api/loads/pickup", new[] { "POST", "GET" }, async (HttpRequest req) =>
         {
@@ -232,8 +232,8 @@ public static class Program
         };
 
         ApiRoutes.Register(app, services, JsonReadOpts, JsonWriteOpts, sharedHttp);
-AwardRoutes.Register(app, services, JsonWriteOpts);
-DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatchMessageStore);
+        AwardRoutes.Register(app, services, JsonWriteOpts);
+        DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatchMessageStore);
 
         app.MapPost("/api/vtc/loadboard/settings", async (HttpRequest req) =>
         {
@@ -416,6 +416,104 @@ DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatc
                 ok = true,
                 guildId,
                 points
+            });
+        });
+
+        // =============================
+        // ELD <-> DISPATCH MESSAGING BRIDGE
+        // =============================
+
+        app.MapGet("/api/messages/thread", (HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            var discordUserId = (req.Query["discordUserId"].ToString() ?? "").Trim();
+
+            if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(discordUserId))
+            {
+                return Results.Json(new { ok = false, error = "MissingGuildIdOrUserId" }, statusCode: 400);
+            }
+
+            var rows = dispatchMessageStore.ListConversation(guildId, discordUserId);
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                rows
+            });
+        });
+
+        app.MapGet("/api/messages/conversations", (HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            var discordUserId = (req.Query["discordUserId"].ToString() ?? "").Trim();
+
+            if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(discordUserId))
+            {
+                return Results.Json(new { ok = false, error = "MissingGuildIdOrUserId" }, statusCode: 400);
+            }
+
+            var rows = dispatchMessageStore.List(guildId)
+                .Where(x => string.Equals(x.DriverDiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(x => x.CreatedUtc)
+                .Take(50)
+                .ToList();
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                rows
+            });
+        });
+
+        app.MapPost("/api/messages/send", async (HttpRequest req) =>
+        {
+            using var doc = await JsonDocument.ParseAsync(req.Body);
+            var root = doc.RootElement;
+
+            string Read(params string[] names)
+            {
+                foreach (var n in names)
+                {
+                    if (root.TryGetProperty(n, out var v))
+                    {
+                        var s = v.ToString()?.Trim();
+                        if (!string.IsNullOrWhiteSpace(s))
+                            return s;
+                    }
+                }
+                return "";
+            }
+
+            var guildId = Read("guildId", "GuildId");
+            var discordUserId = Read("discordUserId", "DiscordUserId");
+            var driverName = Read("driverName", "DriverName", "discordUsername", "DiscordUsername");
+            var text = Read("text", "Text", "message", "Message");
+            var loadNumber = Read("loadNumber", "LoadNumber");
+
+            if (string.IsNullOrWhiteSpace(guildId) ||
+                string.IsNullOrWhiteSpace(discordUserId) ||
+                string.IsNullOrWhiteSpace(text))
+            {
+                return Results.Json(new { ok = false, error = "MissingFields" }, statusCode: 400);
+            }
+
+            var saved = dispatchMessageStore.Add(new DispatchMessage
+            {
+                GuildId = guildId,
+                DriverDiscordUserId = discordUserId,
+                DriverName = driverName,
+                Direction = "from_driver",
+                Text = text,
+                LoadNumber = loadNumber,
+                IsRead = false
+            });
+
+            return Results.Ok(new
+            {
+                ok = true,
+                message = saved
             });
         });
 
