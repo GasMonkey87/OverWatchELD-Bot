@@ -141,6 +141,115 @@ public static class ManagementRoutes
             });
         });
 
+        app.MapPost("/api/management/message/selected", async (HttpContext ctx, HttpRequest req) =>
+{
+    var guildId = ResolveGuildId(req, services);
+    var auth = RequireManagementAccess(ctx, guildId);
+    if (auth != null) return auth;
+
+    using var doc = await JsonDocument.ParseAsync(req.Body);
+    var root = doc.RootElement;
+
+    var text = ReadString(root, "text", "Text", "message", "Message", "body", "Body", "content", "Content");
+    if (string.IsNullOrWhiteSpace(text))
+        return Results.Json(new { ok = false, error = "MissingText" }, statusCode: 400);
+
+    if (!root.TryGetProperty("driverDiscordUserIds", out var idsEl) || idsEl.ValueKind != JsonValueKind.Array)
+        return Results.Json(new { ok = false, error = "MissingDriverDiscordUserIds" }, statusCode: 400);
+
+    var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+
+    var ids = idsEl.EnumerateArray()
+        .Select(x => x.ToString()?.Trim() ?? "")
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    var sent = 0;
+
+    foreach (var id in ids)
+    {
+        var driver = roster.FirstOrDefault(x =>
+            string.Equals((x.DiscordUserId ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
+
+        messageStore.Add(new DispatchMessage
+        {
+            GuildId = guildId,
+            DriverDiscordUserId = id,
+            DriverName = driver?.Name ?? "",
+            Direction = "to_driver",
+            Text = text.Trim(),
+            IsRead = false
+        });
+
+        sent++;
+    }
+
+    return Results.Ok(new
+    {
+        ok = true,
+        guildId,
+        sent
+    });
+});
+
+app.MapPost("/api/management/driver/role/bulk", async (HttpContext ctx, HttpRequest req) =>
+{
+    var guildId = ResolveGuildId(req, services);
+    var auth = RequireManagementAccess(ctx, guildId);
+    if (auth != null) return auth;
+
+    using var doc = await JsonDocument.ParseAsync(req.Body);
+    var root = doc.RootElement;
+
+    var role = ReadString(root, "role", "Role");
+    if (string.IsNullOrWhiteSpace(role))
+        return Results.Json(new { ok = false, error = "MissingRole" }, statusCode: 400);
+
+    if (!root.TryGetProperty("driverDiscordUserIds", out var idsEl) || idsEl.ValueKind != JsonValueKind.Array)
+        return Results.Json(new { ok = false, error = "MissingDriverDiscordUserIds" }, statusCode: 400);
+
+    var roster = services.RosterStore?.List(guildId) ?? new List<VtcDriver>();
+
+    var ids = idsEl.EnumerateArray()
+        .Select(x => x.ToString()?.Trim() ?? "")
+        .Where(x => !string.IsNullOrWhiteSpace(x))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    var updated = 0;
+
+    foreach (var id in ids)
+    {
+        var driver = roster.FirstOrDefault(x =>
+            string.Equals((x.DiscordUserId ?? "").Trim(), id, StringComparison.OrdinalIgnoreCase));
+
+        if (driver == null)
+            continue;
+
+        driver.Role = role.Trim();
+        TouchUpdatedUtc(driver);
+        updated++;
+    }
+
+    var persisted = false;
+    if (updated > 0)
+    {
+        var firstChanged = roster.FirstOrDefault(x => ids.Contains((x.DiscordUserId ?? "").Trim(), StringComparer.OrdinalIgnoreCase));
+        if (firstChanged != null)
+            persisted = TryPersistRoster(services.RosterStore, roster, firstChanged);
+    }
+
+    return Results.Ok(new
+    {
+        ok = true,
+        guildId,
+        updated,
+        persisted,
+        role = role.Trim()
+    });
+});
+        
         app.MapGet("/api/management/drivers/{driverDiscordUserId}", async (HttpContext ctx, string driverDiscordUserId, HttpRequest req) =>
         {
             var guildId = ResolveGuildId(req, services);
