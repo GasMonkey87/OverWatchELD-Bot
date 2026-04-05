@@ -27,7 +27,7 @@
     button, input, select, textarea { font:inherit; }
 
     .page {
-      max-width: 1600px;
+      max-width: 1700px;
       margin: 0 auto;
       padding: 20px;
     }
@@ -81,7 +81,30 @@
       display:grid;
       grid-template-columns: 1.4fr .8fr .8fr .8fr auto;
       gap:12px;
+      margin-bottom:14px;
+    }
+
+    .pillbar {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
       margin-bottom:18px;
+    }
+
+    .pill {
+      padding:8px 12px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.03);
+      cursor:pointer;
+      font-size:13px;
+      color:var(--text);
+      user-select:none;
+    }
+
+    .pill.active {
+      border-color:#4a74cb;
+      background:rgba(110,168,255,.12);
     }
 
     .input, .select, .textarea {
@@ -98,7 +121,7 @@
 
     .cards {
       display:grid;
-      grid-template-columns:repeat(5, minmax(0,1fr));
+      grid-template-columns:repeat(7, minmax(0,1fr));
       gap:14px;
       margin-bottom:18px;
     }
@@ -120,13 +143,13 @@
 
     .card .value {
       margin-top:8px;
-      font-size:30px;
+      font-size:28px;
       font-weight:700;
     }
 
     .layout {
       display:grid;
-      grid-template-columns: 1.5fr .95fr;
+      grid-template-columns: 1.65fr 1fr;
       gap:18px;
       align-items:start;
     }
@@ -162,13 +185,13 @@
 
     .table-wrap {
       overflow:auto;
-      max-height:70vh;
+      max-height:72vh;
     }
 
     table {
       width:100%;
       border-collapse:collapse;
-      min-width:1160px;
+      min-width:1320px;
     }
 
     th, td {
@@ -197,6 +220,8 @@
 
     tr.data-row:hover { background:rgba(255,255,255,.03); }
     tr.data-row.selected { background:rgba(110,168,255,.10); }
+    tr.data-row.attn-medium { background:rgba(255,202,107,.05); }
+    tr.data-row.attn-high { background:rgba(255,127,150,.08); }
 
     .badge {
       display:inline-flex;
@@ -318,26 +343,6 @@
       font-size:12px;
     }
 
-    .pillbar {
-      display:flex;
-      gap:8px;
-      flex-wrap:wrap;
-    }
-
-    .pill {
-      padding:8px 12px;
-      border-radius:999px;
-      border:1px solid var(--border);
-      background:rgba(255,255,255,.03);
-      cursor:pointer;
-      font-size:13px;
-    }
-
-    .pill.active {
-      border-color:#4a74cb;
-      background:rgba(110,168,255,.12);
-    }
-
     .footer-actions {
       display:flex;
       gap:10px;
@@ -370,9 +375,22 @@
       cursor:pointer;
     }
 
-    @media (max-width: 1200px) {
+    .attention-list {
+      display:grid;
+      gap:8px;
+    }
+
+    .attention-item {
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:12px;
+      padding:10px 12px;
+      background:rgba(255,255,255,.03);
+      font-size:13px;
+    }
+
+    @media (max-width: 1300px) {
       .layout { grid-template-columns:1fr; }
-      .cards { grid-template-columns:repeat(3, minmax(0,1fr)); }
+      .cards { grid-template-columns:repeat(4, minmax(0,1fr)); }
       .filters { grid-template-columns:1fr 1fr; }
     }
 
@@ -407,6 +425,8 @@
         <option value="">All Activity</option>
         <option value="live">Live / recently seen</option>
         <option value="stale">Stale / offline</option>
+        <option value="inactive30">Inactive 30+ min</option>
+        <option value="inactive60">Inactive 60+ min</option>
       </select>
       <select id="dutyFilter" class="select">
         <option value="">All Duty Status</option>
@@ -414,12 +434,24 @@
       <button class="btn" id="clearFiltersBtn">Clear</button>
     </div>
 
+    <div class="pillbar">
+      <button class="pill active" data-quick="all">All</button>
+      <button class="pill" data-quick="needsAttention">Needs Attention</button>
+      <button class="pill" data-quick="inactive30">Inactive 30+</button>
+      <button class="pill" data-quick="inactive60">Inactive 60+</button>
+      <button class="pill" data-quick="unread">Unread Dispatch</button>
+      <button class="pill" data-quick="driving">Driving</button>
+      <button class="pill" data-quick="noLoad">No Active Load</button>
+    </div>
+
     <div class="cards">
       <div class="card"><div class="label">Drivers</div><div class="value" id="countDrivers">0</div></div>
       <div class="card"><div class="label">Live</div><div class="value" id="countLive">0</div></div>
       <div class="card"><div class="label">Stale</div><div class="value" id="countStale">0</div></div>
+      <div class="card"><div class="label">Inactive 30+</div><div class="value" id="countInactive30">0</div></div>
+      <div class="card"><div class="label">Inactive 60+</div><div class="value" id="countInactive60">0</div></div>
       <div class="card"><div class="label">Unread Dispatch</div><div class="value" id="countUnread">0</div></div>
-      <div class="card"><div class="label">Managers / Dispatch</div><div class="value" id="countMgmt">0</div></div>
+      <div class="card"><div class="label">Needs Attention</div><div class="value" id="countAttention">0</div></div>
     </div>
 
     <div class="layout">
@@ -447,6 +479,7 @@
               <tr>
                 <th class="check-cell"></th>
                 <th>Driver</th>
+                <th>Attention</th>
                 <th>Role</th>
                 <th>Truck</th>
                 <th>Duty</th>
@@ -458,7 +491,7 @@
               </tr>
             </thead>
             <tbody id="driversBody">
-              <tr><td colspan="10" class="empty">Loading drivers…</td></tr>
+              <tr><td colspan="11" class="empty">Loading drivers…</td></tr>
             </tbody>
           </table>
         </div>
@@ -490,7 +523,8 @@
       filtered: [],
       selectedDriverId: "",
       selectedDetails: null,
-      selectedIds: new Set()
+      selectedIds: new Set(),
+      quickFilter: "all"
     };
 
     const els = {
@@ -508,13 +542,16 @@
       countDrivers: document.getElementById("countDrivers"),
       countLive: document.getElementById("countLive"),
       countStale: document.getElementById("countStale"),
+      countInactive30: document.getElementById("countInactive30"),
+      countInactive60: document.getElementById("countInactive60"),
       countUnread: document.getElementById("countUnread"),
-      countMgmt: document.getElementById("countMgmt"),
+      countAttention: document.getElementById("countAttention"),
       selectAllBtn: document.getElementById("selectAllBtn"),
       clearSelectedBtn: document.getElementById("clearSelectedBtn"),
       messageSelectedBtn: document.getElementById("messageSelectedBtn"),
       roleSelectedBtn: document.getElementById("roleSelectedBtn"),
-      selectedCountText: document.getElementById("selectedCountText")
+      selectedCountText: document.getElementById("selectedCountText"),
+      quickPills: [...document.querySelectorAll("[data-quick]")]
     };
 
     function esc(v) {
@@ -554,6 +591,46 @@
       return m === null || m >= 5;
     }
 
+    function isInactive30(driver) {
+      const m = minsAgo(driver.lastSeenUtc);
+      return m !== null && m >= 30;
+    }
+
+    function isInactive60(driver) {
+      const m = minsAgo(driver.lastSeenUtc);
+      return m !== null && m >= 60;
+    }
+
+    function attentionScore(driver) {
+      let score = 0;
+      const unread = Number(driver.unreadDispatchCount || 0);
+
+      if (isInactive60(driver)) score += 3;
+      else if (isInactive30(driver)) score += 2;
+      else if (isStale(driver)) score += 1;
+
+      if (unread >= 3) score += 2;
+      else if (unread > 0) score += 1;
+
+      if (!safe(driver.loadNumber)) score += 0.5;
+
+      return score;
+    }
+
+    function attentionLabel(driver) {
+      const score = attentionScore(driver);
+      if (score >= 4) return '<span class="badge red">High</span>';
+      if (score >= 2) return '<span class="badge gold">Medium</span>';
+      return '<span class="badge green">Low</span>';
+    }
+
+    function rowClass(driver) {
+      const score = attentionScore(driver);
+      if (score >= 4) return "attn-high";
+      if (score >= 2) return "attn-medium";
+      return "";
+    }
+
     function dutyBadge(duty) {
       const v = safe(duty).trim().toLowerCase();
       if (!v) return '<span class="badge gray">Unknown</span>';
@@ -564,8 +641,10 @@
       return `<span class="badge gray">${esc(duty)}</span>`;
     }
 
-    function statusBadge(driver) {
+    function activityBadge(driver) {
       if (isLive(driver)) return '<span class="badge green"><span class="dot green"></span>Live</span>';
+      if (isInactive60(driver)) return '<span class="badge red"><span class="dot red"></span>Inactive 60+</span>';
+      if (isInactive30(driver)) return '<span class="badge gold"><span class="dot gold"></span>Inactive 30+</span>';
       if (driver.lastSeenUtc) return '<span class="badge gold"><span class="dot gold"></span>Stale</span>';
       return '<span class="badge gray"><span class="dot gray"></span>Offline</span>';
     }
@@ -622,6 +701,25 @@
       if (duties.includes(dutyCurrent)) els.dutyFilter.value = dutyCurrent;
     }
 
+    function applyQuickFilter(driver) {
+      switch (state.quickFilter) {
+        case "needsAttention":
+          return attentionScore(driver) >= 2;
+        case "inactive30":
+          return isInactive30(driver);
+        case "inactive60":
+          return isInactive60(driver);
+        case "unread":
+          return Number(driver.unreadDispatchCount || 0) > 0;
+        case "driving":
+          return safe(driver.dutyStatus).toLowerCase().includes("driv");
+        case "noLoad":
+          return !safe(driver.loadNumber);
+        default:
+          return true;
+      }
+    }
+
     function applyFilters() {
       const q = els.searchBox.value.trim().toLowerCase();
       const role = els.roleFilter.value.trim().toLowerCase();
@@ -637,10 +735,19 @@
         if (q && !hay.includes(q)) return false;
         if (role && safe(d.role).toLowerCase() !== role) return false;
         if (duty && safe(d.dutyStatus).toLowerCase() !== duty) return false;
+
         if (live === "live" && !isLive(d)) return false;
         if (live === "stale" && !isStale(d)) return false;
+        if (live === "inactive30" && !isInactive30(d)) return false;
+        if (live === "inactive60" && !isInactive60(d)) return false;
+
+        if (!applyQuickFilter(d)) return false;
 
         return true;
+      }).sort((a, b) => {
+        const diff = attentionScore(b) - attentionScore(a);
+        if (diff !== 0) return diff;
+        return String(a.name || "").localeCompare(String(b.name || ""));
       });
 
       renderTable();
@@ -650,17 +757,18 @@
       const drivers = state.drivers.length;
       const live = state.drivers.filter(isLive).length;
       const stale = state.drivers.filter(isStale).length;
+      const inactive30 = state.drivers.filter(isInactive30).length;
+      const inactive60 = state.drivers.filter(isInactive60).length;
       const unread = state.drivers.reduce((a, b) => a + Number(b.unreadDispatchCount || 0), 0);
-      const mgmt = state.drivers.filter(d => {
-        const r = safe(d.role).toLowerCase();
-        return r.includes("manager") || r.includes("dispatch") || r.includes("admin") || r.includes("owner");
-      }).length;
+      const attention = state.drivers.filter(d => attentionScore(d) >= 2).length;
 
       els.countDrivers.textContent = String(drivers);
       els.countLive.textContent = String(live);
       els.countStale.textContent = String(stale);
+      els.countInactive30.textContent = String(inactive30);
+      els.countInactive60.textContent = String(inactive60);
       els.countUnread.textContent = String(unread);
-      els.countMgmt.textContent = String(mgmt);
+      els.countAttention.textContent = String(attention);
     }
 
     function renderTable() {
@@ -668,7 +776,7 @@
       updateSelectedCount();
 
       if (!state.filtered.length) {
-        els.driversBody.innerHTML = '<tr><td colspan="10" class="empty">No drivers match the current filters.</td></tr>';
+        els.driversBody.innerHTML = '<tr><td colspan="11" class="empty">No drivers match the current filters.</td></tr>';
         return;
       }
 
@@ -681,7 +789,7 @@
         const checked = state.selectedIds.has(d.discordUserId);
 
         return `
-          <tr class="data-row ${selected ? "selected" : ""}" data-driver-id="${esc(d.discordUserId)}">
+          <tr class="data-row ${selected ? "selected" : ""} ${rowClass(d)}" data-driver-id="${esc(d.discordUserId)}">
             <td class="check-cell">
               <input
                 type="checkbox"
@@ -694,10 +802,11 @@
               <div style="font-weight:700">${esc(d.name || d.driverName || "Unknown Driver")}</div>
               <div class="muted" style="font-size:12px">${esc(d.discordUsername || d.discordUserId || "")}</div>
             </td>
+            <td>${attentionLabel(d)}</td>
             <td>${roleBadge(d.role)}</td>
             <td>${esc(d.truckNumber || "—")}</td>
             <td>${dutyBadge(d.dutyStatus)}</td>
-            <td>${statusBadge(d)}</td>
+            <td>${activityBadge(d)}</td>
             <td>${esc(d.location || "—")}</td>
             <td>${esc(d.loadNumber || "—")}</td>
             <td>${unread > 0 ? `<span class="badge red">${unread}</span>` : `<span class="badge gray">0</span>`}</td>
@@ -778,6 +887,26 @@
       }
     }
 
+    function buildAttentionItems(driver, live) {
+      const items = [];
+      const unread = Number(driver.unreadDispatchCount || 0);
+      const mins = minsAgo(live.lastSeenUtc || driver.lastSeenUtc);
+
+      if (mins !== null && mins >= 60) items.push("Driver has been inactive for 60+ minutes.");
+      else if (mins !== null && mins >= 30) items.push("Driver has been inactive for 30+ minutes.");
+      else if (mins !== null && mins >= 5) items.push("Driver is stale and may need a check-in.");
+
+      if (unread >= 3) items.push("Driver has 3 or more unread dispatch items.");
+      else if (unread > 0) items.push("Driver has unread dispatch items.");
+
+      if (!safe(live.loadNumber || driver.loadNumber)) items.push("No active load is currently attached.");
+      if (!safe(live.location)) items.push("No live location is currently reported.");
+
+      if (!items.length) items.push("No immediate management alerts.");
+
+      return items;
+    }
+
     function renderDetails() {
       const data = state.selectedDetails;
       if (!data?.driver) {
@@ -788,6 +917,7 @@
       const d = data.driver;
       const live = data.live || {};
       const messages = Array.isArray(data.messages) ? data.messages : [];
+      const attentionItems = buildAttentionItems(d, live);
 
       const currentRole = safe(d.role, "Driver");
       const roleOptions = [
@@ -812,8 +942,13 @@
 
         <div class="pillbar">
           ${roleBadge(d.role)}
-          ${statusBadge({ lastSeenUtc: live.lastSeenUtc })}
+          ${activityBadge({ lastSeenUtc: live.lastSeenUtc })}
           ${dutyBadge(live.dutyStatus)}
+          ${attentionLabel({
+            lastSeenUtc: live.lastSeenUtc,
+            unreadDispatchCount: messages.filter(m => (m.direction || "").toLowerCase() === "from_driver" && !m.isRead).length,
+            loadNumber: live.loadNumber
+          })}
         </div>
 
         <div class="kv-grid">
@@ -828,6 +963,13 @@
         </div>
 
         <div class="stack">
+          <div>
+            <div class="muted" style="margin-bottom:8px">Management Attention</div>
+            <div class="attention-list">
+              ${attentionItems.map(item => `<div class="attention-item">${esc(item)}</div>`).join("")}
+            </div>
+          </div>
+
           <div>
             <div class="muted" style="margin-bottom:8px">Promote / Demote / Set Role</div>
             <div class="row">
@@ -1014,7 +1156,7 @@
     async function reloadAll(showLoading = true) {
       if (!state.guildId) {
         els.tableSub.textContent = "Missing guildId in query string.";
-        els.driversBody.innerHTML = '<tr><td colspan="10" class="empty">Open this page with ?guildId=YOUR_GUILD_ID</td></tr>';
+        els.driversBody.innerHTML = '<tr><td colspan="11" class="empty">Open this page with ?guildId=YOUR_GUILD_ID</td></tr>';
         els.detailPane.innerHTML = '<div class="empty">Missing guildId in query string.</div>';
         return;
       }
@@ -1027,7 +1169,7 @@
         await Promise.all([loadSummary(), loadDrivers()]);
       } catch (err) {
         els.tableSub.textContent = "Unable to load data.";
-        els.driversBody.innerHTML = `<tr><td colspan="10" class="empty">Load failed: ${esc(err.message || err)}</td></tr>`;
+        els.driversBody.innerHTML = `<tr><td colspan="11" class="empty">Load failed: ${esc(err.message || err)}</td></tr>`;
         els.detailPane.innerHTML = `<div class="empty">Load failed: ${esc(err.message || err)}</div>`;
       }
     }
@@ -1038,11 +1180,14 @@
     els.roleFilter.addEventListener("change", applyFilters);
     els.liveFilter.addEventListener("change", applyFilters);
     els.dutyFilter.addEventListener("change", applyFilters);
+
     els.clearFiltersBtn.addEventListener("click", () => {
       els.searchBox.value = "";
       els.roleFilter.value = "";
       els.liveFilter.value = "";
       els.dutyFilter.value = "";
+      state.quickFilter = "all";
+      els.quickPills.forEach(p => p.classList.toggle("active", p.dataset.quick === "all"));
       applyFilters();
     });
 
@@ -1060,6 +1205,14 @@
 
     els.messageSelectedBtn.addEventListener("click", sendMessageToSelected);
     els.roleSelectedBtn.addEventListener("click", setRoleForSelected);
+
+    els.quickPills.forEach(pill => {
+      pill.addEventListener("click", () => {
+        state.quickFilter = pill.dataset.quick || "all";
+        els.quickPills.forEach(p => p.classList.toggle("active", p === pill));
+        applyFilters();
+      });
+    });
 
     reloadAll(true);
   </script>
