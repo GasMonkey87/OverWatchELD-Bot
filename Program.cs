@@ -234,7 +234,7 @@ public static class Program
         ApiRoutes.Register(app, services, JsonReadOpts, JsonWriteOpts, sharedHttp);
         AwardRoutes.Register(app, services, JsonWriteOpts);
         DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatchMessageStore);
-        ManagementRoutes.Register(app, services);
+        ManagementRoutes.Register(app, services, dispatchMessageStore);
         
         app.MapPost("/api/vtc/loadboard/settings", async (HttpRequest req) =>
         {
