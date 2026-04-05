@@ -423,7 +423,7 @@ public static class Program
         // ELD <-> DISPATCH MESSAGING BRIDGE
         // =============================
 
-        app.MapGet("/api/messages/thread", (HttpRequest req) =>
+        app.MapGet("/api/hub/messages/thread", (HttpRequest req) =>
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             var discordUserId = (req.Query["discordUserId"].ToString() ?? "").Trim();
@@ -443,7 +443,7 @@ public static class Program
             });
         });
 
-        app.MapGet("/api/messages/conversations", (HttpRequest req) =>
+        app.MapGet("/api/hub/messages/conversations", (HttpRequest req) =>
         {
             var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
             var discordUserId = (req.Query["discordUserId"].ToString() ?? "").Trim();
@@ -467,7 +467,7 @@ public static class Program
             });
         });
 
-        app.MapPost("/api/messages/send", async (HttpRequest req) =>
+        app.MapPost("/api/hub/messages/send", async (HttpRequest req) =>
 {
     try
     {
