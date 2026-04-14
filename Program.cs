@@ -554,4 +554,5 @@ public static partial class Program
         Console.WriteLine($"Bot running on :{port}");
         await app.RunAsync();
     }
+}
 
