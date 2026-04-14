@@ -1,0 +1,119 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text.Json;
+
+namespace OverWatchELD.VtcBot.Stores
+{
+    public sealed class LoadThreadStore
+    {
+        private readonly string _path;
+        private readonly JsonSerializerOptions _readOpts;
+        private readonly JsonSerializerOptions _writeOpts;
+        private readonly object _sync = new();
+
+        public LoadThreadStore(string path, JsonSerializerOptions readOpts, JsonSerializerOptions writeOpts)
+        {
+            _path = path;
+            _readOpts = readOpts;
+            _writeOpts = writeOpts;
+
+            var dir = Path.GetDirectoryName(_path);
+            if (!string.IsNullOrWhiteSpace(dir))
+                Directory.CreateDirectory(dir);
+        }
+
+        public sealed class LoadThreadEntry
+        {
+            public string LoadNumber { get; set; } = "";
+            public string GuildId { get; set; } = "";
+            public string ChannelId { get; set; } = "";
+            public string ThreadId { get; set; } = "";
+            public string ThreadName { get; set; } = "";
+            public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
+            public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
+            public bool Archived { get; set; }
+        }
+
+        public List<LoadThreadEntry> LoadAll()
+        {
+            lock (_sync)
+            {
+                try
+                {
+                    if (!File.Exists(_path))
+                        return new List<LoadThreadEntry>();
+
+                    var raw = File.ReadAllText(_path);
+                    if (string.IsNullOrWhiteSpace(raw))
+                        return new List<LoadThreadEntry>();
+
+                    return JsonSerializer.Deserialize<List<LoadThreadEntry>>(raw, _readOpts)
+                           ?? new List<LoadThreadEntry>();
+                }
+                catch
+                {
+                    return new List<LoadThreadEntry>();
+                }
+            }
+        }
+
+        public LoadThreadEntry? GetByLoadNumber(string loadNumber)
+        {
+            var key = (loadNumber ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(key))
+                return null;
+
+            return LoadAll().FirstOrDefault(x =>
+                string.Equals(x.LoadNumber, key, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public void Upsert(LoadThreadEntry entry)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.LoadNumber))
+                return;
+
+            lock (_sync)
+            {
+                var list = LoadAll();
+                var existing = list.FirstOrDefault(x =>
+                    string.Equals(x.LoadNumber, entry.LoadNumber, StringComparison.OrdinalIgnoreCase));
+
+                if (existing == null)
+                {
+                    entry.UpdatedUtc = DateTimeOffset.UtcNow;
+                    list.Add(entry);
+                }
+                else
+                {
+                    existing.GuildId = entry.GuildId;
+                    existing.ChannelId = entry.ChannelId;
+                    existing.ThreadId = entry.ThreadId;
+                    existing.ThreadName = entry.ThreadName;
+                    existing.Archived = entry.Archived;
+                    existing.UpdatedUtc = DateTimeOffset.UtcNow;
+                }
+
+                File.WriteAllText(_path, JsonSerializer.Serialize(list, _writeOpts));
+            }
+        }
+
+        public void MarkArchived(string loadNumber, bool archived = true)
+        {
+            lock (_sync)
+            {
+                var list = LoadAll();
+                var existing = list.FirstOrDefault(x =>
+                    string.Equals(x.LoadNumber, loadNumber ?? "", StringComparison.OrdinalIgnoreCase));
+
+                if (existing == null)
+                    return;
+
+                existing.Archived = archived;
+                existing.UpdatedUtc = DateTimeOffset.UtcNow;
+                File.WriteAllText(_path, JsonSerializer.Serialize(list, _writeOpts));
+            }
+        }
+    }
+}

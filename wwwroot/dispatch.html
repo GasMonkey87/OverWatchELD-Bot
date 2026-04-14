@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>OverWatch Dispatch</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body { margin: 0; height: 100%; font-family: Arial, sans-serif; background: #0d1527; color: #f1f5ff; }
+    .app { display: grid; grid-template-columns: 320px 1fr 360px; height: 100vh; }
+    .panel { border-right: 1px solid rgba(255,255,255,.08); overflow: auto; }
+    .panel:last-child { border-right: 0; border-left: 1px solid rgba(255,255,255,.08); }
+    .section { padding: 14px; }
+    .title { font-size: 20px; font-weight: 700; margin-bottom: 10px; }
+    .row, .card { background: #12203b; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+    .row { cursor: pointer; }
+    .row:hover { background: #183055; }
+    .muted { opacity: .75; font-size: 12px; }
+    .grid { display: grid; gap: 10px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    input, select, textarea, button { width: 100%; box-sizing: border-box; border-radius: 10px; border: 1px solid rgba(255,255,255,.12); padding: 10px; background: #0e1930; color: white; }
+    textarea { min-height: 80px; resize: vertical; }
+    button { background: #2663ff; border: 0; font-weight: 700; cursor: pointer; }
+    button.secondary { background: #334155; }
+    .pill { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 11px; background: #1f335c; margin-left: 6px; }
+    .toolbar { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+    .messages { display: flex; flex-direction: column; gap: 8px; }
+    .msg { padding: 10px; border-radius: 12px; }
+    .msg.to { background: #1d3e75; }
+    .msg.from { background: #184d36; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="panel">
+      <div class="section">
+        <div class="title">Dispatch Board</div>
+        <div class="grid grid-2">
+          <div>
+            <label class="muted">Discord Server</label>
+            <select id="guildSelect"></select>
+          </div>
+          <div style="display:flex;align-items:end;">
+            <button id="refreshBtn">Refresh</button>
+          </div>
+        </div>
+        <div id="boardCounts" class="row muted">Loading…</div>
+      </div>
+
+      <div class="section">
+        <div class="title">Conversations</div>
+        <div id="conversationList"></div>
+      </div>
+
+      <div class="section">
+        <div class="title">Live Drivers</div>
+        <div id="driverList"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section">
+        <div class="title">Loads</div>
+        <div class="toolbar">
+          <button id="newLoadBtn">New Load</button>
+          <button class="secondary" id="markAssignedBtn">Mark Assigned</button>
+          <button class="secondary" id="markTransitBtn">In Transit</button>
+        </div>
+        <div id="loadList"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="section">
+        <div class="title">Dispatch Actions</div>
+        <div class="grid">
+          <input id="loadId" type="hidden" />
+          <div>
+            <label class="muted">Load Number</label>
+            <input id="loadNumber" />
+          </div>
+          <div class="grid grid-2">
+            <div>
+              <label class="muted">Priority</label>
+              <select id="priority">
+                <option>normal</option>
+                <option>high</option>
+                <option>critical</option>
+              </select>
+            </div>
+            <div>
+              <label class="muted">Status</label>
+              <select id="status">
+                <option>unassigned</option>
+                <option>assigned</option>
+                <option>in_transit</option>
+                <option>delivered</option>
+                <option>delayed</option>
+                <option>cancelled</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="muted">Commodity</label>
+            <input id="commodity" />
+          </div>
+          <div class="grid grid-2">
+            <div>
+              <label class="muted">Pickup</label>
+              <input id="pickupLocation" />
+            </div>
+            <div>
+              <label class="muted">Dropoff</label>
+              <input id="dropoffLocation" />
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div>
+              <label class="muted">Driver Discord ID</label>
+              <input id="driverDiscordUserId" />
+            </div>
+            <div>
+              <label class="muted">Driver Name</label>
+              <input id="driverName" />
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div>
+              <label class="muted">Truck</label>
+              <input id="truckId" />
+            </div>
+            <div>
+              <label class="muted">BOL Number</label>
+              <input id="bolNumber" />
+            </div>
+          </div>
+          <div>
+            <label class="muted">Dispatcher Notes</label>
+            <textarea id="dispatcherNotes"></textarea>
+          </div>
+          <div class="grid grid-2">
+            <button id="saveLoadBtn">Save Load</button>
+            <button class="secondary" id="assignLoadBtn">Assign Load</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="title">Messages</div>
+        <div id="messageThread" class="messages"></div>
+        <div style="margin-top:10px;">
+          <textarea id="messageText" placeholder="Type dispatch message..."></textarea>
+          <button id="sendMessageBtn" style="margin-top:8px;">Send Message</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="/js/dispatch.js"></script>
+</body>
+</html>

@@ -1,0 +1,1220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OverWatch ELD • Driver Management</title>
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#121a2f;
+      --panel-2:#17213b;
+      --border:#263557;
+      --text:#eef3ff;
+      --muted:#9fb0d6;
+      --accent:#6ea8ff;
+      --accent-2:#7ef0c5;
+      --warn:#ffca6b;
+      --danger:#ff7f96;
+      --ok:#7ef0c5;
+      --shadow:0 10px 30px rgba(0,0,0,.28);
+      --radius:18px;
+    }
+
+    * { box-sizing:border-box; }
+    html, body { margin:0; padding:0; background:linear-gradient(180deg,#09101d 0%, #0b1020 100%); color:var(--text); font-family:Segoe UI, Arial, sans-serif; }
+    a { color:var(--accent); text-decoration:none; }
+    button, input, select, textarea { font:inherit; }
+
+    .page {
+      max-width: 1700px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    .topbar {
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:16px;
+      margin-bottom:18px;
+      flex-wrap:wrap;
+    }
+
+    .title-wrap h1 {
+      margin:0;
+      font-size:28px;
+      font-weight:700;
+      letter-spacing:.2px;
+    }
+
+    .title-wrap p {
+      margin:6px 0 0;
+      color:var(--muted);
+      font-size:14px;
+    }
+
+    .top-actions {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .btn {
+      border:1px solid var(--border);
+      background:linear-gradient(180deg,var(--panel-2),var(--panel));
+      color:var(--text);
+      padding:10px 14px;
+      border-radius:12px;
+      cursor:pointer;
+      box-shadow:var(--shadow);
+      transition:.18s ease;
+    }
+
+    .btn:hover { transform:translateY(-1px); border-color:#3a5080; }
+    .btn.primary { background:linear-gradient(180deg,#2d67c7,#244ea0); border-color:#3e72c9; }
+    .btn.good { background:linear-gradient(180deg,#1d8f6a,#166e52); border-color:#2daa80; }
+    .btn.warn { background:linear-gradient(180deg,#8f6b1d,#6f5216); border-color:#b48d30; }
+    .btn.danger { background:linear-gradient(180deg,#8c2740,#6d1d31); border-color:#bf4564; }
+
+    .filters {
+      display:grid;
+      grid-template-columns: 1.4fr .8fr .8fr .8fr auto;
+      gap:12px;
+      margin-bottom:14px;
+    }
+
+    .pillbar {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-bottom:18px;
+    }
+
+    .pill {
+      padding:8px 12px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      background:rgba(255,255,255,.03);
+      cursor:pointer;
+      font-size:13px;
+      color:var(--text);
+      user-select:none;
+    }
+
+    .pill.active {
+      border-color:#4a74cb;
+      background:rgba(110,168,255,.12);
+    }
+
+    .input, .select, .textarea {
+      width:100%;
+      background:var(--panel);
+      border:1px solid var(--border);
+      color:var(--text);
+      padding:12px 14px;
+      border-radius:12px;
+      outline:none;
+    }
+
+    .textarea { min-height:110px; resize:vertical; }
+
+    .cards {
+      display:grid;
+      grid-template-columns:repeat(7, minmax(0,1fr));
+      gap:14px;
+      margin-bottom:18px;
+    }
+
+    .card {
+      background:linear-gradient(180deg,var(--panel),#0f1730);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      padding:16px;
+      box-shadow:var(--shadow);
+    }
+
+    .card .label {
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.8px;
+    }
+
+    .card .value {
+      margin-top:8px;
+      font-size:28px;
+      font-weight:700;
+    }
+
+    .layout {
+      display:grid;
+      grid-template-columns: 1.65fr 1fr;
+      gap:18px;
+      align-items:start;
+    }
+
+    .panel {
+      background:linear-gradient(180deg,var(--panel),#10182f);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+
+    .panel-header {
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+      padding:16px 18px;
+      border-bottom:1px solid var(--border);
+      background:rgba(255,255,255,.02);
+      flex-wrap:wrap;
+    }
+
+    .panel-header h2 {
+      margin:0;
+      font-size:18px;
+    }
+
+    .panel-header .sub {
+      color:var(--muted);
+      font-size:13px;
+    }
+
+    .table-wrap {
+      overflow:auto;
+      max-height:72vh;
+    }
+
+    table {
+      width:100%;
+      border-collapse:collapse;
+      min-width:1320px;
+    }
+
+    th, td {
+      padding:12px 12px;
+      border-bottom:1px solid rgba(255,255,255,.05);
+      text-align:left;
+      vertical-align:middle;
+      font-size:14px;
+    }
+
+    th {
+      position:sticky;
+      top:0;
+      background:#121c34;
+      z-index:1;
+      color:#caddff;
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.7px;
+    }
+
+    tr.data-row {
+      cursor:pointer;
+      transition:.15s ease;
+    }
+
+    tr.data-row:hover { background:rgba(255,255,255,.03); }
+    tr.data-row.selected { background:rgba(110,168,255,.10); }
+    tr.data-row.attn-medium { background:rgba(255,202,107,.05); }
+    tr.data-row.attn-high { background:rgba(255,127,150,.08); }
+
+    .badge {
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:5px 10px;
+      border-radius:999px;
+      font-size:12px;
+      font-weight:600;
+      border:1px solid transparent;
+      white-space:nowrap;
+    }
+
+    .badge.gray { background:#1f2945; border-color:#36476f; color:#c9d6f7; }
+    .badge.blue { background:#16335f; border-color:#2d67c7; color:#b8d2ff; }
+    .badge.green { background:#113a30; border-color:#1f8c6d; color:#bff6e4; }
+    .badge.gold { background:#43330f; border-color:#8f6b1d; color:#ffe39a; }
+    .badge.red { background:#481928; border-color:#8c2740; color:#ffc0cd; }
+
+    .dot {
+      width:10px;
+      height:10px;
+      border-radius:50%;
+      display:inline-block;
+      flex:0 0 auto;
+    }
+
+    .dot.green { background:var(--ok); box-shadow:0 0 10px rgba(126,240,197,.55); }
+    .dot.gold { background:var(--warn); box-shadow:0 0 10px rgba(255,202,107,.45); }
+    .dot.red { background:var(--danger); box-shadow:0 0 10px rgba(255,127,150,.45); }
+    .dot.gray { background:#7384a8; }
+
+    .detail {
+      padding:18px;
+      display:grid;
+      gap:16px;
+    }
+
+    .detail h3 {
+      margin:0 0 4px;
+      font-size:22px;
+    }
+
+    .muted {
+      color:var(--muted);
+    }
+
+    .kv-grid {
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:10px;
+    }
+
+    .kv {
+      background:rgba(255,255,255,.03);
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:14px;
+      padding:12px;
+    }
+
+    .kv .k {
+      color:var(--muted);
+      font-size:12px;
+      text-transform:uppercase;
+      letter-spacing:.7px;
+      margin-bottom:6px;
+    }
+
+    .kv .v {
+      font-size:15px;
+      font-weight:600;
+      word-break:break-word;
+    }
+
+    .stack {
+      display:grid;
+      gap:10px;
+    }
+
+    .row {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .row > * {
+      flex:1 1 0;
+      min-width:0;
+    }
+
+    .empty {
+      padding:28px;
+      text-align:center;
+      color:var(--muted);
+    }
+
+    .msg-list {
+      display:grid;
+      gap:10px;
+      max-height:260px;
+      overflow:auto;
+    }
+
+    .msg {
+      border:1px solid rgba(255,255,255,.06);
+      background:rgba(255,255,255,.03);
+      border-radius:14px;
+      padding:12px;
+    }
+
+    .msg .meta {
+      font-size:12px;
+      color:var(--muted);
+      margin-bottom:6px;
+    }
+
+    .toolbar-note {
+      color:var(--muted);
+      font-size:12px;
+    }
+
+    .footer-actions {
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+    }
+
+    .hidden { display:none !important; }
+
+    .bulk-actions {
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .selected-count {
+      color:var(--muted);
+      font-size:12px;
+      margin-left:4px;
+    }
+
+    .check-cell {
+      width:40px;
+      text-align:center;
+    }
+
+    .row-check {
+      width:16px;
+      height:16px;
+      cursor:pointer;
+    }
+
+    .attention-list {
+      display:grid;
+      gap:8px;
+    }
+
+    .attention-item {
+      border:1px solid rgba(255,255,255,.06);
+      border-radius:12px;
+      padding:10px 12px;
+      background:rgba(255,255,255,.03);
+      font-size:13px;
+    }
+
+    @media (max-width: 1300px) {
+      .layout { grid-template-columns:1fr; }
+      .cards { grid-template-columns:repeat(4, minmax(0,1fr)); }
+      .filters { grid-template-columns:1fr 1fr; }
+    }
+
+    @media (max-width: 760px) {
+      .cards { grid-template-columns:repeat(2, minmax(0,1fr)); }
+      .filters { grid-template-columns:1fr; }
+      .kv-grid { grid-template-columns:1fr; }
+      .page { padding:14px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <div class="title-wrap">
+        <h1>Driver Management</h1>
+        <p>Management control center for roster, live status, dispatch activity, notes, and fleet messaging.</p>
+      </div>
+      <div class="top-actions">
+        <a class="btn" href="/index.html">Back to Hub</a>
+        <button class="btn" id="refreshBtn">Refresh</button>
+        <button class="btn primary" id="fleetMsgBtn">Fleet Message</button>
+      </div>
+    </div>
+
+    <div class="filters">
+      <input id="searchBox" class="input" type="text" placeholder="Search by name, Discord, truck, role, status..." />
+      <select id="roleFilter" class="select">
+        <option value="">All Roles</option>
+      </select>
+      <select id="liveFilter" class="select">
+        <option value="">All Activity</option>
+        <option value="live">Live / recently seen</option>
+        <option value="stale">Stale / offline</option>
+        <option value="inactive30">Inactive 30+ min</option>
+        <option value="inactive60">Inactive 60+ min</option>
+      </select>
+      <select id="dutyFilter" class="select">
+        <option value="">All Duty Status</option>
+      </select>
+      <button class="btn" id="clearFiltersBtn">Clear</button>
+    </div>
+
+    <div class="pillbar">
+      <button class="pill active" data-quick="all">All</button>
+      <button class="pill" data-quick="needsAttention">Needs Attention</button>
+      <button class="pill" data-quick="inactive30">Inactive 30+</button>
+      <button class="pill" data-quick="inactive60">Inactive 60+</button>
+      <button class="pill" data-quick="unread">Unread Dispatch</button>
+      <button class="pill" data-quick="driving">Driving</button>
+      <button class="pill" data-quick="noLoad">No Active Load</button>
+    </div>
+
+    <div class="cards">
+      <div class="card"><div class="label">Drivers</div><div class="value" id="countDrivers">0</div></div>
+      <div class="card"><div class="label">Live</div><div class="value" id="countLive">0</div></div>
+      <div class="card"><div class="label">Stale</div><div class="value" id="countStale">0</div></div>
+      <div class="card"><div class="label">Inactive 30+</div><div class="value" id="countInactive30">0</div></div>
+      <div class="card"><div class="label">Inactive 60+</div><div class="value" id="countInactive60">0</div></div>
+      <div class="card"><div class="label">Unread Dispatch</div><div class="value" id="countUnread">0</div></div>
+      <div class="card"><div class="label">Needs Attention</div><div class="value" id="countAttention">0</div></div>
+    </div>
+
+    <div class="layout">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Drivers</h2>
+            <div class="sub" id="tableSub">Loading…</div>
+          </div>
+
+          <div class="bulk-actions">
+            <button class="btn" id="selectAllBtn">Select All</button>
+            <button class="btn" id="clearSelectedBtn">Clear</button>
+            <button class="btn" id="messageSelectedBtn">Message Selected</button>
+            <button class="btn warn" id="roleSelectedBtn">Set Role</button>
+            <span class="selected-count" id="selectedCountText">Selected: 0</span>
+          </div>
+
+          <div class="toolbar-note" id="guildLabel"></div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="check-cell"></th>
+                <th>Driver</th>
+                <th>Attention</th>
+                <th>Role</th>
+                <th>Truck</th>
+                <th>Duty</th>
+                <th>Status</th>
+                <th>Location</th>
+                <th>Load</th>
+                <th>Unread</th>
+                <th>Last Seen</th>
+              </tr>
+            </thead>
+            <tbody id="driversBody">
+              <tr><td colspan="11" class="empty">Loading drivers…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2>Driver Details</h2>
+            <div class="sub">Select a driver to view profile, notes, and actions.</div>
+          </div>
+        </div>
+
+        <div class="detail" id="detailPane">
+          <div class="empty">No driver selected.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const guildId = (qs.get("guildId") || "").trim();
+
+    const state = {
+      guildId,
+      summary: null,
+      drivers: [],
+      filtered: [],
+      selectedDriverId: "",
+      selectedDetails: null,
+      selectedIds: new Set(),
+      quickFilter: "all"
+    };
+
+    const els = {
+      refreshBtn: document.getElementById("refreshBtn"),
+      fleetMsgBtn: document.getElementById("fleetMsgBtn"),
+      searchBox: document.getElementById("searchBox"),
+      roleFilter: document.getElementById("roleFilter"),
+      liveFilter: document.getElementById("liveFilter"),
+      dutyFilter: document.getElementById("dutyFilter"),
+      clearFiltersBtn: document.getElementById("clearFiltersBtn"),
+      guildLabel: document.getElementById("guildLabel"),
+      tableSub: document.getElementById("tableSub"),
+      driversBody: document.getElementById("driversBody"),
+      detailPane: document.getElementById("detailPane"),
+      countDrivers: document.getElementById("countDrivers"),
+      countLive: document.getElementById("countLive"),
+      countStale: document.getElementById("countStale"),
+      countInactive30: document.getElementById("countInactive30"),
+      countInactive60: document.getElementById("countInactive60"),
+      countUnread: document.getElementById("countUnread"),
+      countAttention: document.getElementById("countAttention"),
+      selectAllBtn: document.getElementById("selectAllBtn"),
+      clearSelectedBtn: document.getElementById("clearSelectedBtn"),
+      messageSelectedBtn: document.getElementById("messageSelectedBtn"),
+      roleSelectedBtn: document.getElementById("roleSelectedBtn"),
+      selectedCountText: document.getElementById("selectedCountText"),
+      quickPills: [...document.querySelectorAll("[data-quick]")]
+    };
+
+    function esc(v) {
+      return String(v ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function safe(v, fallback = "") {
+      return (v ?? fallback) || fallback;
+    }
+
+    function fmtDate(v) {
+      if (!v) return "—";
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return String(v);
+      return d.toLocaleString();
+    }
+
+    function minsAgo(v) {
+      if (!v) return null;
+      const d = new Date(v);
+      if (Number.isNaN(d.getTime())) return null;
+      return Math.max(0, Math.round((Date.now() - d.getTime()) / 60000));
+    }
+
+    function isLive(driver) {
+      const m = minsAgo(driver.lastSeenUtc);
+      return m !== null && m < 5;
+    }
+
+    function isStale(driver) {
+      const m = minsAgo(driver.lastSeenUtc);
+      return m === null || m >= 5;
+    }
+
+    function isInactive30(driver) {
+      const m = minsAgo(driver.lastSeenUtc);
+      return m !== null && m >= 30;
+    }
+
+    function isInactive60(driver) {
+      const m = minsAgo(driver.lastSeenUtc);
+      return m !== null && m >= 60;
+    }
+
+    function attentionScore(driver) {
+      let score = 0;
+      const unread = Number(driver.unreadDispatchCount || 0);
+
+      if (isInactive60(driver)) score += 3;
+      else if (isInactive30(driver)) score += 2;
+      else if (isStale(driver)) score += 1;
+
+      if (unread >= 3) score += 2;
+      else if (unread > 0) score += 1;
+
+      if (!safe(driver.loadNumber)) score += 0.5;
+
+      return score;
+    }
+
+    function attentionLabel(driver) {
+      const score = attentionScore(driver);
+      if (score >= 4) return '<span class="badge red">High</span>';
+      if (score >= 2) return '<span class="badge gold">Medium</span>';
+      return '<span class="badge green">Low</span>';
+    }
+
+    function rowClass(driver) {
+      const score = attentionScore(driver);
+      if (score >= 4) return "attn-high";
+      if (score >= 2) return "attn-medium";
+      return "";
+    }
+
+    function dutyBadge(duty) {
+      const v = safe(duty).trim().toLowerCase();
+      if (!v) return '<span class="badge gray">Unknown</span>';
+      if (v.includes("driv")) return '<span class="badge blue">Driving</span>';
+      if (v.includes("on")) return '<span class="badge gold">On Duty</span>';
+      if (v.includes("sleep")) return '<span class="badge gray">Sleeper</span>';
+      if (v.includes("off")) return '<span class="badge green">Off Duty</span>';
+      return `<span class="badge gray">${esc(duty)}</span>`;
+    }
+
+    function activityBadge(driver) {
+      if (isLive(driver)) return '<span class="badge green"><span class="dot green"></span>Live</span>';
+      if (isInactive60(driver)) return '<span class="badge red"><span class="dot red"></span>Inactive 60+</span>';
+      if (isInactive30(driver)) return '<span class="badge gold"><span class="dot gold"></span>Inactive 30+</span>';
+      if (driver.lastSeenUtc) return '<span class="badge gold"><span class="dot gold"></span>Stale</span>';
+      return '<span class="badge gray"><span class="dot gray"></span>Offline</span>';
+    }
+
+    function roleBadge(role) {
+      const v = safe(role, "Driver").toLowerCase();
+      if (v.includes("owner") || v.includes("admin")) return `<span class="badge red">${esc(role)}</span>`;
+      if (v.includes("manager") || v.includes("dispatch")) return `<span class="badge gold">${esc(role)}</span>`;
+      return `<span class="badge blue">${esc(role || "Driver")}</span>`;
+    }
+
+    function buildUrl(path) {
+      const url = new URL(path, location.origin);
+      if (state.guildId) url.searchParams.set("guildId", state.guildId);
+      return url.toString();
+    }
+
+    async function fetchJson(url, options) {
+      const resp = await fetch(url, {
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        ...options
+      });
+
+      let data = null;
+      try { data = await resp.json(); } catch { }
+
+      if (!resp.ok) {
+        const msg = data?.error || data?.message || `${resp.status} ${resp.statusText}`;
+        throw new Error(msg);
+      }
+
+      return data;
+    }
+
+    function updateSelectedCount() {
+      els.selectedCountText.textContent = `Selected: ${state.selectedIds.size}`;
+    }
+
+    function populateFilters() {
+      const roles = [...new Set(state.drivers.map(x => safe(x.role, "Driver")).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const duties = [...new Set(state.drivers.map(x => safe(x.dutyStatus)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+      const roleCurrent = els.roleFilter.value;
+      const dutyCurrent = els.dutyFilter.value;
+
+      els.roleFilter.innerHTML = '<option value="">All Roles</option>' +
+        roles.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
+
+      els.dutyFilter.innerHTML = '<option value="">All Duty Status</option>' +
+        duties.map(d => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
+
+      if (roles.includes(roleCurrent)) els.roleFilter.value = roleCurrent;
+      if (duties.includes(dutyCurrent)) els.dutyFilter.value = dutyCurrent;
+    }
+
+    function applyQuickFilter(driver) {
+      switch (state.quickFilter) {
+        case "needsAttention":
+          return attentionScore(driver) >= 2;
+        case "inactive30":
+          return isInactive30(driver);
+        case "inactive60":
+          return isInactive60(driver);
+        case "unread":
+          return Number(driver.unreadDispatchCount || 0) > 0;
+        case "driving":
+          return safe(driver.dutyStatus).toLowerCase().includes("driv");
+        case "noLoad":
+          return !safe(driver.loadNumber);
+        default:
+          return true;
+      }
+    }
+
+    function applyFilters() {
+      const q = els.searchBox.value.trim().toLowerCase();
+      const role = els.roleFilter.value.trim().toLowerCase();
+      const live = els.liveFilter.value.trim().toLowerCase();
+      const duty = els.dutyFilter.value.trim().toLowerCase();
+
+      state.filtered = state.drivers.filter(d => {
+        const hay = [
+          d.name, d.driverName, d.discordUsername, d.discordUserId, d.role,
+          d.truckNumber, d.status, d.dutyStatus, d.location, d.loadNumber, d.notes
+        ].join(" ").toLowerCase();
+
+        if (q && !hay.includes(q)) return false;
+        if (role && safe(d.role).toLowerCase() !== role) return false;
+        if (duty && safe(d.dutyStatus).toLowerCase() !== duty) return false;
+
+        if (live === "live" && !isLive(d)) return false;
+        if (live === "stale" && !isStale(d)) return false;
+        if (live === "inactive30" && !isInactive30(d)) return false;
+        if (live === "inactive60" && !isInactive60(d)) return false;
+
+        if (!applyQuickFilter(d)) return false;
+
+        return true;
+      }).sort((a, b) => {
+        const diff = attentionScore(b) - attentionScore(a);
+        if (diff !== 0) return diff;
+        return String(a.name || "").localeCompare(String(b.name || ""));
+      });
+
+      renderTable();
+    }
+
+    function renderCards() {
+      const drivers = state.drivers.length;
+      const live = state.drivers.filter(isLive).length;
+      const stale = state.drivers.filter(isStale).length;
+      const inactive30 = state.drivers.filter(isInactive30).length;
+      const inactive60 = state.drivers.filter(isInactive60).length;
+      const unread = state.drivers.reduce((a, b) => a + Number(b.unreadDispatchCount || 0), 0);
+      const attention = state.drivers.filter(d => attentionScore(d) >= 2).length;
+
+      els.countDrivers.textContent = String(drivers);
+      els.countLive.textContent = String(live);
+      els.countStale.textContent = String(stale);
+      els.countInactive30.textContent = String(inactive30);
+      els.countInactive60.textContent = String(inactive60);
+      els.countUnread.textContent = String(unread);
+      els.countAttention.textContent = String(attention);
+    }
+
+    function renderTable() {
+      els.tableSub.textContent = `${state.filtered.length} of ${state.drivers.length} driver(s) shown`;
+      updateSelectedCount();
+
+      if (!state.filtered.length) {
+        els.driversBody.innerHTML = '<tr><td colspan="11" class="empty">No drivers match the current filters.</td></tr>';
+        return;
+      }
+
+      els.driversBody.innerHTML = state.filtered.map(d => {
+        const selected = state.selectedDriverId &&
+          safe(d.discordUserId) === state.selectedDriverId;
+
+        const lastSeenLabel = d.lastSeenUtc ? `${fmtDate(d.lastSeenUtc)}` : "—";
+        const unread = Number(d.unreadDispatchCount || 0);
+        const checked = state.selectedIds.has(d.discordUserId);
+
+        return `
+          <tr class="data-row ${selected ? "selected" : ""} ${rowClass(d)}" data-driver-id="${esc(d.discordUserId)}">
+            <td class="check-cell">
+              <input
+                type="checkbox"
+                class="row-check"
+                data-id="${esc(d.discordUserId)}"
+                ${checked ? "checked" : ""}
+              />
+            </td>
+            <td>
+              <div style="font-weight:700">${esc(d.name || d.driverName || "Unknown Driver")}</div>
+              <div class="muted" style="font-size:12px">${esc(d.discordUsername || d.discordUserId || "")}</div>
+            </td>
+            <td>${attentionLabel(d)}</td>
+            <td>${roleBadge(d.role)}</td>
+            <td>${esc(d.truckNumber || "—")}</td>
+            <td>${dutyBadge(d.dutyStatus)}</td>
+            <td>${activityBadge(d)}</td>
+            <td>${esc(d.location || "—")}</td>
+            <td>${esc(d.loadNumber || "—")}</td>
+            <td>${unread > 0 ? `<span class="badge red">${unread}</span>` : `<span class="badge gray">0</span>`}</td>
+            <td>${esc(lastSeenLabel)}</td>
+          </tr>
+        `;
+      }).join("");
+
+      [...els.driversBody.querySelectorAll("tr.data-row")].forEach(tr => {
+        tr.addEventListener("click", () => {
+          const driverId = tr.getAttribute("data-driver-id") || "";
+          state.selectedDriverId = driverId;
+          renderTable();
+          loadDriverDetails(driverId);
+        });
+
+        tr.querySelector(".row-check")?.addEventListener("click", (e) => {
+          e.stopPropagation();
+
+          const id = e.target.getAttribute("data-id");
+          if (!id) return;
+
+          if (e.target.checked)
+            state.selectedIds.add(id);
+          else
+            state.selectedIds.delete(id);
+
+          updateSelectedCount();
+        });
+      });
+    }
+
+    async function loadSummary() {
+      const data = await fetchJson(buildUrl("/api/management/summary"));
+      state.summary = data;
+      els.guildLabel.textContent = state.guildId ? `Guild: ${state.guildId}` : "";
+    }
+
+    async function loadDrivers() {
+      const data = await fetchJson(buildUrl("/api/management/drivers"));
+      state.drivers = Array.isArray(data.drivers) ? data.drivers : [];
+      populateFilters();
+      renderCards();
+      applyFilters();
+
+      if (!state.selectedDriverId && state.drivers.length) {
+        state.selectedDriverId = safe(state.drivers[0].discordUserId);
+      }
+
+      if (state.selectedDriverId) {
+        const exists = state.drivers.some(d => safe(d.discordUserId) === state.selectedDriverId);
+        if (exists) {
+          await loadDriverDetails(state.selectedDriverId);
+        } else {
+          state.selectedDriverId = "";
+          state.selectedDetails = null;
+          renderDetails();
+        }
+      } else {
+        renderDetails();
+      }
+    }
+
+    async function loadDriverDetails(driverDiscordUserId) {
+      if (!driverDiscordUserId) {
+        state.selectedDetails = null;
+        renderDetails();
+        return;
+      }
+
+      try {
+        const data = await fetchJson(buildUrl(`/api/management/drivers/${encodeURIComponent(driverDiscordUserId)}`));
+        state.selectedDetails = data;
+        renderDetails();
+      } catch (err) {
+        state.selectedDetails = null;
+        els.detailPane.innerHTML = `<div class="empty">Unable to load driver details: ${esc(err.message || err)}</div>`;
+      }
+    }
+
+    function buildAttentionItems(driver, live) {
+      const items = [];
+      const unread = Number(driver.unreadDispatchCount || 0);
+      const mins = minsAgo(live.lastSeenUtc || driver.lastSeenUtc);
+
+      if (mins !== null && mins >= 60) items.push("Driver has been inactive for 60+ minutes.");
+      else if (mins !== null && mins >= 30) items.push("Driver has been inactive for 30+ minutes.");
+      else if (mins !== null && mins >= 5) items.push("Driver is stale and may need a check-in.");
+
+      if (unread >= 3) items.push("Driver has 3 or more unread dispatch items.");
+      else if (unread > 0) items.push("Driver has unread dispatch items.");
+
+      if (!safe(live.loadNumber || driver.loadNumber)) items.push("No active load is currently attached.");
+      if (!safe(live.location)) items.push("No live location is currently reported.");
+
+      if (!items.length) items.push("No immediate management alerts.");
+
+      return items;
+    }
+
+    function renderDetails() {
+      const data = state.selectedDetails;
+      if (!data?.driver) {
+        els.detailPane.innerHTML = '<div class="empty">No driver selected.</div>';
+        return;
+      }
+
+      const d = data.driver;
+      const live = data.live || {};
+      const messages = Array.isArray(data.messages) ? data.messages : [];
+      const attentionItems = buildAttentionItems(d, live);
+
+      const currentRole = safe(d.role, "Driver");
+      const roleOptions = [
+        "Driver",
+        "Senior Driver",
+        "Trainer",
+        "Dispatch",
+        "Manager",
+        "Admin",
+        "Owner"
+      ];
+
+      const roleOptionsHtml = roleOptions.map(r =>
+        `<option value="${esc(r)}" ${r.toLowerCase() === currentRole.toLowerCase() ? "selected" : ""}>${esc(r)}</option>`
+      ).join("");
+
+      els.detailPane.innerHTML = `
+        <div>
+          <h3>${esc(d.name || d.driverName || "Unknown Driver")}</h3>
+          <div class="muted">${esc(d.discordUsername || d.discordUserId || "")}</div>
+        </div>
+
+        <div class="pillbar">
+          ${roleBadge(d.role)}
+          ${activityBadge({ lastSeenUtc: live.lastSeenUtc })}
+          ${dutyBadge(live.dutyStatus)}
+          ${attentionLabel({
+            lastSeenUtc: live.lastSeenUtc,
+            unreadDispatchCount: messages.filter(m => (m.direction || "").toLowerCase() === "from_driver" && !m.isRead).length,
+            loadNumber: live.loadNumber
+          })}
+        </div>
+
+        <div class="kv-grid">
+          <div class="kv"><div class="k">Discord User ID</div><div class="v">${esc(d.discordUserId || "—")}</div></div>
+          <div class="kv"><div class="k">Truck Number</div><div class="v">${esc(d.truckNumber || "—")}</div></div>
+          <div class="kv"><div class="k">Roster Status</div><div class="v">${esc(d.status || "—")}</div></div>
+          <div class="kv"><div class="k">Duty Status</div><div class="v">${esc(live.dutyStatus || "—")}</div></div>
+          <div class="kv"><div class="k">Location</div><div class="v">${esc(live.location || "—")}</div></div>
+          <div class="kv"><div class="k">Current Load</div><div class="v">${esc(live.loadNumber || "—")}</div></div>
+          <div class="kv"><div class="k">Speed</div><div class="v">${Number(live.speedMph || 0).toFixed(0)} mph</div></div>
+          <div class="kv"><div class="k">Last Seen</div><div class="v">${esc(fmtDate(live.lastSeenUtc))}</div></div>
+        </div>
+
+        <div class="stack">
+          <div>
+            <div class="muted" style="margin-bottom:8px">Management Attention</div>
+            <div class="attention-list">
+              ${attentionItems.map(item => `<div class="attention-item">${esc(item)}</div>`).join("")}
+            </div>
+          </div>
+
+          <div>
+            <div class="muted" style="margin-bottom:8px">Promote / Demote / Set Role</div>
+            <div class="row">
+              <select id="detailRoleSelect" class="select">${roleOptionsHtml}</select>
+              <button class="btn primary" id="saveRoleBtn">Save Role</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="muted" style="margin-bottom:8px">Management Notes</div>
+            <textarea id="detailNotes" class="textarea" placeholder="Add private management notes...">${esc(d.notes || "")}</textarea>
+            <div class="footer-actions" style="margin-top:10px">
+              <button class="btn good" id="saveNotesBtn">Save Notes</button>
+              <button class="btn" id="messageDriverBtn">Message Driver</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="muted" style="margin-bottom:8px">Recent Dispatch Messages</div>
+            <div class="msg-list">
+              ${
+                messages.length
+                  ? messages.slice().sort((a,b) => new Date(b.createdUtc || 0) - new Date(a.createdUtc || 0)).slice(0, 12).map(m => `
+                    <div class="msg">
+                      <div class="meta">${esc(m.direction || "message")} • ${esc(fmtDate(m.createdUtc))}</div>
+                      <div>${esc(m.text || "")}</div>
+                    </div>
+                  `).join("")
+                  : '<div class="empty" style="padding:16px">No dispatch messages for this driver yet.</div>'
+              }
+            </div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById("saveRoleBtn").addEventListener("click", () => saveRole(d.discordUserId));
+      document.getElementById("saveNotesBtn").addEventListener("click", () => saveNotes(d.discordUserId));
+      document.getElementById("messageDriverBtn").addEventListener("click", () => messageDriver(d.discordUserId, d.name || d.driverName || "Driver"));
+    }
+
+    async function saveRole(driverDiscordUserId) {
+      const role = document.getElementById("detailRoleSelect").value;
+      if (!driverDiscordUserId || !role) return;
+
+      try {
+        await fetchJson("/api/management/driver/role", {
+          method: "POST",
+          body: JSON.stringify({
+            guildId: state.guildId,
+            driverDiscordUserId,
+            role
+          })
+        });
+
+        await reloadAll(false);
+        alert("Role updated.");
+      } catch (err) {
+        alert("Unable to save role: " + (err.message || err));
+      }
+    }
+
+    async function saveNotes(driverDiscordUserId) {
+      const notes = document.getElementById("detailNotes").value || "";
+      if (!driverDiscordUserId) return;
+
+      try {
+        const result = await fetchJson("/api/management/driver/note", {
+          method: "POST",
+          body: JSON.stringify({
+            guildId: state.guildId,
+            driverDiscordUserId,
+            notes
+          })
+        });
+
+        await reloadAll(false);
+
+        if (result && result.persisted === false) {
+          alert("Notes updated, but the roster store did not confirm disk persistence.");
+        } else {
+          alert("Notes saved.");
+        }
+      } catch (err) {
+        alert("Unable to save notes: " + (err.message || err));
+      }
+    }
+
+    async function messageDriver(driverDiscordUserId, name) {
+      const text = prompt(`Send a dispatch message to ${name}:`);
+      if (!text || !text.trim()) return;
+
+      try {
+        await fetchJson("/api/dispatch/messages/send", {
+          method: "POST",
+          body: JSON.stringify({
+            guildId: state.guildId,
+            driverDiscordUserId,
+            driverName: name,
+            text: text.trim()
+          })
+        });
+
+        await reloadAll(false);
+        alert("Message sent.");
+      } catch (err) {
+        alert("Unable to send message: " + (err.message || err));
+      }
+    }
+
+    async function sendFleetMessage() {
+      const text = prompt("Enter the fleet-wide message:");
+      if (!text || !text.trim()) return;
+
+      try {
+        const data = await fetchJson("/api/management/message/fleet", {
+          method: "POST",
+          body: JSON.stringify({
+            guildId: state.guildId,
+            text: text.trim()
+          })
+        });
+
+        await reloadAll(false);
+        alert(`Fleet message sent to ${data.sent || 0} driver(s).`);
+      } catch (err) {
+        alert("Unable to send fleet message: " + (err.message || err));
+      }
+    }
+
+    async function sendMessageToSelected() {
+      if (!state.selectedIds.size) {
+        alert("No drivers selected");
+        return;
+      }
+
+      const text = prompt("Message selected drivers:");
+      if (!text || !text.trim()) return;
+
+      try {
+        const data = await fetchJson("/api/management/message/selected", {
+          method: "POST",
+          body: JSON.stringify({
+            guildId: state.guildId,
+            driverDiscordUserIds: [...state.selectedIds],
+            text: text.trim()
+          })
+        });
+
+        alert(`Sent to ${data.sent || 0} driver(s).`);
+        state.selectedIds.clear();
+        await reloadAll(false);
+      } catch (err) {
+        alert("Unable to send selected message: " + (err.message || err));
+      }
+    }
+
+    async function setRoleForSelected() {
+      if (!state.selectedIds.size) {
+        alert("No drivers selected");
+        return;
+      }
+
+      const role = prompt("Enter role for selected drivers:");
+      if (!role || !role.trim()) return;
+
+      try {
+        const data = await fetchJson("/api/management/driver/role/bulk", {
+          method: "POST",
+          body: JSON.stringify({
+            guildId: state.guildId,
+            driverDiscordUserIds: [...state.selectedIds],
+            role: role.trim()
+          })
+        });
+
+        alert(`Updated ${data.updated || 0} driver(s).`);
+        state.selectedIds.clear();
+        await reloadAll(false);
+      } catch (err) {
+        alert("Unable to update selected roles: " + (err.message || err));
+      }
+    }
+
+    async function reloadAll(showLoading = true) {
+      if (!state.guildId) {
+        els.tableSub.textContent = "Missing guildId in query string.";
+        els.driversBody.innerHTML = '<tr><td colspan="11" class="empty">Open this page with ?guildId=YOUR_GUILD_ID</td></tr>';
+        els.detailPane.innerHTML = '<div class="empty">Missing guildId in query string.</div>';
+        return;
+      }
+
+      if (showLoading) {
+        els.tableSub.textContent = "Loading…";
+      }
+
+      try {
+        await Promise.all([loadSummary(), loadDrivers()]);
+      } catch (err) {
+        els.tableSub.textContent = "Unable to load data.";
+        els.driversBody.innerHTML = `<tr><td colspan="11" class="empty">Load failed: ${esc(err.message || err)}</td></tr>`;
+        els.detailPane.innerHTML = `<div class="empty">Load failed: ${esc(err.message || err)}</div>`;
+      }
+    }
+
+    els.refreshBtn.addEventListener("click", () => reloadAll(false));
+    els.fleetMsgBtn.addEventListener("click", sendFleetMessage);
+    els.searchBox.addEventListener("input", applyFilters);
+    els.roleFilter.addEventListener("change", applyFilters);
+    els.liveFilter.addEventListener("change", applyFilters);
+    els.dutyFilter.addEventListener("change", applyFilters);
+
+    els.clearFiltersBtn.addEventListener("click", () => {
+      els.searchBox.value = "";
+      els.roleFilter.value = "";
+      els.liveFilter.value = "";
+      els.dutyFilter.value = "";
+      state.quickFilter = "all";
+      els.quickPills.forEach(p => p.classList.toggle("active", p.dataset.quick === "all"));
+      applyFilters();
+    });
+
+    els.selectAllBtn.addEventListener("click", () => {
+      state.filtered.forEach(d => {
+        if (d && d.discordUserId) state.selectedIds.add(d.discordUserId);
+      });
+      renderTable();
+    });
+
+    els.clearSelectedBtn.addEventListener("click", () => {
+      state.selectedIds.clear();
+      renderTable();
+    });
+
+    els.messageSelectedBtn.addEventListener("click", sendMessageToSelected);
+    els.roleSelectedBtn.addEventListener("click", setRoleForSelected);
+
+    els.quickPills.forEach(pill => {
+      pill.addEventListener("click", () => {
+        state.quickFilter = pill.dataset.quick || "all";
+        els.quickPills.forEach(p => p.classList.toggle("active", p === pill));
+        applyFilters();
+      });
+    });
+
+    reloadAll(true);
+  </script>
+</body>
+</html>

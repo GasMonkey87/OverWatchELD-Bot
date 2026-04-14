@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>OverWatch ELD Live Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link
+    href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css"
+    rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #08152f; color: white; font-family: Arial, sans-serif; }
+    #map { position: absolute; inset: 0; }
+    .hud {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 10;
+      background: rgba(8, 21, 47, 0.92);
+      border-radius: 12px;
+      padding: 12px 14px;
+      min-width: 260px;
+    }
+    .hud h2 { margin: 0 0 8px 0; font-size: 18px; }
+    .muted { opacity: 0.8; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="hud">
+    <h2>OverWatch Live Map</h2>
+    <div id="mapStatus" class="muted">Loading…</div>
+  </div>
+
+  <script>
+    function qs(name) {
+      return new URLSearchParams(window.location.search).get(name) || "";
+    }
+
+    const guildId = qs("guildId");
+
+    const map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        sources: {
+          osm: {
+            type: "raster",
+            tiles: [
+              "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            ],
+            tileSize: 256,
+            attribution: "© OpenStreetMap contributors"
+          }
+        },
+        layers: [
+          {
+            id: "osm",
+            type: "raster",
+            source: "osm"
+          }
+        ]
+      },
+      center: [-98.5795, 39.8283],
+      zoom: 3
+    });
+
+    let markers = [];
+
+    function clearMarkers() {
+      for (const m of markers) m.remove();
+      markers = [];
+    }
+
+    async function loadMapData() {
+      const url = guildId
+        ? `/api/map/live?guildId=${encodeURIComponent(guildId)}`
+        : `/api/map/live`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      clearMarkers();
+
+      const points = data.points || [];
+      document.getElementById("mapStatus").textContent =
+        `${points.length} drivers on map`;
+
+      for (const p of points) {
+        const popup = new maplibregl.Popup({ offset: 18 }).setHTML(`
+          <strong>${p.driverName || "Driver"}</strong><br>
+          Status: ${p.dutyStatus || "-"}<br>
+          Truck: ${p.truck || "-"}<br>
+          Load: ${p.loadNumber || "-"}<br>
+          Speed: ${Math.round(p.speedMph || 0)} mph<br>
+          Location: ${p.location || "-"}
+        `);
+
+        const marker = new maplibregl.Marker()
+          .setLngLat([p.longitude, p.latitude])
+          .setPopup(popup)
+          .addTo(map);
+
+        markers.push(marker);
+      }
+    }
+
+    map.on("load", async () => {
+      await loadMapData();
+      setInterval(loadMapData, 10000);
+    });
+  </script>
+</body>
+</html>

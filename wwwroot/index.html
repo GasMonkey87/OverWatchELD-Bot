@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OverWatch ELD Hub</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+    }
+
+    header {
+      padding: 20px;
+      background: #161b22;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    h1 { margin: 0; }
+
+    .container {
+      max-width: 1100px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+
+    .hero {
+      background: #161b22;
+      border-radius: 14px;
+      padding: 28px;
+      margin-bottom: 20px;
+      background-size: cover;
+      background-position: center;
+      overflow: hidden;
+    }
+
+    .hero-overlay {
+      background: rgba(0,0,0,0.45);
+      border-radius: 12px;
+      padding: 20px;
+    }
+
+    .card {
+      background: #161b22;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 10px;
+    }
+
+    .btn {
+      display: inline-block;
+      padding: 12px 20px;
+      margin-top: 10px;
+      background: #238636;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: bold;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn:hover {
+      background: #2ea043;
+    }
+
+    .btn.secondary {
+      background: #30363d;
+    }
+
+    .btn.secondary:hover {
+      background: #3b434d;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .muted {
+      color: #9da7b3;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <h1 id="pageTitle">OverWatch ELD Hub</h1>
+  <a class="btn" href="/login">Login with Discord</a>
+</header>
+
+<div class="container">
+  <div class="hero" id="heroBox">
+    <div class="hero-overlay">
+      <h2 id="heroTitle">Welcome</h2>
+      <p id="welcomeText">
+        OverWatch ELD Hub is the central website for drivers and managers.
+        Log in with Discord to access your VTC portal, dispatch, and company tools.
+      </p>
+
+      <div class="actions">
+        <a class="btn" href="/login">Login with Discord</a>
+        <a class="btn secondary" id="joinDiscordBtn" href="#" target="_blank" rel="noopener noreferrer">Join Discord</a>
+        <a class="btn secondary" id="reportIssueBtn" href="#" target="_blank" rel="noopener noreferrer">Report an Issue</a>
+        <a class="btn secondary" id="learnMoreBtn" href="#" target="_blank" rel="noopener noreferrer">Learn More</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>What this website is for</h2>
+    <p>
+      Drivers can sign in with Discord to access their company portal. Managers can use the same hub to handle
+      dispatch, announcements, driver profiles, and website settings.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>How login works</h2>
+    <p>
+      After logging in, the system checks what supported VTCs your Discord account belongs to. If one VTC is found
+      you are sent there automatically. If multiple are found, you can choose which one to enter.
+    </p>
+  </div>
+</div>
+
+<script src="/js/index.js"></script>
+</body>
+</html>
