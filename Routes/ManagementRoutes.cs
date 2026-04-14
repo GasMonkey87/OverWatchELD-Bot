@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using System.Reflection;
 using System.Text.Json;
+using System.Net.Http.Json;
 using Discord;
 using Discord.WebSocket;
 using OverWatchELD.VtcBot.Services;
@@ -333,34 +334,56 @@ public static class ManagementRoutes
                 return Results.BadRequest(new { ok = false, error = "MissingText" });
 
             var drivers = await BuildDriversAsync(services, dataDir, guildId, messageStore);
+
             var sent = 0;
+            var failed = new List<object>();
 
             foreach (var driver in drivers.Where(x => !string.IsNullOrWhiteSpace(x.DiscordUserId)))
             {
-                var ok = await SendDispatchMessageAsync(
+                var driverId = driver.DiscordUserId?.Trim() ?? "";
+                var driverName = driver.NameOrFallback();
+
+                var send = await SendDispatchMessageAsync(
                     services,
                     dataDir,
                     guildId,
-                    driver.DiscordUserId,
-                    driver.NameOrFallback(),
+                    driverId,
+                    driverName,
                     text);
 
-                messageStore.Add(new DispatchMessage
+                if (send.Success)
                 {
-                    GuildId = guildId,
-                    DriverDiscordUserId = driver.DiscordUserId,
-                    DriverName = driver.NameOrFallback(),
-                    Direction = "outbound",
-                    Text = text,
-                    IsRead = true,
-                    CreatedUtc = DateTimeOffset.UtcNow
-                });
+                    messageStore.Add(new DispatchMessage
+                    {
+                        GuildId = guildId,
+                        DriverDiscordUserId = driverId,
+                        DriverName = driverName,
+                        Direction = "outbound",
+                        Text = text,
+                        IsRead = true,
+                        CreatedUtc = DateTimeOffset.UtcNow
+                    });
 
-                if (ok)
                     sent++;
+                }
+                else
+                {
+                    failed.Add(new
+                    {
+                        driverDiscordUserId = driverId,
+                        driverName,
+                        error = send.Reason
+                    });
+                }
             }
 
-            return Results.Ok(new { ok = true, sent });
+            return Results.Ok(new
+            {
+                ok = sent > 0,
+                sent,
+                failedCount = failed.Count,
+                failed
+            });
         });
 
         app.MapPost("/api/management/message/selected", async (HttpContext ctx) =>
@@ -387,13 +410,14 @@ public static class ManagementRoutes
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
             var sent = 0;
+            var failed = new List<object>();
 
             foreach (var id in ids)
             {
                 lookup.TryGetValue(id, out var driver);
                 var name = driver?.NameOrFallback() ?? id;
 
-                var ok = await SendDispatchMessageAsync(
+                var send = await SendDispatchMessageAsync(
                     services,
                     dataDir,
                     guildId,
@@ -401,22 +425,39 @@ public static class ManagementRoutes
                     name,
                     text);
 
-                messageStore.Add(new DispatchMessage
+                if (send.Success)
                 {
-                    GuildId = guildId,
-                    DriverDiscordUserId = id,
-                    DriverName = name,
-                    Direction = "outbound",
-                    Text = text,
-                    IsRead = true,
-                    CreatedUtc = DateTimeOffset.UtcNow
-                });
+                    messageStore.Add(new DispatchMessage
+                    {
+                        GuildId = guildId,
+                        DriverDiscordUserId = id,
+                        DriverName = name,
+                        Direction = "outbound",
+                        Text = text,
+                        IsRead = true,
+                        CreatedUtc = DateTimeOffset.UtcNow
+                    });
 
-                if (ok)
                     sent++;
+                }
+                else
+                {
+                    failed.Add(new
+                    {
+                        driverDiscordUserId = id,
+                        driverName = name,
+                        error = send.Reason
+                    });
+                }
             }
 
-            return Results.Ok(new { ok = true, sent });
+            return Results.Ok(new
+            {
+                ok = sent > 0,
+                sent,
+                failedCount = failed.Count,
+                failed
+            });
         });
     }
 
@@ -431,7 +472,7 @@ public static class ManagementRoutes
         var liveMap = await LoadLiveTelemetryMapAsync(dataDir, guildId);
         var convoMap = messageStore.ListRecentConversations(guildId, 500)
             .GroupBy(x => x.DriverDiscordUserId, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key ?? string.Empty, g => g.First(), StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         var drivers = new Dictionary<string, ManagementDriverDto>(StringComparer.OrdinalIgnoreCase);
 
@@ -646,16 +687,51 @@ public static class ManagementRoutes
             if (channel is not SocketTextChannel textChannel)
                 return new();
 
-            var messages = await textChannel.GetMessagesAsync(50).FlattenAsync();
+            var messages = await textChannel.GetMessagesAsync(100).FlattenAsync();
+            var list = new List<Dictionary<string, object>>();
 
-            return messages.Select(m => new Dictionary<string, object>
+            foreach (var m in messages.OrderByDescending(x => x.Timestamp.UtcDateTime))
             {
-                ["id"] = $"DISCORD-{m.Id}",
-                ["title"] = m.Content.Split('\n').FirstOrDefault() ?? "Announcement",
-                ["body"] = m.Content,
-                ["sentUtc"] = m.Timestamp.UtcDateTime,
-                ["source"] = "discord"
-            }).ToList();
+                var title = "";
+                var body = "";
+
+                if (!string.IsNullOrWhiteSpace(m.Content))
+                {
+                    var parts = m.Content.Split('\n', 2);
+                    title = parts.FirstOrDefault()?.Trim() ?? "";
+                    body = m.Content.Trim();
+                }
+
+                if ((string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(body)) && m.Embeds != null && m.Embeds.Count > 0)
+                {
+                    var embed = m.Embeds.First();
+                    title = string.IsNullOrWhiteSpace(title) ? (embed.Title ?? "Announcement") : title;
+
+                    if (string.IsNullOrWhiteSpace(body))
+                    {
+                        body = embed.Description ?? "";
+
+                        if (string.IsNullOrWhiteSpace(body) && embed.Fields != null && embed.Fields.Any())
+                        {
+                            body = string.Join("\n", embed.Fields.Select(f => $"{f.Name}: {f.Value}"));
+                        }
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(body))
+                    continue;
+
+                list.Add(new Dictionary<string, object>
+                {
+                    ["id"] = $"DISCORD-{m.Id}",
+                    ["title"] = string.IsNullOrWhiteSpace(title) ? "Announcement" : title,
+                    ["body"] = body,
+                    ["sentUtc"] = m.Timestamp.UtcDateTime,
+                    ["source"] = "discord"
+                });
+            }
+
+            return list;
         }
         catch
         {
@@ -664,106 +740,140 @@ public static class ManagementRoutes
     }
 
     private static async Task<object> PostAnnouncementToDiscord(
-    BotServices services,
-    string dataDir,
-    string guildId,
-    Dictionary<string, object> body)
-{
-    try
+        BotServices services,
+        string dataDir,
+        string guildId,
+        Dictionary<string, object> body)
     {
-        var settings = services.DispatchStore?.Get(guildId);
-
-        var title = Get(body, "title") ?? "Announcement";
-        var text = Get(body, "body") ?? "";
-        var msg = $"📢 **{title}**\n\n{text}";
-
-        // ✅ 1. TRY WEBHOOK FIRST (MOST RELIABLE)
-        if (!string.IsNullOrWhiteSpace(settings?.AnnouncementWebhookUrl))
+        try
         {
-            using var http = new HttpClient();
-            var payload = new { content = msg };
+            var settings = services.DispatchStore?.Get(guildId);
 
-            var res = await http.PostAsJsonAsync(settings.AnnouncementWebhookUrl, payload);
+            var title = Get(body, "title") ?? "Announcement";
+            var text = Get(body, "body") ?? "";
+            var msg = $"📢 **{title}**\n\n{text}";
+
+            if (!string.IsNullOrWhiteSpace(settings?.AnnouncementWebhookUrl))
+            {
+                using var http = new HttpClient();
+                var payload = new { content = msg };
+
+                var res = await http.PostAsJsonAsync(settings.AnnouncementWebhookUrl, payload);
+
+                return new
+                {
+                    posted = res.IsSuccessStatusCode,
+                    via = "webhook",
+                    status = res.StatusCode.ToString()
+                };
+            }
+
+            var channel = await ResolveDiscordTargetChannelAsync(
+                services,
+                dataDir,
+                guildId,
+                preferAnnouncement: true);
+
+            if (channel is not IMessageChannel messageChannel)
+                return new { posted = false, reason = "ChannelNotFound" };
+
+            var sent = await messageChannel.SendMessageAsync(msg);
 
             return new
             {
-                posted = res.IsSuccessStatusCode,
-                via = "webhook",
-                status = res.StatusCode.ToString()
+                posted = true,
+                via = "channel",
+                messageId = sent.Id
             };
         }
-
-        // ✅ 2. FALLBACK TO CHANNEL
-        var channel = await ResolveDiscordTargetChannelAsync(
-            services,
-            dataDir,
-            guildId,
-            preferAnnouncement: true);
-
-        if (channel is not IMessageChannel messageChannel)
-            return new { posted = false, reason = "ChannelNotFound" };
-
-        var sent = await messageChannel.SendMessageAsync(msg);
-
-        return new
+        catch (Exception ex)
         {
-            posted = true,
-            via = "channel",
-            messageId = sent.Id
-        };
-    }
-    catch (Exception ex)
-    {
-        return new
-        {
-            posted = false,
-            error = ex.Message
-        };
-    }
-}
-
-    private static async Task<bool> SendDispatchMessageAsync(
-    BotServices services,
-    string dataDir,
-    string guildId,
-    string driverDiscordUserId,
-    string driverName,
-    string text)
-{
-    try
-    {
-        var settings = services.DispatchStore?.Get(guildId);
-
-        var msg = $"📨 **Dispatch for {driverName}**\n\n{text}";
-
-        // ✅ 1. TRY WEBHOOK FIRST
-        if (!string.IsNullOrWhiteSpace(settings?.DispatchWebhookUrl))
-        {
-            using var http = new HttpClient();
-            var payload = new { content = msg };
-
-            var res = await http.PostAsJsonAsync(settings.DispatchWebhookUrl, payload);
-            return res.IsSuccessStatusCode;
+            return new
+            {
+                posted = false,
+                error = ex.Message
+            };
         }
-
-        // ✅ 2. FALLBACK TO CHANNEL
-        var channel = await ResolveDiscordTargetChannelAsync(
-            services,
-            dataDir,
-            guildId,
-            preferAnnouncement: false);
-
-        if (channel is not IMessageChannel messageChannel)
-            return false;
-
-        await messageChannel.SendMessageAsync(msg);
-        return true;
     }
-    catch
+
+    private static async Task<(bool Success, string Reason)> SendDispatchMessageAsync(
+        BotServices services,
+        string dataDir,
+        string guildId,
+        string driverDiscordUserId,
+        string driverName,
+        string text)
     {
-        return false;
+        try
+        {
+            if (services.Client == null)
+                return (false, "ClientNull");
+
+            if (string.IsNullOrWhiteSpace(guildId))
+                return (false, "MissingGuildId");
+
+            if (string.IsNullOrWhiteSpace(driverDiscordUserId))
+                return (false, "MissingDriverDiscordUserId");
+
+            if (string.IsNullOrWhiteSpace(text))
+                return (false, "MissingText");
+
+            var guild = DiscordThreadService.ResolveGuild(services.Client, guildId);
+            if (guild == null)
+                return (false, "GuildNotFound");
+
+            if (!ulong.TryParse(driverDiscordUserId, out var driverUserId) || driverUserId == 0)
+                return (false, "InvalidDriverDiscordUserId");
+
+            var displayName = string.IsNullOrWhiteSpace(driverName) ? driverDiscordUserId : driverName.Trim();
+
+            var threadId = await DiscordThreadService.EnsureDriverThreadAsync(
+                services.DispatchStore,
+                services.ThreadStore,
+                guild,
+                driverUserId,
+                displayName);
+
+            if (threadId != 0)
+            {
+                var threadChannel = await DiscordThreadService.ResolveChannelAsync(services.Client, threadId);
+                if (threadChannel != null)
+                {
+                    await DiscordThreadService.EnsureThreadOpenAsync(threadChannel);
+                    await threadChannel.SendMessageAsync($"📨 **Dispatch for {displayName}**\n\n{text}");
+                    return (true, "Thread");
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(services.DispatchStore?.Get(guildId)?.DispatchWebhookUrl))
+            {
+                using var http = new HttpClient();
+                var payload = new { content = $"📨 **Dispatch for {displayName}**\n\n{text}" };
+
+                var res = await http.PostAsJsonAsync(services.DispatchStore.Get(guildId).DispatchWebhookUrl, payload);
+                if (res.IsSuccessStatusCode)
+                    return (true, "Webhook");
+            }
+
+            var fallbackChannel = await ResolveDiscordTargetChannelAsync(
+                services,
+                dataDir,
+                guildId,
+                preferAnnouncement: false);
+
+            if (fallbackChannel is IMessageChannel messageChannel)
+            {
+                await messageChannel.SendMessageAsync($"📨 **Dispatch for {displayName}**\n\n{text}");
+                return (true, "FallbackChannel");
+            }
+
+            return (false, "DispatchChannelNotFound");
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
     }
-}
 
     private static async Task<IChannel?> ResolveDiscordTargetChannelAsync(
         BotServices services,
@@ -771,7 +881,6 @@ public static class ManagementRoutes
         string guildId,
         bool preferAnnouncement)
     {
-        // 1) DispatchStore first
         var dispatchStoreIds = ReadDispatchStoreChannelIds(services.DispatchStore, guildId);
 
         var preferredStoreId = preferAnnouncement
@@ -785,7 +894,6 @@ public static class ManagementRoutes
                 return ch;
         }
 
-        // 2) settings_<guildId>.json next
         var settingsIds = await ReadSettingsDiscordAsync(dataDir, guildId);
 
         var preferredSettingsId = preferAnnouncement
@@ -799,7 +907,6 @@ public static class ManagementRoutes
                 return ch;
         }
 
-        // 3) channel-name fallback
         if (!ulong.TryParse(guildId, out var guildUlong))
             return null;
 
