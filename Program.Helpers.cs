@@ -8,6 +8,7 @@ using Discord;
 using Discord.Rest;
 using Discord.WebSocket;
 using Microsoft.AspNetCore.Http;
+using OverWatchELD.VtcBot.Services;
 using OverWatchELD.VtcBot.Commands;
 using OverWatchELD.VtcBot.Models;
 using OverWatchELD.VtcBot.Stores;
