@@ -824,7 +824,6 @@ public static class ManagementRoutes
                 : driverName.Trim();
 
             var settings = services.DispatchStore?.Get(guildId);
-
             var dispatchChannelIdText = settings?.DispatchChannelId ?? "";
 
             SocketTextChannel? dispatchTextChannel = null;
@@ -1211,37 +1210,7 @@ public static class ManagementRoutes
     {
         if (AuthGuard.IsLoggedIn(ctx))
         {
-            string guildId = "";
-
-            if (ctx.Request.Query.TryGetValue("guildId", out var qv))
-                guildId = (qv.ToString() ?? "").Trim();
-
-            if (string.IsNullOrWhiteSpace(guildId))
-            {
-                try
-                {
-                    ctx.Request.EnableBuffering();
-
-                    using var reader = new StreamReader(ctx.Request.Body, leaveOpen: true);
-                    var raw = reader.ReadToEnd();
-                    ctx.Request.Body.Position = 0;
-
-                    if (!string.IsNullOrWhiteSpace(raw))
-                    {
-                        using var doc = JsonDocument.Parse(raw);
-                        if (doc.RootElement.ValueKind == JsonValueKind.Object &&
-                            doc.RootElement.TryGetProperty("guildId", out var p))
-                        {
-                            guildId = (p.ToString() ?? "").Trim();
-                        }
-                    }
-                }
-                catch
-                {
-                    try { ctx.Request.Body.Position = 0; } catch { }
-                }
-            }
-
+            var guildId = ReadGuildIdFromRequest(ctx);
             if (!string.IsNullOrWhiteSpace(guildId) && AuthGuard.CanManageGuild(ctx, guildId))
                 return true;
         }
@@ -1249,6 +1218,41 @@ public static class ManagementRoutes
         var key = Environment.GetEnvironmentVariable("MANAGEMENT_API_KEY");
         var header = ctx.Request.Headers["X-API-Key"].FirstOrDefault();
         return !string.IsNullOrWhiteSpace(key) && key == header;
+    }
+
+    private static string ReadGuildIdFromRequest(HttpContext ctx)
+    {
+        try
+        {
+            if (ctx.Request.Query.TryGetValue("guildId", out var qv))
+            {
+                var q = (qv.ToString() ?? "").Trim();
+                if (!string.IsNullOrWhiteSpace(q))
+                    return q;
+            }
+
+            ctx.Request.EnableBuffering();
+
+            using var reader = new StreamReader(ctx.Request.Body, leaveOpen: true);
+            var raw = reader.ReadToEnd();
+            ctx.Request.Body.Position = 0;
+
+            if (!string.IsNullOrWhiteSpace(raw))
+            {
+                using var doc = JsonDocument.Parse(raw);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                    doc.RootElement.TryGetProperty("guildId", out var p))
+                {
+                    return (p.ToString() ?? "").Trim();
+                }
+            }
+        }
+        catch
+        {
+            try { ctx.Request.Body.Position = 0; } catch { }
+        }
+
+        return "";
     }
 
     private static string? GetJsonString(JsonElement item, string propertyName)
