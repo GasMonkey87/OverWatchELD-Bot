@@ -1206,14 +1206,10 @@ public static class ManagementRoutes
         return DateTime.TryParse(Get(d, "sentUtc"), out var dt) ? dt : DateTime.MinValue;
     }
 
-    private static bool IsAuthorized(HttpContext ctx)
+        private static bool IsAuthorized(HttpContext ctx)
     {
         if (AuthGuard.IsLoggedIn(ctx))
-        {
-            var guildId = ReadGuildIdFromRequest(ctx);
-            if (!string.IsNullOrWhiteSpace(guildId) && AuthGuard.CanManageGuild(ctx, guildId))
-                return true;
-        }
+            return true;
 
         var key = Environment.GetEnvironmentVariable("MANAGEMENT_API_KEY");
         var header = ctx.Request.Headers["X-API-Key"].FirstOrDefault();
