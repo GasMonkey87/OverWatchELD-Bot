@@ -408,7 +408,7 @@
     }
   }
 
-  async function sendFleetMessage() {
+    async function sendFleetMessage() {
     if (!fleetMessageStatus) return;
 
     fleetMessageStatus.textContent = "";
@@ -418,19 +418,40 @@
       return;
     }
 
-    const { res, data } = await postJson("/api/management/message/fleet", {
-      guildId,
-      text
-    });
+    fleetMessageStatus.textContent = "Sending fleet message...";
 
-    if (!res.ok || !data?.ok) {
-      fleetMessageStatus.textContent = data?.error || "Failed to send fleet message.";
-      return;
+    try {
+      const res = await fetch("/api/management/message/fleet", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "fetch"
+        },
+        body: JSON.stringify({
+          guildId,
+          text
+        })
+      });
+
+      let data = null;
+      try { data = await res.json(); } catch {}
+
+      if (!res.ok || !data?.ok) {
+        fleetMessageStatus.textContent =
+          (data?.error || `Failed to send fleet message. HTTP ${res.status}`);
+        console.error("fleet send failed", res.status, data);
+        return;
+      }
+
+      fleetMessageText.value = "";
+      fleetMessageStatus.textContent =
+        `Fleet message sent to ${data.sent ?? 0} drivers.`;
+      await loadSummary();
+    } catch (err) {
+      console.error(err);
+      fleetMessageStatus.textContent = "Fleet message request failed.";
     }
-
-    fleetMessageText.value = "";
-    fleetMessageStatus.textContent = `Fleet message sent to ${data.sent ?? 0} drivers.`;
-    await loadSummary();
   }
 
   async function loadAnnouncements() {
@@ -780,10 +801,12 @@
     });
   }
 
-  if (fleetMessageForm) {
+    if (fleetMessageForm) {
     fleetMessageForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+      e.stopPropagation();
       await sendFleetMessage();
+      return false;
     });
   }
 
