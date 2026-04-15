@@ -358,7 +358,7 @@ public static class ManagementRoutes
                         GuildId = guildId,
                         DriverDiscordUserId = driverId,
                         DriverName = driverName,
-                        Direction = "outbound",
+                        Direction = "to_driver",
                         Text = text,
                         IsRead = true,
                         CreatedUtc = DateTimeOffset.UtcNow
@@ -432,7 +432,7 @@ public static class ManagementRoutes
                         GuildId = guildId,
                         DriverDiscordUserId = id,
                         DriverName = name,
-                        Direction = "outbound",
+                        Direction = "to_driver",
                         Text = text,
                         IsRead = true,
                         CreatedUtc = DateTimeOffset.UtcNow
