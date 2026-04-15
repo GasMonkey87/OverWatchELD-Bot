@@ -360,7 +360,7 @@ public static class ManagementRoutes
                         DriverName = driverName,
                         Direction = "to_driver",
                         Text = text,
-                        IsRead = true,
+                        IsRead = false,
                         CreatedUtc = DateTimeOffset.UtcNow
                     });
 
@@ -434,7 +434,7 @@ public static class ManagementRoutes
                         DriverName = name,
                         Direction = "to_driver",
                         Text = text,
-                        IsRead = true,
+                        IsRead = false,
                         CreatedUtc = DateTimeOffset.UtcNow
                     });
 
