@@ -9,7 +9,6 @@
   const els = {
     serverSelect: document.getElementById("serverSelect"),
     pairCode: document.getElementById("pairCode"),
-    connectDiscordBtn: document.getElementById("connectDiscordBtn"),
     enterBtn: document.getElementById("enterVtcBtn"),
     statusText: document.getElementById("statusText"),
     helpText: document.getElementById("helpText"),
@@ -19,7 +18,7 @@
   function setStatus(message, isError) {
     if (!els.statusText) return;
     els.statusText.textContent = message || "";
-    els.statusText.style.color = isError ? "#ffb4b4" : "#dfe9f8";
+    els.statusText.style.color = isError ? "#ffb4b4" : "#d7ffeb";
   }
 
   function setHelp(message) {
@@ -30,15 +29,6 @@
   function getQueryParam(name) {
     const url = new URL(window.location.href);
     return url.searchParams.get(name) || "";
-  }
-
-  function readStoredJson(key) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
   }
 
   function writeStoredJson(key, value) {
@@ -53,7 +43,7 @@
     const response = await fetch(url, {
       credentials: "include",
       headers: {
-        "Accept": "application/json",
+        Accept: "application/json",
         ...(options && options.body ? { "Content-Type": "application/json" } : {}),
       },
       ...options,
@@ -67,19 +57,47 @@
     }
 
     if (!response.ok) {
-      const error = (data && (data.error || data.message || data.title)) || `HTTP ${response.status}`;
+      const error = (data && (data.error || data.message || data.title || data.detail)) || `HTTP ${response.status}`;
       throw new Error(error);
     }
 
     return data;
   }
 
+  function normalizeArray(result) {
+    if (!result) return [];
+    if (Array.isArray(result)) return result;
+    if (Array.isArray(result.data)) return result.data;
+    if (Array.isArray(result.items)) return result.items;
+    if (Array.isArray(result.servers)) return result.servers;
+    if (Array.isArray(result.guilds)) return result.guilds;
+    if (Array.isArray(result.results)) return result.results;
+    return [];
+  }
+
+  function normalizeUser(result) {
+    if (!result) return null;
+    if (result.data && typeof result.data === "object") return result.data;
+    if (result.user && typeof result.user === "object") return result.user;
+    return result;
+  }
+
+  function normalizeServer(server) {
+    const guildId = server.guildId || server.id || server.discordGuildId || server.serverId || "";
+    const vtcName = server.vtcName || server.name || server.guildName || server.serverName || "Unnamed VTC";
+    return {
+      raw: server,
+      guildId,
+      vtcName,
+    };
+  }
+
   function renderUser() {
     if (!els.userChip) return;
 
-    if (state.me && (state.me.username || state.me.name)) {
-      const username = state.me.username || state.me.name;
-      els.userChip.textContent = `Connected as ${username}`;
+    if (state.me && (state.me.username || state.me.global_name || state.me.name)) {
+      const username = state.me.username || state.me.global_name || state.me.name;
+      els.userChip.innerHTML = '<span class="status-dot"></span> Connected as ' + username;
       els.userChip.style.display = "inline-flex";
       return;
     }
@@ -97,13 +115,13 @@
     placeholder.value = "";
     placeholder.textContent = state.servers.length
       ? "Select your VTC..."
-      : "Login with Discord to load your VTCs";
+      : "No VTCs found for this account";
     els.serverSelect.appendChild(placeholder);
 
     for (const server of state.servers) {
       const opt = document.createElement("option");
-      opt.value = server.guildId || server.id || "";
-      opt.textContent = server.vtcName || server.name || server.guildName || "Unnamed VTC";
+      opt.value = server.guildId || "";
+      opt.textContent = server.vtcName || "Unnamed VTC";
       els.serverSelect.appendChild(opt);
     }
 
@@ -112,45 +130,63 @@
     }
   }
 
-  async function loadMe() {
-    try {
-      const me = await fetchJson("/api/auth/me");
-      state.me = me && (me.data || me.user || me);
-      renderUser();
-      return true;
-    } catch {
-      state.me = null;
-      renderUser();
-      return false;
+  async function tryAuthEndpoints() {
+    const endpoints = [
+      "/api/auth/me",
+      "/api/discord/me",
+      "/auth/me",
+      "/api/me"
+    ];
+
+    for (const endpoint of endpoints) {
+      try {
+        const result = await fetchJson(endpoint);
+        const user = normalizeUser(result);
+        if (user) {
+          state.me = user;
+          return true;
+        }
+      } catch {
+        // try next
+      }
     }
+
+    state.me = null;
+    return false;
   }
 
-  async function loadServers() {
-    setStatus("Loading available VTCs...", false);
+  async function tryServerEndpoints() {
+    const endpoints = [
+      "/api/vtc/servers",
+      "/api/discord/servers",
+      "/api/discord/guilds",
+      "/api/vtc/guilds"
+    ];
 
-    const result = await fetchJson("/api/vtc/servers");
-    const items = (result && (result.data || result.servers || result.items)) || [];
-
-    state.servers = Array.isArray(items) ? items : [];
-    renderServers();
-
-    if (!state.servers.length) {
-      setStatus("No VTCs were found for this Discord account yet.", true);
-      setHelp("Join the correct VTC Discord server first, then come back and refresh this page.");
-      return;
+    for (const endpoint of endpoints) {
+      try {
+        const result = await fetchJson(endpoint);
+        const items = normalizeArray(result).map(normalizeServer).filter(x => x.guildId || x.vtcName);
+        if (items.length) {
+          state.servers = items;
+          return { endpoint, count: items.length };
+        }
+      } catch {
+        // try next
+      }
     }
 
-    setStatus("Select your VTC and enter your pairing code.", false);
-    setHelp("Your pairing code is generated from the bot inside your VTC Discord server.");
+    state.servers = [];
+    return null;
   }
 
   function findSelectedServer() {
     const guildId = els.serverSelect ? els.serverSelect.value : "";
-    return state.servers.find(x => (x.guildId || x.id || "") === guildId) || null;
+    return state.servers.find(x => x.guildId === guildId) || null;
   }
 
   async function claimPairing() {
-    const code = (els.pairCode && els.pairCode.value || "").trim();
+    const code = ((els.pairCode && els.pairCode.value) || "").trim();
     const selectedServer = findSelectedServer();
 
     if (!state.me) {
@@ -170,12 +206,11 @@
 
     setStatus("Linking your Discord account to the selected VTC...", false);
 
-    const url = `/api/vtc/pair/claim?code=${encodeURIComponent(code)}`;
-    const result = await fetchJson(url, { method: "GET" });
-    const pairing = result && (result.data || result);
+    const result = await fetchJson(`/api/vtc/pair/claim?code=${encodeURIComponent(code)}`, { method: "GET" });
+    const pairing = normalizeUser(result) || result;
 
-    const returnedGuildId = pairing && (pairing.guildId || pairing.discordGuildId || "");
-    const selectedGuildId = selectedServer.guildId || selectedServer.id || "";
+    const returnedGuildId = pairing.guildId || pairing.discordGuildId || "";
+    const selectedGuildId = selectedServer.guildId || "";
 
     if (returnedGuildId && selectedGuildId && returnedGuildId !== selectedGuildId) {
       throw new Error("That pairing code belongs to a different VTC. Please choose the matching VTC or generate a new code.");
@@ -185,9 +220,9 @@
 
     writeStoredJson("oweld.connectedVtc", {
       guildId: pairing.guildId || selectedGuildId,
-      vtcName: pairing.vtcName || selectedServer.vtcName || selectedServer.name || "",
+      vtcName: pairing.vtcName || selectedServer.vtcName || "",
       discordUserId: pairing.discordUserId || state.me.id || "",
-      discordUsername: pairing.discordUsername || state.me.username || "",
+      discordUsername: pairing.discordUsername || state.me.username || state.me.name || "",
       linkedAtUtc: new Date().toISOString(),
     });
 
@@ -195,24 +230,27 @@
 
     const portalUrl = new URL("/portal.html", window.location.origin);
     portalUrl.searchParams.set("guildId", pairing.guildId || selectedGuildId);
-    if (pairing.vtcName || selectedServer.vtcName || selectedServer.name) {
-      portalUrl.searchParams.set("vtcName", pairing.vtcName || selectedServer.vtcName || selectedServer.name);
+    if (pairing.vtcName || selectedServer.vtcName) {
+      portalUrl.searchParams.set("vtcName", pairing.vtcName || selectedServer.vtcName);
     }
 
     window.location.href = portalUrl.toString();
   }
 
   function handleDiscordLogin() {
-    const returnUrl = `${window.location.origin}/connect-vtc.html`;
+    const returnUrl = `${window.location.origin}/connect-vtc.html?auth=1`;
     window.location.href = `/auth/discord/login?returnUrl=${encodeURIComponent(returnUrl)}`;
   }
 
   async function boot() {
     renderServers();
 
-    if (els.connectDiscordBtn) {
-      els.connectDiscordBtn.addEventListener("click", handleDiscordLogin);
-    }
+    document.querySelectorAll("#connectDiscordBtn").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        handleDiscordLogin();
+      });
+    });
 
     if (els.enterBtn) {
       els.enterBtn.addEventListener("click", async function () {
@@ -230,24 +268,37 @@
       });
     }
 
-    const success = getQueryParam("auth") || getQueryParam("connected");
-    if (success) {
+    if (getQueryParam("auth") || getQueryParam("connected")) {
       setStatus("Discord connected. Loading your available VTCs...", false);
     } else {
       setStatus("Connect Discord to load your available VTCs.", false);
     }
 
-    const isLoggedIn = await loadMe();
+    const isLoggedIn = await tryAuthEndpoints();
+    renderUser();
+
     if (!isLoggedIn) {
-      setHelp("Use the Connect Discord button to sign in first.");
+      setHelp("You authenticated, but the site could not read your logged-in Discord session. Check your auth callback and cookie/session settings.");
+      setStatus("Discord login was not detected on this page.", true);
       return;
     }
 
     try {
-      await loadServers();
+      const loaded = await tryServerEndpoints();
+      renderServers();
+
+      if (!loaded || !state.servers.length) {
+        setStatus("No VTCs were found for this Discord account.", true);
+        setHelp("Most likely causes: the endpoint is returning an empty list, the site is hitting the wrong endpoint name, or this Discord account is not in a bot-enabled VTC yet.");
+        return;
+      }
+
+      setStatus(`Loaded ${loaded.count} VTC${loaded.count === 1 ? "" : "s"}. Select one and enter your pairing code.`, false);
+      setHelp("If your VTC is missing, make sure the bot is in that Discord server and you are logged in with the same Discord account used in the VTC.");
     } catch (error) {
+      renderServers();
       setStatus(error && error.message ? error.message : "Could not load VTC list.", true);
-      setHelp("Check that your Discord login is valid and your account belongs to a VTC server using the bot.");
+      setHelp("Check that your Discord login is valid and your server list endpoint is returning JSON.");
     }
   }
 
