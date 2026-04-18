@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OverWatch ELD | VTC Portal</title>
+  <title>OverWatch ELD | Personalized VTC Portal</title>
   <style>
     :root {
       --bg: #08111d;
@@ -69,15 +69,26 @@
       flex-wrap: wrap;
     }
 
-    .brand-icon {
-      width: 46px;
-      height: 46px;
+    .brand-icon,
+    .brand-logo {
+      width: 50px;
+      height: 50px;
       border-radius: 14px;
       display: grid;
       place-items: center;
+      overflow: hidden;
       background: linear-gradient(135deg, var(--accent), #1e5faf);
       box-shadow: 0 10px 26px rgba(77,163,255,.35);
       font-size: 22px;
+      flex: 0 0 50px;
+    }
+
+    .brand-logo img,
+    .hero-logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
     }
 
     .brand-title {
@@ -185,10 +196,28 @@
       margin-bottom: 18px;
     }
 
+    .hero-head {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .hero-logo {
+      width: 74px;
+      height: 74px;
+      border-radius: 18px;
+      overflow: hidden;
+      background: linear-gradient(135deg, var(--accent), #1e5faf);
+      box-shadow: 0 14px 30px rgba(77,163,255,.25);
+      flex: 0 0 74px;
+    }
+
     h1 {
-      font-size: clamp(2.25rem, 5vw, 4rem);
+      font-size: clamp(2.2rem, 5vw, 4rem);
       line-height: 1.04;
-      margin: 0 0 14px;
+      margin: 0 0 10px;
       letter-spacing: -1.25px;
     }
 
@@ -320,7 +349,8 @@
     .feature-card,
     .announce-item,
     .activity-item,
-    .recruit-card {
+    .recruit-card,
+    .identity-card {
       padding: 18px;
       border-radius: 18px;
       background: rgba(255,255,255,.04);
@@ -330,7 +360,8 @@
     .feature-card h3,
     .announce-item strong,
     .activity-item strong,
-    .recruit-card h3 {
+    .recruit-card h3,
+    .identity-card h3 {
       display: block;
       margin: 0 0 8px;
       font-size: 1.02rem;
@@ -339,7 +370,8 @@
     .feature-card p,
     .announce-item p,
     .activity-item p,
-    .recruit-card p {
+    .recruit-card p,
+    .identity-card p {
       margin: 0;
       color: var(--muted);
       font-size: .94rem;
@@ -347,7 +379,8 @@
 
     .announce-list,
     .activity-list,
-    .recruit-grid {
+    .recruit-grid,
+    .identity-grid {
       display: grid;
       gap: 14px;
     }
@@ -393,10 +426,11 @@
     <header class="topbar">
       <div class="container topbar-inner">
         <div class="brand">
-          <div class="brand-icon">🚛</div>
+          <div class="brand-icon" id="brandIcon">🚛</div>
+          <div class="brand-logo" id="brandLogo" style="display:none;"><img id="brandLogoImg" alt="VTC logo" /></div>
           <div>
             <div class="brand-title"><span id="navVtcName">Your VTC</span> Portal</div>
-            <div class="brand-sub">Company hub, announcements, driver access, and fleet community</div>
+            <div class="brand-sub">Your personalized company website inside OverWatch ELD</div>
           </div>
           <div id="userChip" class="pill" style="display:none;"><span class="dot"></span> Connected</div>
         </div>
@@ -413,10 +447,16 @@
       <section class="hero">
         <div class="container hero-grid">
           <div class="panel hero-copy">
-            <div class="eyebrow">Connected VTC web portal</div>
-            <h1>Welcome to <span id="heroVtcName">your VTC</span>.</h1>
+            <div class="eyebrow">Personalized member portal</div>
+            <div class="hero-head">
+              <div class="hero-logo" id="heroLogo" style="display:none;"><img id="heroLogoImg" alt="VTC logo" /></div>
+              <div>
+                <h1>Welcome back to <span id="heroVtcName">your VTC</span>.</h1>
+                <div style="color:var(--muted); font-weight:600;">Signed in as <span id="memberDisplayName">Driver</span></div>
+              </div>
+            </div>
             <p class="lead">
-              This portal should feel like the official website for your company inside OverWatch ELD. It can highlight your VTC identity, announcements, driver tools, recruiting information, and the core places members go after logging in.
+              This page is personalized to your selected VTC so it feels like the official website for your company after login. Your company name, role, branding, and portal messaging all adapt to the VTC you entered through the Connect VTC flow.
             </p>
 
             <div class="hero-actions">
@@ -428,39 +468,39 @@
             <div class="stats-grid">
               <div class="stat-card">
                 <strong id="selectedVtcName">No VTC Selected</strong>
-                <span>Current company connected to this portal</span>
+                <span>Your current company</span>
               </div>
               <div class="stat-card">
                 <strong id="driverRoleText">Driver</strong>
-                <span>Your current access role inside this VTC</span>
+                <span>Your role in this VTC</span>
               </div>
               <div class="stat-card">
-                <strong id="portalModeText">Live Portal</strong>
-                <span>Connected member portal status</span>
+                <strong id="portalModeText">Member Portal</strong>
+                <span>Current access and portal mode</span>
               </div>
             </div>
           </div>
 
           <aside class="panel vtc-summary">
             <div class="summary-card">
-              <h3>Featured company</h3>
+              <h3>Company identity</h3>
               <div class="summary-value" id="summaryVtcName">Loading...</div>
-              <p id="summaryVtcSub">Checking your selected company and connected account details.</p>
+              <p id="summaryVtcSub">Reading your connected company and guild details.</p>
             </div>
 
             <div class="summary-card">
-              <h3>Member access</h3>
-              <p id="quickStatusText">Checking your authenticated session and portal access.</p>
+              <h3>Your member profile</h3>
+              <p id="quickStatusText">Checking your authenticated session and VTC access.</p>
               <div class="tag-row">
                 <span class="tag" id="tagAccount">Discord Linked</span>
                 <span class="tag" id="tagRole">Driver Access</span>
-                <span class="tag gold-tag" id="tagPortalState">VTC Website</span>
+                <span class="tag gold-tag" id="tagPortalState">Personalized Portal</span>
               </div>
             </div>
 
             <div class="summary-card">
-              <h3>Portal purpose</h3>
-              <p>Turn this into the main logged-in VTC website where drivers can check company updates, open dispatch tools, see their community identity, and navigate to the systems they use every day.</p>
+              <h3>Personalized portal goal</h3>
+              <p id="personalizedCopy">This page should look and feel like the logged-in web home for your VTC, not just a generic dashboard.</p>
             </div>
           </aside>
         </div>
@@ -469,40 +509,40 @@
       <section class="section">
         <div class="container grid-2">
           <div class="panel section-panel">
-            <h2 class="section-title">Inside this VTC</h2>
-            <p class="section-copy">Make the portal feel like a real trucking company homepage after login.</p>
+            <h2 class="section-title">Inside <span id="insideVtcName">your VTC</span></h2>
+            <p class="section-copy">These sections should read like they belong to your actual company.</p>
             <div class="cards-grid">
               <div class="feature-card">
-                <h3>Dispatch & Operations</h3>
-                <p>Launch the operational side of the VTC with routes, load communication, and active driver workflow tools.</p>
+                <h3><span id="opsVtcName">Your VTC</span> Operations</h3>
+                <p>Open dispatch, route communication, and daily member workflow tools for your company.</p>
               </div>
               <div class="feature-card">
-                <h3>Company Announcements</h3>
-                <p>Show official updates, event notices, company rules, and leadership posts in a visible portal feed.</p>
+                <h3><span id="annVtcName">Your VTC</span> Announcements</h3>
+                <p>See official updates, event notices, and leadership communication tied to your selected company.</p>
               </div>
               <div class="feature-card">
-                <h3>Driver Community</h3>
-                <p>Give members a company-focused space that feels like a real VTC website instead of just a utility dashboard.</p>
+                <h3>Member Community</h3>
+                <p>Give drivers a company-focused online home that feels like the real website of their VTC.</p>
               </div>
               <div class="feature-card">
-                <h3>Downloads & Tools</h3>
-                <p>Keep ELD resources, setup links, support info, and related downloads one click away.</p>
+                <h3>Resources & Tools</h3>
+                <p>Keep downloads, support links, and OverWatch ELD tools connected to the VTC experience.</p>
               </div>
             </div>
           </div>
 
           <div class="panel section-panel">
-            <h2 class="section-title">Latest company announcements</h2>
-            <p class="section-copy">This area can become the live announcement feed for your connected VTC.</p>
+            <h2 class="section-title">Latest from <span id="newsVtcName">your VTC</span></h2>
+            <p class="section-copy">This area can become the live announcement feed for your selected company.</p>
             <div class="announce-list" id="announcementList">
               <div class="announce-item">
-                <strong>Welcome to your VTC portal</strong>
-                <p>This page is now styled more like a company website for your selected VTC after login.</p>
+                <strong>Welcome to your personalized portal</strong>
+                <p>This portal is now written around your selected VTC so the page feels specific to your company.</p>
                 <div class="meta">Portal update</div>
               </div>
               <div class="announce-item">
-                <strong>Fleet news and events go here</strong>
-                <p>Use this section for recruitment notices, event reminders, company updates, and dispatch-wide information.</p>
+                <strong>Company updates go here</strong>
+                <p>Show VTC-specific announcements, event reminders, recruiting posts, and community notices.</p>
                 <div class="meta">Announcement placeholder</div>
               </div>
             </div>
@@ -513,39 +553,39 @@
       <section class="section">
         <div class="container grid-2">
           <div class="panel section-panel">
-            <h2 class="section-title">Member activity</h2>
-            <p class="section-copy">Guide members toward the next things they should do after entering the portal.</p>
-            <div class="activity-list">
-              <div class="activity-item">
-                <strong>Confirm your company</strong>
-                <p>Make sure the VTC name shown across the portal matches the company you intended to join.</p>
+            <h2 class="section-title">Your place in the company</h2>
+            <p class="section-copy">Make the portal feel tailored to the signed-in member.</p>
+            <div class="identity-grid">
+              <div class="identity-card">
+                <h3>Signed-in member</h3>
+                <p><span id="identityName">Driver</span> is currently connected to <span id="identityVtcName">your VTC</span>.</p>
               </div>
-              <div class="activity-item">
-                <strong>Open your main tools</strong>
-                <p>Use Dispatch, Messages, or Downloads as the core launch points for daily activity.</p>
+              <div class="identity-card">
+                <h3>Current role</h3>
+                <p>You are currently recognized as <span id="identityRole">Driver</span> inside this company portal.</p>
               </div>
-              <div class="activity-item">
-                <strong>Check company updates</strong>
-                <p>Review any notices, onboarding posts, or event announcements shared by leadership.</p>
+              <div class="identity-card">
+                <h3>Portal experience</h3>
+                <p id="identityModeCopy">Your portal view is tuned for member access and company information.</p>
               </div>
             </div>
           </div>
 
           <div class="panel section-panel">
-            <h2 class="section-title">Recruiting and community space</h2>
-            <p class="section-copy">This makes the portal feel like the real home page of the VTC after a member logs in.</p>
+            <h2 class="section-title">Community and recruiting</h2>
+            <p class="section-copy">Turn the post-login portal into a true VTC web presence.</p>
             <div class="recruit-grid">
               <div class="recruit-card">
-                <h3>Why join this VTC</h3>
-                <p>Use this space to show what makes the company stand out: culture, realism, dispatch structure, and activity.</p>
+                <h3>Why drive for <span id="whyVtcName">this VTC</span></h3>
+                <p>Use this area for company culture, realism, activity, and the identity that makes the VTC stand out.</p>
               </div>
               <div class="recruit-card">
                 <h3>Fleet standards</h3>
-                <p>Display expectations for professionalism, communication, event participation, and overall community involvement.</p>
+                <p>Display expectations for communication, professionalism, dispatch structure, and event participation.</p>
               </div>
               <div class="recruit-card">
                 <h3>Member resources</h3>
-                <p>Point drivers toward setup steps, support, company documents, and ELD tools from one location.</p>
+                <p>Point drivers to support, setup instructions, documents, and important company links from one place.</p>
               </div>
             </div>
           </div>
@@ -555,7 +595,7 @@
 
     <footer class="footer">
       <div class="container">
-        <strong style="color:#fff;" id="footerVtcName">Your VTC</strong> — connected company portal for announcements, community, and driver operations.
+        <strong style="color:#fff;" id="footerVtcName">Your VTC</strong> — personalized company portal for announcements, community, and driver operations.
       </div>
     </footer>
   </div>
@@ -575,6 +615,20 @@
       const userChip = document.getElementById("userChip");
       const tagRole = document.getElementById("tagRole");
       const tagPortalState = document.getElementById("tagPortalState");
+      const memberDisplayName = document.getElementById("memberDisplayName");
+      const identityName = document.getElementById("identityName");
+      const identityVtcName = document.getElementById("identityVtcName");
+      const identityRole = document.getElementById("identityRole");
+      const identityModeCopy = document.getElementById("identityModeCopy");
+      const personalizedCopy = document.getElementById("personalizedCopy");
+      const idsToFill = [
+        "insideVtcName", "opsVtcName", "annVtcName", "newsVtcName", "whyVtcName"
+      ];
+      const brandLogo = document.getElementById("brandLogo");
+      const brandLogoImg = document.getElementById("brandLogoImg");
+      const brandIcon = document.getElementById("brandIcon");
+      const heroLogo = document.getElementById("heroLogo");
+      const heroLogoImg = document.getElementById("heroLogoImg");
 
       function getQuery(name) {
         const url = new URL(window.location.href);
@@ -587,6 +641,15 @@
         let data = null;
         try { data = text ? JSON.parse(text) : null; } catch { data = null; }
         return { res, data };
+      }
+
+      function applyLogo(url) {
+        if (!url) return;
+        brandLogoImg.src = url;
+        heroLogoImg.src = url;
+        brandLogo.style.display = 'grid';
+        heroLogo.style.display = 'block';
+        brandIcon.style.display = 'none';
       }
 
       const guildId = getQuery("guildId");
@@ -610,6 +673,8 @@
       }
 
       const displayName = me.globalName || me.global_name || me.username || "Driver";
+      memberDisplayName.textContent = displayName;
+      identityName.textContent = displayName;
       userChip.innerHTML = '<span class="dot"></span> Connected as ' + displayName;
       userChip.style.display = 'inline-flex';
       portalStatusText.textContent = 'Signed In';
@@ -635,20 +700,37 @@
 
       const finalVtcName = (selected && (selected.vtcName || selected.name)) || queryVtcName || 'Your VTC';
       const finalRole = (selected && (selected.role || (selected.isManager ? 'Manager' : 'Driver'))) || 'Driver';
+      const finalLogo = (selected && (selected.logoUrl || selected.iconUrl || '')) || '';
+      const isManager = finalRole === 'Admin' || finalRole === 'Manager';
 
       heroVtcName.textContent = finalVtcName;
       navVtcName.textContent = finalVtcName;
       footerVtcName.textContent = finalVtcName;
       selectedVtcName.textContent = finalVtcName;
       summaryVtcName.textContent = finalVtcName;
+      identityVtcName.textContent = finalVtcName;
+      idsToFill.forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = finalVtcName;
+      });
+
       summaryVtcSub.textContent = guildId
         ? 'Connected through guild ID ' + guildId
         : 'Connected through your active authenticated session';
       driverRoleText.textContent = finalRole;
+      identityRole.textContent = finalRole;
       tagRole.textContent = finalRole + ' Access';
-      portalModeText.textContent = finalRole === 'Admin' || finalRole === 'Manager' ? 'VTC Management' : 'Member Portal';
-      tagPortalState.textContent = finalRole === 'Admin' || finalRole === 'Manager' ? 'Management Ready' : 'Community Ready';
+      portalModeText.textContent = isManager ? 'Management Website' : 'Member Website';
+      tagPortalState.textContent = isManager ? 'Management Ready' : 'Community Ready';
       quickStatusText.textContent = 'Welcome back, ' + displayName + '. You are connected to ' + finalVtcName + '.';
+      personalizedCopy.textContent = 'This portal is personalized for ' + finalVtcName + ', showing a company-centered experience for ' + displayName + ' as ' + finalRole + '.';
+      identityModeCopy.textContent = isManager
+        ? 'Your portal view is tuned for leadership access, management visibility, and company control points.'
+        : 'Your portal view is tuned for member access, community information, and driver tools.';
+
+      if (finalLogo) {
+        applyLogo(finalLogo);
+      }
     })();
   </script>
 </body>
