@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OverWatch ELD | Connect to VTC</title>
+  <style>
+    :root {
+      --bg: #08111d;
+      --panel: rgba(13, 22, 38, 0.88);
+      --panel-2: rgba(19, 31, 52, 0.95);
+      --panel-3: rgba(255,255,255,0.04);
+      --text: #f2f7ff;
+      --muted: #9eb1c9;
+      --line: rgba(255,255,255,0.10);
+      --accent: #4da3ff;
+      --accent-2: #76beff;
+      --green: #59d39b;
+      --shadow: 0 24px 70px rgba(0,0,0,.38);
+      --radius: 24px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--text);
+      background:
+        linear-gradient(rgba(7,12,22,.80), rgba(7,12,22,.88)),
+        url('https://www.driverfirst.com/wp-content/uploads/2025/01/freightliner-classic.png') center center / cover no-repeat fixed;
+      min-height: 100vh;
+    }
+
+    a { color: inherit; text-decoration: none; }
+
+    .page-shell {
+      min-height: 100vh;
+      backdrop-filter: blur(3px);
+    }
+
+    .container {
+      width: min(1240px, calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid var(--line);
+      background: rgba(7, 13, 24, .74);
+      backdrop-filter: blur(16px);
+    }
+
+    .topbar-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 14px 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      display: grid;
+      place-items: center;
+      background: linear-gradient(135deg, var(--accent), #1e5faf);
+      box-shadow: 0 10px 26px rgba(77,163,255,.35);
+      font-size: 22px;
+    }
+
+    .brand-title {
+      font-size: 1.05rem;
+      font-weight: 800;
+      letter-spacing: .4px;
+    }
+
+    .brand-sub {
+      color: var(--muted);
+      font-size: .82rem;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(89,211,155,.10);
+      border: 1px solid rgba(89,211,155,.22);
+      color: #d7ffeb;
+      font-weight: 700;
+      font-size: .92rem;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 16px rgba(89,211,155,.7);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      border-radius: 14px;
+      padding: 13px 18px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      cursor: pointer;
+      transition: .2s ease;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+
+    .btn-primary {
+      color: #fff;
+      background: linear-gradient(135deg, #5865F2, #4151ef);
+      box-shadow: 0 12px 24px rgba(88,101,242,.26);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,.04);
+      border-color: var(--line);
+      color: var(--text);
+    }
+
+    .hero {
+      padding: 44px 0 28px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 26px;
+      align-items: stretch;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-copy {
+      padding: 34px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      align-self: flex-start;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(77,163,255,.12);
+      border: 1px solid rgba(118,190,255,.22);
+      color: var(--accent-2);
+      font-weight: 700;
+      font-size: .92rem;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      font-size: clamp(2.3rem, 5vw, 4.2rem);
+      line-height: 1.03;
+      margin: 0 0 16px;
+      letter-spacing: -1.4px;
+    }
+
+    .lead {
+      color: var(--muted);
+      font-size: 1.08rem;
+      max-width: 760px;
+      margin: 0 0 24px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 28px;
+    }
+
+    .quick-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .stat {
+      padding: 18px;
+      border-radius: 18px;
+      background: var(--panel-3);
+      border: 1px solid var(--line);
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.2rem;
+      margin-bottom: 6px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: .95rem;
+    }
+
+    .portal-card {
+      padding: 28px;
+      background: var(--panel-2);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .portal-head h2 {
+      margin: 0 0 8px;
+      font-size: 1.7rem;
+    }
+
+    .portal-head p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .auth-box {
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 18px;
+      display: grid;
+      gap: 14px;
+    }
+
+    .auth-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+
+    .auth-label {
+      font-weight: 700;
+      font-size: 1rem;
+    }
+
+    .auth-sub {
+      color: var(--muted);
+      font-size: .92rem;
+      margin-top: 4px;
+    }
+
+    .select-wrap,
+    .code-wrap {
+      display: grid;
+      gap: 8px;
+    }
+
+    label {
+      font-size: .88rem;
+      color: var(--muted);
+      font-weight: 600;
+    }
+
+    select,
+    input {
+      width: 100%;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(7,12,22,.74);
+      color: var(--text);
+      padding: 14px 14px;
+      font-size: .98rem;
+      outline: none;
+    }
+
+    select:focus,
+    input:focus {
+      border-color: rgba(77,163,255,.7);
+      box-shadow: 0 0 0 4px rgba(77,163,255,.12);
+    }
+
+    .auth-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .help-text {
+      color: var(--muted);
+      font-size: .92rem;
+      margin-top: -4px;
+    }
+
+    .info-strip {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+      margin-top: 26px;
+    }
+
+    .info-card {
+      padding: 18px;
+      border-radius: 20px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .info-card h3 {
+      margin: 0 0 8px;
+      font-size: 1.05rem;
+    }
+
+    .info-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .96rem;
+    }
+
+    .dashboard-preview {
+      margin: 26px 0 70px;
+      padding: 26px;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 20px;
+    }
+
+    .section-title {
+      font-size: 1.8rem;
+      margin: 0 0 8px;
+    }
+
+    .section-copy {
+      color: var(--muted);
+      margin: 0 0 24px;
+      max-width: 760px;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .dash-card {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--line);
+    }
+
+    .dash-card h3 {
+      margin: 0 0 8px;
+      font-size: 1.08rem;
+    }
+
+    .dash-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .95rem;
+    }
+
+    .right-stack {
+      display: grid;
+      gap: 16px;
+    }
+
+    .mini-panel {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--line);
+    }
+
+    .mini-panel h3 {
+      margin: 0 0 10px;
+      font-size: 1.04rem;
+    }
+
+    .mini-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .mini-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #dfe9f8;
+      font-weight: 600;
+      font-size: .94rem;
+    }
+
+    .mini-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 14px rgba(89,211,155,.7);
+    }
+
+    .footer {
+      padding: 22px 0 34px;
+      color: var(--muted);
+    }
+
+    @media (max-width: 1020px) {
+      .hero-grid,
+      .dashboard-grid,
+      .info-strip,
+      .quick-stats,
+      .cards-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 760px) {
+      .topbar-inner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .hero-copy,
+      .portal-card,
+      .dashboard-preview {
+        padding: 22px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <div class="container topbar-inner">
+        <div class="brand">
+          <div class="brand-icon">🚛</div>
+          <div>
+            <div class="brand-title">OverWatch ELD Connect VTC</div>
+            <div class="brand-sub">Select your company, connect Discord, and get started</div>
+          </div>
+          <div id="userChip" class="status-pill" style="display:none; margin-left:12px;"><span class="status-dot"></span> Connected</div>
+        </div>
+
+        <div class="top-actions">
+          <div class="status-pill"><span class="status-dot"></span> <span id="statusText">System Online</span></div>
+          <a class="btn btn-secondary" href="/">Back to Website</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-grid">
+          <div class="panel hero-copy">
+            <div class="eyebrow">VTC selection and new user setup</div>
+            <h1>Select your VTC and connect to OverWatch ELD.</h1>
+            <p class="lead">
+              This page is the entry point for drivers joining a company through OverWatch ELD. Sign in with Discord, choose your VTC, enter your pairing code, and connect your driver account to the system. New users can also follow the setup instructions below to get linked correctly the first time.
+            </p>
+
+            <div class="hero-actions">
+              <a class="btn btn-primary" id="connectDiscordBtn" href="javascript:void(0)">Login with Discord</a>
+              <a class="btn btn-secondary" href="#getting-started">How to Get Started</a>
+            </div>
+
+            <div class="quick-stats">
+              <div class="stat">
+                <strong>Discord Login</strong>
+                <span>Secure sign-in to identify the driver and available VTC access.</span>
+              </div>
+              <div class="stat">
+                <strong>VTC Selection</strong>
+                <span>Choose the company you are joining before entering the portal.</span>
+              </div>
+              <div class="stat">
+                <strong>Easy Pairing</strong>
+                <span>Use a generated code from Discord to finish linking your account.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel portal-card">
+            <div class="portal-head">
+              <h2>Select Your VTC</h2>
+              <p>Choose your company, connect Discord, and pair your driver account to enter the OverWatch ELD system.</p>
+            </div>
+
+            <div class="auth-box">
+              <div class="auth-row">
+                <div>
+                  <div class="auth-label">Discord Authentication</div>
+                  <div class="auth-sub">Sign in with Discord first so the system can identify you and load the VTC servers connected to your account.</div>
+                </div>
+                <a class="btn btn-primary" id="connectDiscordBtn" href="javascript:void(0)">Connect Discord</a>
+              </div>
+            </div>
+
+            <div class="select-wrap">
+              <label for="serverSelect">Select Your VTC</label>
+              <select id="serverSelect" name="serverSelect">
+                <option value="">Login with Discord to load your VTCs</option>
+              </select>
+            </div>
+
+            <div class="code-wrap">
+              <label for="pairCode">Pairing Code</label>
+              <input id="pairCode" name="pairCode" type="text" placeholder="Enter the code generated from your Discord server" />
+            </div>
+
+            <div id="helpText" class="help-text">Your pairing code is generated by the bot inside your VTC Discord server.</div>
+
+            <div class="auth-actions">
+              <button class="btn btn-primary" id="enterVtcBtn" type="button">Enter VTC Portal</button>
+              <a class="btn btn-secondary" href="#getting-started">View Setup Instructions</a>
+            </div>
+
+            <div class="mini-panel">
+              <h3>What you can do after login</h3>
+              <div class="mini-list">
+                <div class="mini-item"><span class="mini-dot"></span> Access fleet announcements and updates</div>
+                <div class="mini-item"><span class="mini-dot"></span> Connect your driver profile to the correct VTC</div>
+                <div class="mini-item"><span class="mini-dot"></span> Reach dispatch and ELD-connected tools</div>
+                <div class="mini-item"><span class="mini-dot"></span> Launch into the full OverWatch ELD experience</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="container info-strip">
+          <div class="info-card">
+            <h3>For Drivers</h3>
+            <p>Quick Discord login, simple VTC selection, and a clear path into the system without confusion.</p>
+          </div>
+          <div class="info-card">
+            <h3>For Dispatch</h3>
+            <p>A cleaner entry point for staff and drivers helps reduce setup issues and improves onboarding.</p>
+          </div>
+          <div class="info-card">
+            <h3>For New Users</h3>
+            <p>A built-in instruction section helps first-time drivers understand how to join, link, and get started fast.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="getting-started">
+        <div class="container panel dashboard-preview">
+          <h2 class="section-title">How to get started</h2>
+          <p class="section-copy">
+            New to the system? Follow these steps to connect your Discord account, choose your VTC, and finish linking your driver profile to OverWatch ELD.
+          </p>
+
+          <div class="dashboard-grid">
+            <div>
+              <div class="cards-grid">
+                <div class="dash-card">
+                  <h3>Step 1: Join the VTC Discord</h3>
+                  <p>Make sure you are inside the Discord server for the VTC you want to drive for. The bot must already be in that server.</p>
+                </div>
+                <div class="dash-card">
+                  <h3>Step 2: Generate Your Pairing Code</h3>
+                  <p>Inside the Discord server, use the bot linking command to create your personal pairing code for OverWatch ELD.</p>
+                </div>
+                <div class="dash-card">
+                  <h3>Step 3: Login with Discord</h3>
+                  <p>Come back to this page and sign in with Discord so the site can identify you and load your available VTC options.</p>
+                </div>
+                <div class="dash-card">
+                  <h3>Step 4: Select Your VTC</h3>
+                  <p>Choose the correct VTC from the list, paste in your pairing code, and enter the portal to finish linking your account.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="right-stack">
+              <div class="mini-panel">
+                <h3>Recommended VTC page buttons</h3>
+                <div class="mini-list">
+                  <div class="mini-item"><span class="mini-dot"></span> Login with Discord</div>
+                  <div class="mini-item"><span class="mini-dot"></span> Enter VTC Portal</div>
+                  <div class="mini-item"><span class="mini-dot"></span> Join Discord</div>
+                  <div class="mini-item"><span class="mini-dot"></span> Report an Issue</div>
+                </div>
+              </div>
+
+              <div class="mini-panel">
+                <h3>Helpful notes for new users</h3>
+                <div class="mini-list">
+                  <div class="mini-item"><span class="mini-dot"></span> You need to be in a Discord server that already uses the bot.</div>
+                  <div class="mini-item"><span class="mini-dot"></span> Your pairing code is generated from Discord, not from the website.</div>
+                  <div class="mini-item"><span class="mini-dot"></span> Use the same Discord account on the website that you use in the VTC server.</div>
+                  <div class="mini-item"><span class="mini-dot"></span> If your VTC is missing, contact your company admin or dispatch team.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">
+        <strong style="color:#fff;">OverWatch ELD Connect VTC</strong> — select your company, link your Discord, and get started the right way.
+      </div>
+    </footer>
+  </div>
+
+  <script src="/js/select-vtc.js"></script>
+</body>
+</html>
