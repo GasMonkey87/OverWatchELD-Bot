@@ -20,7 +20,7 @@ try {
 // STEP 2: load VTCs
 let vtcs = [];
 try {
-  const res = await fetch("/api/auth/vtcs", { credentials:"include" });
+  const res = await fetch("/api/vtc/servers", { credentials:"include" });
   const data = await res.json();
   vtcs = data.data || data || [];
 } catch {
