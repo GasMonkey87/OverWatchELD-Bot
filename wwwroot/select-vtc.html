@@ -699,6 +699,42 @@
     });
   }
 
+  function saveLast(guildId) {
+    try { localStorage.setItem("ow_last_guild_id", guildId || ""); } catch {}
+  }
+
+  function readLast() {
+    try { return localStorage.getItem("ow_last_guild_id") || ""; } catch { return ""; }
+  }
+
+  function autoSelectLast(vtcs) {
+    const lastGuildId = readLast();
+    if (!lastGuildId) return false;
+    const found = vtcs.find(v => (v.guildId || "") === lastGuildId);
+    if (!found) return false;
+    serverSelect.value = lastGuildId;
+    return true;
+  }
+
+  async function selectVtc(guildId, silent) {
+    const sel = await getJson("/api/auth/select-vtc", {
+      method: "POST",
+      body: JSON.stringify({ guildId, pairCode: pairCode.value || "" })
+    });
+
+    if (!sel.res.ok || !sel.data || !sel.data.ok) {
+      if (!silent) {
+        setStatus("Could not select VTC.", true);
+        setDebug({ selectStatus: sel.res.status, selectData: sel.data });
+      }
+      return false;
+    }
+
+    saveLast(guildId);
+    window.location.href = sel.data.redirectUrl || "/portal.html";
+    return true;
+  }
+
   const me = await getJson("/api/auth/me");
   if (!me.res.ok || !me.data || !me.data.ok) {
     setStatus("Not logged in. Click Login with Discord.", true);
@@ -729,7 +765,22 @@
     return;
   }
 
-  setStatus("Select your VTC and continue.", false);
+  if (vtcs.length === 1) {
+    setStatus("One VTC found. Redirecting...", false);
+    await selectVtc(vtcs[0].guildId || "", true);
+    return;
+  }
+
+  if (autoSelectLast(vtcs)) {
+    setStatus("Opening your last connected VTC...", false);
+    const lastGuildId = serverSelect.value;
+    const ok = await selectVtc(lastGuildId, true);
+    if (ok) return;
+    setStatus("Select your VTC and continue.", false);
+  } else {
+    setStatus("Select your VTC and continue.", false);
+  }
+
   helpText.textContent = "Choose your VTC from the dropdown and continue.";
 
   enterBtn.addEventListener("click", async () => {
@@ -740,19 +791,7 @@
     }
 
     setStatus("Opening your VTC...", false);
-
-    const sel = await getJson("/api/auth/select-vtc", {
-      method: "POST",
-      body: JSON.stringify({ guildId, pairCode: pairCode.value || "" })
-    });
-
-    if (!sel.res.ok || !sel.data || !sel.data.ok) {
-      setStatus("Could not select VTC.", true);
-      setDebug({ selectStatus: sel.res.status, selectData: sel.data });
-      return;
-    }
-
-    window.location.href = sel.data.redirectUrl || "/portal.html";
+    await selectVtc(guildId, false);
   });
 })();
 </script>
