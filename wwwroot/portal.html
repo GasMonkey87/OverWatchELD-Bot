@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OverWatch ELD | Driver Portal</title>
+  <title>OverWatch ELD | VTC Portal</title>
   <style>
     :root {
       --bg: #08111d;
-      --panel: rgba(13, 22, 38, 0.88);
-      --panel-2: rgba(19, 31, 52, 0.95);
+      --panel: rgba(13, 22, 38, 0.90);
+      --panel-2: rgba(19, 31, 52, 0.96);
       --panel-3: rgba(255,255,255,0.04);
       --text: #f2f7ff;
       --muted: #9eb1c9;
@@ -16,7 +16,7 @@
       --accent: #4da3ff;
       --accent-2: #76beff;
       --green: #59d39b;
-      --orange: #ffb35c;
+      --gold: #ffc46b;
       --shadow: 0 24px 70px rgba(0,0,0,.38);
       --radius: 24px;
     }
@@ -28,7 +28,7 @@
       font-family: "Segoe UI", Arial, sans-serif;
       color: var(--text);
       background:
-        linear-gradient(rgba(7,12,22,.82), rgba(7,12,22,.90)),
+        linear-gradient(rgba(7,12,22,.78), rgba(7,12,22,.90)),
         url('https://www.driverfirst.com/wp-content/uploads/2025/01/freightliner-classic.png') center center / cover no-repeat fixed;
       min-height: 100vh;
     }
@@ -150,12 +150,12 @@
     }
 
     .hero {
-      padding: 36px 0 22px;
+      padding: 38px 0 26px;
     }
 
     .hero-grid {
       display: grid;
-      grid-template-columns: 1.2fr .8fr;
+      grid-template-columns: 1.15fr .85fr;
       gap: 22px;
       align-items: stretch;
     }
@@ -186,7 +186,7 @@
     }
 
     h1 {
-      font-size: clamp(2.2rem, 5vw, 4rem);
+      font-size: clamp(2.25rem, 5vw, 4rem);
       line-height: 1.04;
       margin: 0 0 14px;
       letter-spacing: -1.25px;
@@ -230,7 +230,7 @@
       font-size: .94rem;
     }
 
-    .side-summary {
+    .vtc-summary {
       padding: 28px;
       background: var(--panel-2);
       display: flex;
@@ -262,88 +262,6 @@
       margin-top: 6px;
     }
 
-    .content {
-      padding: 10px 0 60px;
-    }
-
-    .content-grid {
-      display: grid;
-      grid-template-columns: 1.1fr .9fr;
-      gap: 22px;
-    }
-
-    .section-panel {
-      padding: 24px;
-    }
-
-    .section-title {
-      font-size: 1.45rem;
-      margin: 0 0 8px;
-    }
-
-    .section-copy {
-      color: var(--muted);
-      margin: 0 0 18px;
-    }
-
-    .cards-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-    }
-
-    .dash-card {
-      padding: 18px;
-      border-radius: 18px;
-      background: rgba(255,255,255,.04);
-      border: 1px solid var(--line);
-    }
-
-    .dash-card h3 {
-      margin: 0 0 8px;
-      font-size: 1.02rem;
-    }
-
-    .dash-card p {
-      margin: 0;
-      color: var(--muted);
-      font-size: .94rem;
-    }
-
-    .announce-list,
-    .activity-list {
-      display: grid;
-      gap: 14px;
-    }
-
-    .announce-item,
-    .activity-item {
-      padding: 16px;
-      border-radius: 16px;
-      background: rgba(255,255,255,.04);
-      border: 1px solid var(--line);
-    }
-
-    .announce-item strong,
-    .activity-item strong {
-      display: block;
-      margin-bottom: 6px;
-      font-size: 1rem;
-    }
-
-    .announce-item p,
-    .activity-item p {
-      margin: 0;
-      color: var(--muted);
-      font-size: .93rem;
-    }
-
-    .meta {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: .82rem;
-    }
-
     .tag-row {
       display: flex;
       gap: 10px;
@@ -363,10 +281,81 @@
       font-weight: 700;
     }
 
-    .warning-tag {
-      background: rgba(255,179,92,.12);
-      border-color: rgba(255,179,92,.2);
-      color: #ffd29d;
+    .gold-tag {
+      background: rgba(255,196,107,.10);
+      border-color: rgba(255,196,107,.22);
+      color: #ffdba5;
+    }
+
+    .section {
+      padding: 0 0 22px;
+    }
+
+    .section-panel {
+      padding: 24px;
+    }
+
+    .section-title {
+      font-size: 1.5rem;
+      margin: 0 0 8px;
+    }
+
+    .section-copy {
+      color: var(--muted);
+      margin: 0 0 18px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1.05fr .95fr;
+      gap: 22px;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    .feature-card,
+    .announce-item,
+    .activity-item,
+    .recruit-card {
+      padding: 18px;
+      border-radius: 18px;
+      background: rgba(255,255,255,.04);
+      border: 1px solid var(--line);
+    }
+
+    .feature-card h3,
+    .announce-item strong,
+    .activity-item strong,
+    .recruit-card h3 {
+      display: block;
+      margin: 0 0 8px;
+      font-size: 1.02rem;
+    }
+
+    .feature-card p,
+    .announce-item p,
+    .activity-item p,
+    .recruit-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: .94rem;
+    }
+
+    .announce-list,
+    .activity-list,
+    .recruit-grid {
+      display: grid;
+      gap: 14px;
+    }
+
+    .meta {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: .82rem;
     }
 
     .footer {
@@ -378,7 +367,7 @@
 
     @media (max-width: 1100px) {
       .hero-grid,
-      .content-grid,
+      .grid-2,
       .stats-grid,
       .cards-grid {
         grid-template-columns: 1fr;
@@ -392,7 +381,7 @@
       }
 
       .hero-copy,
-      .side-summary,
+      .vtc-summary,
       .section-panel {
         padding: 22px;
       }
@@ -406,8 +395,8 @@
         <div class="brand">
           <div class="brand-icon">🚛</div>
           <div>
-            <div class="brand-title">OverWatch ELD Driver Portal</div>
-            <div class="brand-sub">Post-login dashboard for drivers and fleet staff</div>
+            <div class="brand-title"><span id="navVtcName">Your VTC</span> Portal</div>
+            <div class="brand-sub">Company hub, announcements, driver access, and fleet community</div>
           </div>
           <div id="userChip" class="pill" style="display:none;"><span class="dot"></span> Connected</div>
         </div>
@@ -415,7 +404,7 @@
         <div class="top-actions">
           <div class="pill"><span class="dot"></span> <span id="portalStatusText">Portal Ready</span></div>
           <a class="btn btn-secondary" href="/select-vtc.html">Change VTC</a>
-          <a class="btn btn-secondary" href="/">Website</a>
+          <a class="btn btn-secondary" href="/">Main Website</a>
         </div>
       </div>
     </header>
@@ -424,10 +413,10 @@
       <section class="hero">
         <div class="container hero-grid">
           <div class="panel hero-copy">
-            <div class="eyebrow">Connected fleet workspace</div>
-            <h1>Welcome back, <span id="driverName">Driver</span>.</h1>
+            <div class="eyebrow">Connected VTC web portal</div>
+            <h1>Welcome to <span id="heroVtcName">your VTC</span>.</h1>
             <p class="lead">
-              This is your post-login OverWatch ELD workspace. Review your selected VTC, check recent announcements, reach dispatch tools, and jump into the parts of the system you use most.
+              This portal should feel like the official website for your company inside OverWatch ELD. It can highlight your VTC identity, announcements, driver tools, recruiting information, and the core places members go after logging in.
             </p>
 
             <div class="hero-actions">
@@ -439,106 +428,124 @@
             <div class="stats-grid">
               <div class="stat-card">
                 <strong id="selectedVtcName">No VTC Selected</strong>
-                <span>Currently connected company</span>
+                <span>Current company connected to this portal</span>
               </div>
               <div class="stat-card">
                 <strong id="driverRoleText">Driver</strong>
-                <span>Your current portal access role</span>
+                <span>Your current access role inside this VTC</span>
               </div>
               <div class="stat-card">
-                <strong id="portalModeText">Ready</strong>
-                <span>Portal session and account status</span>
+                <strong id="portalModeText">Live Portal</strong>
+                <span>Connected member portal status</span>
               </div>
             </div>
           </div>
 
-          <aside class="panel side-summary">
+          <aside class="panel vtc-summary">
             <div class="summary-card">
-              <h3>Selected VTC</h3>
+              <h3>Featured company</h3>
               <div class="summary-value" id="summaryVtcName">Loading...</div>
-              <p id="summaryVtcSub">Checking your selected company and role.</p>
+              <p id="summaryVtcSub">Checking your selected company and connected account details.</p>
             </div>
 
             <div class="summary-card">
-              <h3>Quick status</h3>
-              <p id="quickStatusText">Checking your authenticated session and VTC selection.</p>
+              <h3>Member access</h3>
+              <p id="quickStatusText">Checking your authenticated session and portal access.</p>
               <div class="tag-row">
                 <span class="tag" id="tagAccount">Discord Linked</span>
                 <span class="tag" id="tagRole">Driver Access</span>
-                <span class="tag warning-tag" id="tagPortalState">Portal Active</span>
+                <span class="tag gold-tag" id="tagPortalState">VTC Website</span>
               </div>
             </div>
 
             <div class="summary-card">
-              <h3>What this page is for</h3>
-              <p>Use this portal as the driver landing page after login. It should make it easy to see where you are connected, what company you are in, and where to go next.</p>
+              <h3>Portal purpose</h3>
+              <p>Turn this into the main logged-in VTC website where drivers can check company updates, open dispatch tools, see their community identity, and navigate to the systems they use every day.</p>
             </div>
           </aside>
         </div>
       </section>
 
-      <section class="content">
-        <div class="container content-grid">
+      <section class="section">
+        <div class="container grid-2">
           <div class="panel section-panel">
-            <h2 class="section-title">Driver tools</h2>
-            <p class="section-copy">These cards should act as the main launch points for daily driver activity inside OverWatch ELD.</p>
-
+            <h2 class="section-title">Inside this VTC</h2>
+            <p class="section-copy">Make the portal feel like a real trucking company homepage after login.</p>
             <div class="cards-grid">
-              <div class="dash-card">
-                <h3>Dispatch Center</h3>
-                <p>Open active load communication, dispatch updates, and route-specific company messages.</p>
+              <div class="feature-card">
+                <h3>Dispatch & Operations</h3>
+                <p>Launch the operational side of the VTC with routes, load communication, and active driver workflow tools.</p>
               </div>
-              <div class="dash-card">
-                <h3>Announcements</h3>
-                <p>See VTC notices, event updates, and important information posted by leadership or dispatch.</p>
+              <div class="feature-card">
+                <h3>Company Announcements</h3>
+                <p>Show official updates, event notices, company rules, and leadership posts in a visible portal feed.</p>
               </div>
-              <div class="dash-card">
-                <h3>Driver Profile</h3>
-                <p>Review linked identity, company assignment, and future driver stats or achievements.</p>
+              <div class="feature-card">
+                <h3>Driver Community</h3>
+                <p>Give members a company-focused space that feels like a real VTC website instead of just a utility dashboard.</p>
               </div>
-              <div class="dash-card">
-                <h3>ELD Access</h3>
-                <p>Jump into the tools, downloads, and connected systems that support your driving workflow.</p>
+              <div class="feature-card">
+                <h3>Downloads & Tools</h3>
+                <p>Keep ELD resources, setup links, support info, and related downloads one click away.</p>
               </div>
             </div>
           </div>
 
           <div class="panel section-panel">
-            <h2 class="section-title">Recent announcements</h2>
-            <p class="section-copy">Use this area for the latest company news and portal activity after login.</p>
-
+            <h2 class="section-title">Latest company announcements</h2>
+            <p class="section-copy">This area can become the live announcement feed for your connected VTC.</p>
             <div class="announce-list" id="announcementList">
               <div class="announce-item">
-                <strong>Welcome to your driver portal</strong>
-                <p>This is the landing page after login. It can be wired to your live announcement feed next.</p>
-                <div class="meta">System message</div>
+                <strong>Welcome to your VTC portal</strong>
+                <p>This page is now styled more like a company website for your selected VTC after login.</p>
+                <div class="meta">Portal update</div>
               </div>
               <div class="announce-item">
-                <strong>Connected VTC ready</strong>
-                <p>Your selected VTC should appear throughout the page so drivers always know what company they are working in.</p>
-                <div class="meta">Portal setup</div>
+                <strong>Fleet news and events go here</strong>
+                <p>Use this section for recruitment notices, event reminders, company updates, and dispatch-wide information.</p>
+                <div class="meta">Announcement placeholder</div>
               </div>
             </div>
           </div>
         </div>
+      </section>
 
-        <div class="container" style="margin-top:22px;">
+      <section class="section">
+        <div class="container grid-2">
           <div class="panel section-panel">
-            <h2 class="section-title">Activity and next actions</h2>
-            <p class="section-copy">Give users a clear idea of what they can do immediately after logging in.</p>
-
+            <h2 class="section-title">Member activity</h2>
+            <p class="section-copy">Guide members toward the next things they should do after entering the portal.</p>
             <div class="activity-list">
               <div class="activity-item">
-                <strong>Step 1: Confirm your VTC</strong>
-                <p>Make sure the selected VTC name shown here matches the company you intended to connect to.</p>
+                <strong>Confirm your company</strong>
+                <p>Make sure the VTC name shown across the portal matches the company you intended to join.</p>
               </div>
               <div class="activity-item">
-                <strong>Step 2: Open your main tools</strong>
-                <p>Use Dispatch, Messages, or Downloads as the first quick-action buttons so drivers can move straight into work.</p>
+                <strong>Open your main tools</strong>
+                <p>Use Dispatch, Messages, or Downloads as the core launch points for daily activity.</p>
               </div>
               <div class="activity-item">
-                <strong>Step 3: Review announcements</strong>
-                <p>Show fleet alerts, company notices, event posts, and onboarding information inside this portal view.</p>
+                <strong>Check company updates</strong>
+                <p>Review any notices, onboarding posts, or event announcements shared by leadership.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="panel section-panel">
+            <h2 class="section-title">Recruiting and community space</h2>
+            <p class="section-copy">This makes the portal feel like the real home page of the VTC after a member logs in.</p>
+            <div class="recruit-grid">
+              <div class="recruit-card">
+                <h3>Why join this VTC</h3>
+                <p>Use this space to show what makes the company stand out: culture, realism, dispatch structure, and activity.</p>
+              </div>
+              <div class="recruit-card">
+                <h3>Fleet standards</h3>
+                <p>Display expectations for professionalism, communication, event participation, and overall community involvement.</p>
+              </div>
+              <div class="recruit-card">
+                <h3>Member resources</h3>
+                <p>Point drivers toward setup steps, support, company documents, and ELD tools from one location.</p>
               </div>
             </div>
           </div>
@@ -548,7 +555,7 @@
 
     <footer class="footer">
       <div class="container">
-        <strong style="color:#fff;">OverWatch ELD Driver Portal</strong> — logged-in fleet workspace for drivers, messages, announcements, and connected tools.
+        <strong style="color:#fff;" id="footerVtcName">Your VTC</strong> — connected company portal for announcements, community, and driver operations.
       </div>
     </footer>
   </div>
@@ -556,7 +563,9 @@
   <script>
     (async function () {
       const portalStatusText = document.getElementById("portalStatusText");
-      const driverName = document.getElementById("driverName");
+      const heroVtcName = document.getElementById("heroVtcName");
+      const navVtcName = document.getElementById("navVtcName");
+      const footerVtcName = document.getElementById("footerVtcName");
       const selectedVtcName = document.getElementById("selectedVtcName");
       const summaryVtcName = document.getElementById("summaryVtcName");
       const summaryVtcSub = document.getElementById("summaryVtcSub");
@@ -593,15 +602,14 @@
 
       if (!me) {
         portalStatusText.textContent = "Login Required";
-        portalModeText.textContent = "Not Logged In";
-        quickStatusText.textContent = "This portal requires a logged-in Discord session.";
+        portalModeText.textContent = "Session Missing";
+        quickStatusText.textContent = "This page requires an active Discord login.";
         summaryVtcName.textContent = queryVtcName || "No Active Session";
         summaryVtcSub.textContent = "Sign in again if your session expired.";
         return;
       }
 
       const displayName = me.globalName || me.global_name || me.username || "Driver";
-      driverName.textContent = displayName;
       userChip.innerHTML = '<span class="dot"></span> Connected as ' + displayName;
       userChip.style.display = 'inline-flex';
       portalStatusText.textContent = 'Signed In';
@@ -625,21 +633,22 @@
         selected = { vtcName: queryVtcName, role: 'Driver', isManager: false };
       }
 
-      const finalVtcName = (selected && (selected.vtcName || selected.name)) || queryVtcName || 'No VTC Selected';
+      const finalVtcName = (selected && (selected.vtcName || selected.name)) || queryVtcName || 'Your VTC';
       const finalRole = (selected && (selected.role || (selected.isManager ? 'Manager' : 'Driver'))) || 'Driver';
 
+      heroVtcName.textContent = finalVtcName;
+      navVtcName.textContent = finalVtcName;
+      footerVtcName.textContent = finalVtcName;
       selectedVtcName.textContent = finalVtcName;
       summaryVtcName.textContent = finalVtcName;
       summaryVtcSub.textContent = guildId
         ? 'Connected through guild ID ' + guildId
-        : 'Connected through your current authenticated session';
+        : 'Connected through your active authenticated session';
       driverRoleText.textContent = finalRole;
       tagRole.textContent = finalRole + ' Access';
-      quickStatusText.textContent = finalVtcName === 'No VTC Selected'
-        ? 'No selected VTC was found in the current portal URL. Change VTC if needed.'
-        : 'You are signed in and connected to ' + finalVtcName + '.';
-      portalModeText.textContent = finalRole === 'Admin' || finalRole === 'Manager' ? 'Management Access' : 'Driver Ready';
-      tagPortalState.textContent = finalRole === 'Admin' || finalRole === 'Manager' ? 'Manager Portal' : 'Driver Portal';
+      portalModeText.textContent = finalRole === 'Admin' || finalRole === 'Manager' ? 'VTC Management' : 'Member Portal';
+      tagPortalState.textContent = finalRole === 'Admin' || finalRole === 'Manager' ? 'Management Ready' : 'Community Ready';
+      quickStatusText.textContent = 'Welcome back, ' + displayName + '. You are connected to ' + finalVtcName + '.';
     })();
   </script>
 </body>
