@@ -1,6 +1,4 @@
 (function () {
-  const state = { me: null, vtcs: [], selectedGuildId: "" };
-
   const els = {
     serverSelect: document.getElementById("serverSelect"),
     pairCode: document.getElementById("pairCode"),
@@ -8,6 +6,12 @@
     statusText: document.getElementById("statusText"),
     helpText: document.getElementById("helpText"),
     userChip: document.getElementById("userChip"),
+  };
+
+  const state = {
+    me: null,
+    vtcs: [],
+    selectedGuildId: ""
   };
 
   function setStatus(message, isError) {
@@ -32,17 +36,25 @@
     });
 
     let data = null;
-    try { data = await res.json(); } catch { data = null; }
+    try {
+      data = await res.json();
+    } catch {
+      data = null;
+    }
 
     if (!res.ok) {
-      const msg = (data && (data.error || data.message || data.title || data.detail)) || `HTTP ${res.status}`;
+      const msg =
+        (data && (data.error || data.message || data.title || data.detail)) ||
+        `HTTP ${res.status}`;
       throw new Error(msg);
     }
+
     return data;
   }
 
   function renderUser() {
     if (!els.userChip) return;
+
     if (state.me && (state.me.username || state.me.globalName || state.me.global_name)) {
       const name = state.me.username || state.me.globalName || state.me.global_name;
       els.userChip.innerHTML = '<span class="status-dot"></span> Connected as ' + name;
@@ -55,12 +67,13 @@
   function renderVtcs() {
     if (!els.serverSelect) return;
 
-    const currentValue = state.selectedGuildId || "";
     els.serverSelect.innerHTML = "";
 
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = state.vtcs.length ? "Select your VTC..." : "No VTCs found for this account";
+    placeholder.textContent = state.vtcs.length
+      ? "Select your VTC..."
+      : "No VTCs found for this account";
     els.serverSelect.appendChild(placeholder);
 
     for (const v of state.vtcs) {
@@ -70,32 +83,40 @@
       els.serverSelect.appendChild(opt);
     }
 
-    if (currentValue) {
-      els.serverSelect.value = currentValue;
+    if (state.selectedGuildId) {
+      els.serverSelect.value = state.selectedGuildId;
     }
   }
 
   async function loadMe() {
     const result = await fetchJson("/api/auth/me");
-    if (!result || !result.ok || !result.data) throw new Error("NotAuthenticated");
+    if (!result?.ok || !result?.data) {
+      throw new Error("NotAuthenticated");
+    }
+
     state.me = result.data;
     renderUser();
   }
 
   async function loadVtcs() {
     const result = await fetchJson("/api/auth/vtcs");
-    const items = (result && result.data && Array.isArray(result.data)) ? result.data : [];
+
+    const items = Array.isArray(result?.data) ? result.data : [];
+
     state.vtcs = items.map(x => ({
       guildId: x.guildId || "",
       vtcName: x.vtcName || x.name || "Unnamed VTC",
-      isManager: !!x.isManager,
-      role: x.role || "Driver"
+      logoUrl: x.logoUrl || "",
+      role: x.role || "Driver",
+      isManager: !!x.isManager
     }));
+
     renderVtcs();
   }
 
   async function enterSelectedVtc() {
-    const guildId = (els.serverSelect && els.serverSelect.value) || "";
+    const guildId = els.serverSelect?.value || "";
+
     if (!guildId) {
       setStatus("Please select your VTC.", true);
       return;
@@ -108,12 +129,11 @@
       body: JSON.stringify({ guildId })
     });
 
-    if (!result || !result.ok) {
-      throw new Error((result && result.error) || "SelectVtcFailed");
+    if (!result?.ok) {
+      throw new Error(result?.error || "SelectVtcFailed");
     }
 
-    const redirectUrl = result.redirectUrl || "/portal.html";
-    window.location.href = redirectUrl;
+    window.location.href = result.redirectUrl || "/portal.html";
   }
 
   function goLogin() {
@@ -123,22 +143,12 @@
   async function boot() {
     renderVtcs();
 
-    document.querySelectorAll("#connectDiscordBtn").forEach(function (btn) {
+    document.querySelectorAll("#connectDiscordBtn").forEach(btn => {
       btn.addEventListener("click", function (e) {
         e.preventDefault();
         goLogin();
       });
     });
-
-    if (els.enterBtn) {
-      els.enterBtn.addEventListener("click", async function () {
-        try {
-          await enterSelectedVtc();
-        } catch (error) {
-          setStatus(error && error.message ? error.message : "Unable to open your VTC.", true);
-        }
-      });
-    }
 
     if (els.serverSelect) {
       els.serverSelect.addEventListener("change", function () {
@@ -146,11 +156,21 @@
       });
     }
 
+    if (els.enterBtn) {
+      els.enterBtn.addEventListener("click", async function () {
+        try {
+          await enterSelectedVtc();
+        } catch (error) {
+          setStatus(error?.message || "Unable to open your VTC.", true);
+        }
+      });
+    }
+
     setStatus("Loading your Discord session...", false);
 
     try {
       await loadMe();
-    } catch (error) {
+    } catch {
       setStatus("You are not logged in yet. Click Login with Discord.", true);
       setHelp("This page only works after Discord sign-in.");
       return;
@@ -158,17 +178,18 @@
 
     try {
       await loadVtcs();
+
       if (!state.vtcs.length) {
         setStatus("No VTCs were found for this Discord account.", true);
-        setHelp("The server returned zero VTCs. This backend patch changes that by falling back to every guild the bot is already in.");
+        setHelp("Your login worked, but no matched VTCs were returned.");
         return;
       }
 
       setStatus(`Loaded ${state.vtcs.length} VTC${state.vtcs.length === 1 ? "" : "s"}. Select one to continue.`, false);
-      setHelp("If your VTC is missing after this patch, the bot itself is probably not connected to that guild in Railway right now.");
+      setHelp("Choose your VTC from the dropdown and continue.");
     } catch (error) {
-      setStatus(error && error.message ? error.message : "Could not load VTC list.", true);
-      setHelp("The site could not read your VTC list from /api/auth/vtcs.");
+      setStatus(error?.message || "Could not load VTC list.", true);
+      setHelp("The page could not read /api/auth/vtcs.");
     }
   }
 
