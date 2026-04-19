@@ -7,6 +7,7 @@
   const guildIdChip = document.getElementById("guildIdChip");
   const userNameChip = document.getElementById("userNameChip");
   const refreshBtn = document.getElementById("refreshBtn");
+  const portalBtn = document.getElementById("portalBtn");
   const logoutBtn = document.getElementById("logoutBtn");
   const openDriverPortalLink = document.getElementById("openDriverPortalLink");
 
@@ -68,10 +69,10 @@
   const reportIssueUrlInput = document.getElementById("reportIssueUrlInput");
   const heroImageUrlInput = document.getElementById("heroImageUrlInput");
   const learnMoreUrlInput = document.getElementById("learnMoreUrlInput");
-
   const companyInfoInput = document.getElementById("companyInfoInput");
   const latestInfoInput = document.getElementById("latestInfoInput");
   const featuredDriversInput = document.getElementById("featuredDriversInput");
+  const selectedFeaturedDriverInput = document.getElementById("selectedFeaturedDriverInput");
   const homepageSettingsStatus = document.getElementById("homepageSettingsStatus");
 
   const discordAutoSetupForm = document.getElementById("discordAutoSetupForm");
@@ -113,11 +114,29 @@
     const raw = String(value ?? "").trim();
     if (!raw) return fallback;
     try {
-      const parsed = JSON.parse(raw);
-      return parsed;
+      return JSON.parse(raw);
     } catch {
       return fallback;
     }
+  }
+
+  function refreshSelectedFeaturedDriverOptions() {
+    if (!selectedFeaturedDriverInput) return;
+    const current = selectedFeaturedDriverInput.value || "";
+    const items = parseJsonField(featuredDriversInput?.value, []);
+    selectedFeaturedDriverInput.innerHTML = '<option value="">Select featured driver...</option>';
+    if (Array.isArray(items)) {
+      items.forEach((item, index) => {
+        const key = String(item.id || item.key || item.name || ("driver_" + index)).trim();
+        const label = String(item.name || item.driverName || key).trim();
+        if (!key) return;
+        const opt = document.createElement("option");
+        opt.value = key;
+        opt.textContent = label;
+        selectedFeaturedDriverInput.appendChild(opt);
+      });
+    }
+    if (current) selectedFeaturedDriverInput.value = current;
   }
 
   async function getJson(url, options) {
@@ -551,6 +570,8 @@
     if (companyInfoInput) companyInfoInput.value = s.companyInfo || s.aboutText || "";
     if (latestInfoInput) latestInfoInput.value = formatJsonField(s.latestInfo, "");
     if (featuredDriversInput) featuredDriversInput.value = formatJsonField(s.featuredDrivers, "");
+    refreshSelectedFeaturedDriverOptions();
+    if (selectedFeaturedDriverInput) selectedFeaturedDriverInput.value = s.selectedFeaturedDriver || "";
   }
 
   async function saveHomepageSettings() {
@@ -569,6 +590,7 @@
       companyInfo: companyInfoInput?.value || "",
       latestInfo: parseJsonField(latestInfoInput?.value, []),
       featuredDrivers: parseJsonField(featuredDriversInput?.value, []),
+      selectedFeaturedDriver: selectedFeaturedDriverInput?.value || "",
       discord: {
         joinDiscordUrl: joinDiscordUrlInput?.value || ""
       }
@@ -871,6 +893,18 @@
     discordAutoSetupForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       await autoSetupDiscord();
+    });
+  }
+
+  if (featuredDriversInput) {
+    featuredDriversInput.addEventListener("input", refreshSelectedFeaturedDriverOptions);
+  }
+
+  if (portalBtn) {
+    portalBtn.addEventListener("click", () => {
+      const url = new URL("/portal.html", window.location.origin);
+      if (guildId) url.searchParams.set("guildId", guildId);
+      window.location.href = url.toString();
     });
   }
 
