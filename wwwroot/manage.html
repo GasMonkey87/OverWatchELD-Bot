@@ -383,6 +383,7 @@
 
       <div class="top-actions">
         <div class="user-pill" id="userPill">Checking login...</div>
+        <button class="btn btn-ghost" id="portalBtn" type="button">Portal</button>
         <button class="btn btn-ghost" id="refreshBtn" type="button">Refresh</button>
         <button class="btn" id="logoutBtn" type="button">Logout</button>
       </div>
@@ -716,7 +717,15 @@
 
               <div class="field">
                 <label for="featuredDriversInput">Featured Drivers (JSON array)</label>
-                <textarea id="featuredDriversInput" placeholder='[{"name":"BamBam87","role":"Driver","bio":"Active company driver and community member."}]'></textarea>
+                <textarea id="featuredDriversInput" placeholder='[{"id":"bambam87","name":"BamBam87","role":"Driver","bio":"Active company driver and community member.","imageUrl":"https://...","favoriteTruck":"Freightliner Classic XL"}]'></textarea>
+              </div>
+
+              <div class="field">
+                <label for="selectedFeaturedDriverInput">Selected Featured Driver</label>
+                <select id="selectedFeaturedDriverInput">
+                  <option value="">Select featured driver...</option>
+                </select>
+                <div class="small muted" style="margin-top:6px;">The portal spotlight card will use this selected driver. If none is selected, the first featured driver is used.</div>
               </div>
 
               <div class="toolbar">
