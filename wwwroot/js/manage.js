@@ -68,17 +68,11 @@
   const reportIssueUrlInput = document.getElementById("reportIssueUrlInput");
   const heroImageUrlInput = document.getElementById("heroImageUrlInput");
   const learnMoreUrlInput = document.getElementById("learnMoreUrlInput");
+
+  const companyInfoInput = document.getElementById("companyInfoInput");
+  const latestInfoInput = document.getElementById("latestInfoInput");
+  const featuredDriversInput = document.getElementById("featuredDriversInput");
   const homepageSettingsStatus = document.getElementById("homepageSettingsStatus");
-  const portalWebsiteForm = document.getElementById("portalWebsiteForm");
-  const portalHeadlineInput = document.getElementById("portalHeadlineInput");
-  const portalIntroInput = document.getElementById("portalIntroInput");
-  const portalSlidesInput = document.getElementById("portalSlidesInput");
-  const portalEventsInput = document.getElementById("portalEventsInput");
-  const portalProfilesInput = document.getElementById("portalProfilesInput");
-  const portalWebsiteStatus = document.getElementById("portalWebsiteStatus");
-  const openPortalTopLink = document.getElementById("openPortalTopLink");
-  const openPortalHeroLink = document.getElementById("openPortalHeroLink");
-  const openDriverPortalWebsiteLink = document.getElementById("openDriverPortalWebsiteLink");
 
   const discordAutoSetupForm = document.getElementById("discordAutoSetupForm");
   const autoCategoryName = document.getElementById("autoCategoryName");
@@ -106,6 +100,24 @@
   function fmt(v, fallback = "-") {
     const s = String(v ?? "").trim();
     return s || fallback;
+  }
+
+
+  function formatJsonField(value, fallback = "") {
+    if (value == null || value === "") return fallback;
+    if (typeof value === "string") return value;
+    try { return JSON.stringify(value, null, 2); } catch { return fallback; }
+  }
+
+  function parseJsonField(value, fallback) {
+    const raw = String(value ?? "").trim();
+    if (!raw) return fallback;
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed;
+    } catch {
+      return fallback;
+    }
   }
 
   async function getJson(url, options) {
@@ -144,10 +156,9 @@
     guildValue.textContent = guildId || "-";
     heroTitle.textContent = `Management Dashboard - ${displayName}`;
 
-    const portalHref = `/portal.html?guildId=${encodeURIComponent(guildId)}`;
-    [openDriverPortalLink, openPortalTopLink, openPortalHeroLink, openDriverPortalWebsiteLink].forEach(link => {
-      if (link) link.href = portalHref;
-    });
+    if (openDriverPortalLink) {
+      openDriverPortalLink.href = `/portal.html?guildId=${encodeURIComponent(guildId)}`;
+    }
 
     return true;
   }
@@ -521,42 +532,6 @@
     await loadAnnouncements();
   }
 
-
-  function linesFromArray(rows, formatter) {
-    if (!Array.isArray(rows) || !rows.length) return "";
-    return rows.map(formatter).join("\n");
-  }
-
-  function splitLines(text) {
-    return String(text || "")
-      .split(/\r?\n/)
-      .map(x => x.trim())
-      .filter(Boolean);
-  }
-
-  function parsePortalEvents(text) {
-    return splitLines(text).map(line => {
-      const parts = line.split("|").map(x => x.trim());
-      return {
-        title: parts[0] || "",
-        when: parts[1] || "",
-        details: parts.slice(2).join(" | ")
-      };
-    });
-  }
-
-  function parsePortalProfiles(text) {
-    return splitLines(text).map(line => {
-      const parts = line.split("|").map(x => x.trim());
-      return {
-        name: parts[0] || "",
-        role: parts[1] || "",
-        truck: parts[2] || "",
-        bio: parts.slice(3).join(" | ")
-      };
-    });
-  }
-
   async function loadHomepageSettings() {
     const { res, data } = await getJson(`/api/vtc/settings?guildId=${encodeURIComponent(guildId)}`);
     if (!res.ok || !data?.ok) {
@@ -573,21 +548,9 @@
     if (reportIssueUrlInput) reportIssueUrlInput.value = s.reportIssueUrl || "";
     if (heroImageUrlInput) heroImageUrlInput.value = s.heroImageUrl || s.bannerImageUrl || "";
     if (learnMoreUrlInput) learnMoreUrlInput.value = s.learnMoreUrl || "";
-
-    if (portalHeadlineInput) portalHeadlineInput.value = s.portalHeadline || s.siteTitle || "";
-    if (portalIntroInput) portalIntroInput.value = s.portalIntro || s.welcomeText || "";
-    if (portalSlidesInput) portalSlidesInput.value = linesFromArray(
-      s.portalSlides || s.portalImages || [],
-      x => typeof x === "string" ? x : (x?.url || "")
-    );
-    if (portalEventsInput) portalEventsInput.value = linesFromArray(
-      s.portalEvents || [],
-      x => [x?.title || "", x?.when || "", x?.details || ""].filter(Boolean).join(" | ")
-    );
-    if (portalProfilesInput) portalProfilesInput.value = linesFromArray(
-      s.portalProfiles || [],
-      x => [x?.name || "", x?.role || "", x?.truck || "", x?.bio || ""].filter(Boolean).join(" | ")
-    );
+    if (companyInfoInput) companyInfoInput.value = s.companyInfo || s.aboutText || "";
+    if (latestInfoInput) latestInfoInput.value = formatJsonField(s.latestInfo, "");
+    if (featuredDriversInput) featuredDriversInput.value = formatJsonField(s.featuredDrivers, "");
   }
 
   async function saveHomepageSettings() {
@@ -603,11 +566,9 @@
       reportIssueUrl: reportIssueUrlInput?.value || "",
       heroImageUrl: heroImageUrlInput?.value || "",
       learnMoreUrl: learnMoreUrlInput?.value || "",
-      portalHeadline: portalHeadlineInput?.value || "",
-      portalIntro: portalIntroInput?.value || "",
-      portalSlides: splitLines(portalSlidesInput?.value || ""),
-      portalEvents: parsePortalEvents(portalEventsInput?.value || ""),
-      portalProfiles: parsePortalProfiles(portalProfilesInput?.value || ""),
+      companyInfo: companyInfoInput?.value || "",
+      latestInfo: parseJsonField(latestInfoInput?.value, []),
+      featuredDrivers: parseJsonField(featuredDriversInput?.value, []),
       discord: {
         joinDiscordUrl: joinDiscordUrlInput?.value || ""
       }
@@ -621,30 +582,6 @@
     }
 
     homepageSettingsStatus.textContent = "Homepage settings saved.";
-  }
-
-
-  async function savePortalWebsite() {
-    if (!portalWebsiteStatus) return;
-
-    portalWebsiteStatus.textContent = "Saving portal website content...";
-
-    const payload = {
-      guildId,
-      portalHeadline: portalHeadlineInput?.value || "",
-      portalIntro: portalIntroInput?.value || "",
-      portalSlides: splitLines(portalSlidesInput?.value || ""),
-      portalEvents: parsePortalEvents(portalEventsInput?.value || ""),
-      portalProfiles: parsePortalProfiles(portalProfilesInput?.value || "")
-    };
-
-    const { res, data } = await postJson("/api/vtc/settings/update", payload);
-    if (!res.ok || !data?.ok) {
-      portalWebsiteStatus.textContent = data?.error || "Failed to save portal website content.";
-      return;
-    }
-
-    portalWebsiteStatus.textContent = "Portal website content saved.";
   }
 
   async function autoSetupDiscord() {
@@ -927,13 +864,6 @@
     homepageSettingsForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       await saveHomepageSettings();
-    });
-  }
-
-  if (portalWebsiteForm) {
-    portalWebsiteForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      await savePortalWebsite();
     });
   }
 
