@@ -574,7 +574,7 @@
       <div class="container">
         <div class="panel">
           <h2 class="section-title">Featured Driver</h2>
-          <p class="section-copy">A spotlight card that managers can update from the management page.</p>
+          <p class="section-copy">A spotlight card that managers can update from the management page, separate from the full driver roster below.</p>
           <div class="featured-wrap">
             <div class="profile-card" id="featuredDriverCard">
               <div class="profile-card-inner">
@@ -941,6 +941,7 @@
           const learnMoreUrl = settings.learnMoreUrl || '';
           const latestInfo = parseJsonField(settings.latestInfo, []);
           const featuredDrivers = parseJsonField(settings.featuredDrivers, []);
+          const rosterDrivers = parseJsonField(settings.rosterDrivers || settings.driverRoster, []);
           const selectedFeaturedDriver = settings.selectedFeaturedDriver || '';
           const companyInfo = settings.companyInfo || settings.aboutText || '';
 
@@ -976,7 +977,7 @@
           }
 
           renderLatestInfo(latestInfo);
-          renderDrivers(featuredDrivers);
+          renderDrivers(Array.isArray(rosterDrivers) && rosterDrivers.length ? rosterDrivers : featuredDrivers);
 
           let spotlight = null;
           if (Array.isArray(featuredDrivers) && featuredDrivers.length) {
@@ -984,6 +985,8 @@
               const key = d.id || d.key || d.name || '';
               return key === selectedFeaturedDriver;
             }) || featuredDrivers[0];
+          } else if (Array.isArray(rosterDrivers) && rosterDrivers.length) {
+            spotlight = rosterDrivers[0];
           }
           renderFeaturedDriver(spotlight);
         } catch {}
