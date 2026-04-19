@@ -244,6 +244,7 @@
       margin: 0;
       color: var(--muted);
       font-size: .93rem;
+      white-space: pre-wrap;
     }
 
     .meta {
@@ -281,6 +282,12 @@
     .driver-copy {
       color: var(--muted);
       font-size: .92rem;
+      white-space: pre-wrap;
+    }
+
+    .empty-state {
+      color: var(--muted);
+      font-size: .94rem;
     }
 
     .footer {
@@ -331,7 +338,8 @@
           <div class="hero-actions">
             <a class="btn btn-primary" href="/dispatch.html">Open Dispatch</a>
             <a class="btn btn-secondary" href="/messages.html">Messages</a>
-            <a class="btn btn-secondary" href="/downloads">Downloads</a>
+            <a class="btn btn-secondary" id="joinDiscordBtn" href="#">Join Discord</a>
+            <a class="btn btn-secondary" id="learnMoreBtn" href="#">Learn More</a>
           </div>
 
           <div class="hero-stats">
@@ -359,7 +367,7 @@
           <p class="section-copy" id="aboutCopy">
             Use this section as the basic company information area for your VTC. This is where members can quickly understand what the company is about, what kind of community it has, and how the fleet operates.
           </p>
-          <div class="list">
+          <div class="list" id="aboutList">
             <div class="item">
               <strong>Company information</strong>
               <p id="companyInfoText">Show your VTC identity, style, standards, and what makes your company stand out.</p>
@@ -373,17 +381,12 @@
 
         <div class="panel">
           <h2 class="section-title">Latest information</h2>
-          <p class="section-copy">A simple section for current VTC updates and important member information.</p>
+          <p class="section-copy">Current VTC updates and important member information.</p>
           <div class="list" id="latestInfoList">
             <div class="item">
               <strong>Portal connected</strong>
               <p>Your selected VTC and role are now being shown across this page.</p>
               <div class="meta">System update</div>
-            </div>
-            <div class="item">
-              <strong>Basic VTC homepage layout</strong>
-              <p>This page is simplified to feel more like a normal company website after login.</p>
-              <div class="meta">Portal layout</div>
             </div>
           </div>
         </div>
@@ -394,22 +397,12 @@
       <div class="container">
         <div class="panel">
           <h2 class="section-title">Drivers</h2>
-          <p class="section-copy">Use this section to highlight drivers, staff, or featured members of the company.</p>
+          <p class="section-copy">Featured drivers, staff, or important member highlights.</p>
           <div class="drivers-grid" id="driversGrid">
             <div class="driver-card">
               <div class="driver-name">Featured Driver</div>
               <div class="driver-role">Driver</div>
-              <div class="driver-copy">Use this area for featured drivers, staff members, or community spotlights.</div>
-            </div>
-            <div class="driver-card">
-              <div class="driver-name">Dispatch Staff</div>
-              <div class="driver-role">Manager</div>
-              <div class="driver-copy">Highlight trusted dispatch or company staff so members know who to contact.</div>
-            </div>
-            <div class="driver-card">
-              <div class="driver-name">New Member Spotlight</div>
-              <div class="driver-role">Driver</div>
-              <div class="driver-copy">Celebrate new or active drivers to make the VTC feel more personal and active.</div>
+              <div class="driver-copy">Use the manage page to add featured drivers or member spotlight content.</div>
             </div>
           </div>
         </div>
@@ -420,24 +413,18 @@
       <div class="container grid">
         <div class="panel">
           <h2 class="section-title">Announcements</h2>
-          <p class="section-copy">This section should hold the latest company announcements for drivers and staff.</p>
+          <p class="section-copy">Latest company announcements for drivers and staff.</p>
           <div class="list" id="announcementList">
             <div class="item">
-              <strong>Welcome to the portal</strong>
-              <p>This is the simple announcement area for your selected VTC.</p>
-              <div class="meta">Announcement placeholder</div>
-            </div>
-            <div class="item">
-              <strong>Company updates</strong>
-              <p>Use this area for convoy notices, recruiting updates, fleet news, and leadership posts.</p>
-              <div class="meta">Announcement placeholder</div>
+              <strong>Loading announcements...</strong>
+              <p>The portal is checking for live company announcements.</p>
             </div>
           </div>
         </div>
 
         <div class="panel">
           <h2 class="section-title">Quick links</h2>
-          <p class="section-copy">Basic navigation for the areas most members will use.</p>
+          <p class="section-copy">Basic navigation for the areas most members use.</p>
           <div class="list">
             <div class="item">
               <strong>Dispatch</strong>
@@ -474,10 +461,27 @@
       const memberNameText = document.getElementById('memberNameText');
       const aboutVtcName = document.getElementById('aboutVtcName');
       const logoWrap = document.getElementById('logoWrap');
+      const heroIntro = document.getElementById('heroIntro');
+      const aboutCopy = document.getElementById('aboutCopy');
+      const companyInfoText = document.getElementById('companyInfoText');
+      const latestInfoList = document.getElementById('latestInfoList');
+      const announcementList = document.getElementById('announcementList');
+      const driversGrid = document.getElementById('driversGrid');
+      const joinDiscordBtn = document.getElementById('joinDiscordBtn');
+      const learnMoreBtn = document.getElementById('learnMoreBtn');
 
       function getQuery(name) {
         const url = new URL(window.location.href);
         return url.searchParams.get(name) || '';
+      }
+
+      function escapeHtml(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
       }
 
       async function getJson(url) {
@@ -486,6 +490,56 @@
         let data = null;
         try { data = text ? JSON.parse(text) : null; } catch { data = null; }
         return { res, data };
+      }
+
+      function parseJsonField(value, fallback) {
+        if (!value) return fallback;
+        if (Array.isArray(value)) return value;
+        if (typeof value === 'object') return value;
+        try { return JSON.parse(value); } catch { return fallback; }
+      }
+
+      function renderLatestInfo(items) {
+        if (!Array.isArray(items) || !items.length) return;
+        latestInfoList.innerHTML = '';
+        items.slice(0, 3).forEach(function (item, index) {
+          const title = item.title || item.heading || ('Latest Update ' + (index + 1));
+          const body = item.body || item.text || item.description || '';
+          const meta = item.meta || item.when || item.date || 'Portal update';
+          latestInfoList.insertAdjacentHTML('beforeend',
+            '<div class="item"><strong>' + escapeHtml(title) + '</strong><p>' + escapeHtml(body) + '</p><div class="meta">' + escapeHtml(meta) + '</div></div>'
+          );
+        });
+      }
+
+      function renderDrivers(items) {
+        if (!Array.isArray(items) || !items.length) return;
+        driversGrid.innerHTML = '';
+        items.slice(0, 6).forEach(function (item) {
+          const name = item.name || item.driverName || 'Driver';
+          const role = item.role || item.title || 'Driver';
+          const copy = item.bio || item.description || item.notes || 'Featured member of the VTC.';
+          driversGrid.insertAdjacentHTML('beforeend',
+            '<div class="driver-card"><div class="driver-name">' + escapeHtml(name) + '</div><div class="driver-role">' + escapeHtml(role) + '</div><div class="driver-copy">' + escapeHtml(copy) + '</div></div>'
+          );
+        });
+      }
+
+      function renderAnnouncements(items) {
+        announcementList.innerHTML = '';
+        if (!Array.isArray(items) || !items.length) {
+          announcementList.innerHTML = '<div class="empty-state">No announcements have been posted yet.</div>';
+          return;
+        }
+
+        items.slice(0, 6).forEach(function (item) {
+          const title = item.title || item.subject || item.heading || 'Announcement';
+          const body = item.body || item.text || item.message || '';
+          const meta = item.sentUtc || item.createdUtc || item.date || 'Announcement';
+          announcementList.insertAdjacentHTML('beforeend',
+            '<div class="item"><strong>' + escapeHtml(title) + '</strong><p>' + escapeHtml(body) + '</p><div class="meta">' + escapeHtml(meta) + '</div></div>'
+          );
+        });
       }
 
       const guildId = getQuery('guildId');
@@ -512,6 +566,7 @@
       if (!selected && vtcs.length === 1) selected = vtcs[0];
       if (!selected && queryVtcName) selected = { vtcName: queryVtcName, role: 'Driver' };
 
+      const finalGuildId = (selected && selected.guildId) || guildId || '';
       const finalVtcName = (selected && (selected.vtcName || selected.name)) || queryVtcName || 'Your VTC';
       const finalRole = (selected && (selected.role || (selected.isManager ? 'Manager' : 'Driver'))) || 'Driver';
       const finalLogo = (selected && (selected.logoUrl || '')) || '';
@@ -528,6 +583,66 @@
 
       if (finalLogo) {
         logoWrap.innerHTML = '<img src="' + finalLogo + '" alt="VTC logo" />';
+      }
+
+      if (finalGuildId) {
+        try {
+          const settingsResp = await getJson('/api/vtc/settings?guildId=' + encodeURIComponent(finalGuildId));
+          const settings = settingsResp.data && settingsResp.data.data ? settingsResp.data.data : {};
+
+          const siteTitle = settings.siteTitle || settings.title || finalVtcName;
+          const welcomeText = settings.welcomeText || settings.homeIntro || '';
+          const heroImageUrl = settings.heroImageUrl || settings.bannerImageUrl || '';
+          const joinDiscordUrl = settings.joinDiscordUrl || settings.discordInviteUrl || (settings.discord && settings.discord.joinDiscordUrl) || '';
+          const learnMoreUrl = settings.learnMoreUrl || '';
+          const latestInfo = parseJsonField(settings.latestInfo, []);
+          const featuredDrivers = parseJsonField(settings.featuredDrivers, []);
+          const companyInfo = settings.companyInfo || settings.aboutText || '';
+
+          if (siteTitle) {
+            navVtcName.textContent = siteTitle;
+            heroVtcName.textContent = siteTitle;
+            footerVtcName.textContent = siteTitle;
+            statCompany.textContent = siteTitle;
+            aboutVtcName.textContent = siteTitle;
+          }
+
+          if (welcomeText) heroIntro.textContent = welcomeText;
+          if (companyInfo) {
+            aboutCopy.textContent = companyInfo;
+            companyInfoText.textContent = companyInfo;
+          }
+          if (heroImageUrl) {
+            document.body.style.background = 'linear-gradient(rgba(7,12,22,.82), rgba(7,12,22,.90)), url(' + heroImageUrl + ') center center / cover no-repeat fixed';
+          }
+          if (joinDiscordUrl) {
+            joinDiscordBtn.href = joinDiscordUrl;
+            joinDiscordBtn.target = '_blank';
+            joinDiscordBtn.rel = 'noopener noreferrer';
+          } else {
+            joinDiscordBtn.style.display = 'none';
+          }
+          if (learnMoreUrl) {
+            learnMoreBtn.href = learnMoreUrl;
+            learnMoreBtn.target = '_blank';
+            learnMoreBtn.rel = 'noopener noreferrer';
+          } else {
+            learnMoreBtn.style.display = 'none';
+          }
+
+          renderLatestInfo(latestInfo);
+          renderDrivers(featuredDrivers);
+        } catch {}
+
+        try {
+          const annResp = await getJson('/api/announcements?guildId=' + encodeURIComponent(finalGuildId));
+          const announcements = annResp.data && Array.isArray(annResp.data.data) ? annResp.data.data : [];
+          renderAnnouncements(announcements);
+        } catch {
+          renderAnnouncements([]);
+        }
+      } else {
+        renderAnnouncements([]);
       }
     })();
   </script>
