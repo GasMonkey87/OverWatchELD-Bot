@@ -347,31 +347,6 @@
       margin-top: 6px;
     }
 
-
-    .portal-nav {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin: 18px 0 0;
-    }
-
-    .portal-nav .btn {
-      min-height: 38px;
-      padding: 0 14px;
-      font-size: 14px;
-    }
-
-    .textarea-tall { min-height: 120px; }
-
-    .textarea-xl { min-height: 180px; }
-
-    .helper {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.5;
-    }
-
     .footer-note {
       margin-top: 20px;
       color: var(--muted);
@@ -402,13 +377,12 @@
         <div class="brand-badge">OW</div>
         <div>
           <h1>OverWatch ELD Management Portal</h1>
-          <p>Drivers, dispatch, messages, announcements, pictures, events, featured profiles, and portal content</p>
+          <p>Driver profiles, dispatch board, announcements, and homepage settings</p>
         </div>
       </div>
 
       <div class="top-actions">
         <div class="user-pill" id="userPill">Checking login...</div>
-        <a class="btn btn-ghost" id="openPortalTopLink" href="#">Portal</a>
         <button class="btn btn-ghost" id="refreshBtn" type="button">Refresh</button>
         <button class="btn" id="logoutBtn" type="button">Logout</button>
       </div>
@@ -420,16 +394,8 @@
       <h2 id="heroTitle">Management Dashboard</h2>
       <p>
         This page now runs your management tools from one hub: driver profile editor,
-        dispatch board, messages, announcements, homepage customization, slideshow pictures,
-        upcoming events, and featured driver profiles for the portal website.
+        dispatch board, announcements, and homepage customization.
       </p>
-      <div class="portal-nav">
-        <a class="btn btn-ghost" href="#driversSection">Drivers</a>
-        <a class="btn btn-ghost" href="#messagesSection">Messages</a>
-        <a class="btn btn-ghost" href="#announcementsSection">Announcements</a>
-        <a class="btn btn-ghost" href="#portalWebsiteSection">Portal Website</a>
-        <a class="btn btn-ghost" id="openPortalHeroLink" href="#">Open Portal</a>
-      </div>
       <div class="hero-meta">
         <div class="chip">Guild: <span id="guildIdChip">-</span></div>
         <div class="chip">User: <span id="userNameChip">-</span></div>
@@ -466,7 +432,7 @@
 
     <section class="main-grid">
       <div class="stack">
-        <article class="card" id="driversSection">
+        <article class="card">
           <div class="card-head">
             <h3>Driver Roster</h3>
             <div class="small muted">Click a driver to edit profile</div>
@@ -549,7 +515,7 @@
           </div>
         </article>
 
-        <article class="card" id="messagesSection">
+        <article class="card">
           <div class="card-head">
             <h3>Dispatch Conversation</h3>
           </div>
@@ -672,7 +638,7 @@
           </div>
         </article>
 
-        <article class="card" id="announcementsSection">
+        <article class="card">
           <div class="card-head">
             <h3>Announcements</h3>
           </div>
@@ -738,6 +704,21 @@
                 </div>
               </div>
 
+              <div class="field">
+                <label for="companyInfoInput">Company Info / About Text</label>
+                <textarea id="companyInfoInput" placeholder="Basic company information for the portal..."></textarea>
+              </div>
+
+              <div class="field">
+                <label for="latestInfoInput">Latest Information (JSON array)</label>
+                <textarea id="latestInfoInput" placeholder='[{"title":"Portal connected","body":"Your selected VTC is now live on the portal.","meta":"System update"}]'></textarea>
+              </div>
+
+              <div class="field">
+                <label for="featuredDriversInput">Featured Drivers (JSON array)</label>
+                <textarea id="featuredDriversInput" placeholder='[{"name":"BamBam87","role":"Driver","bio":"Active company driver and community member."}]'></textarea>
+              </div>
+
               <div class="toolbar">
                 <button class="btn" id="saveHomepageSettingsBtn" type="submit">Save Homepage Settings</button>
               </div>
@@ -746,51 +727,7 @@
           </div>
         </article>
 
-        
-        <article class="card" id="portalWebsiteSection">
-          <div class="card-head">
-            <h3>Portal Website Manager</h3>
-          </div>
-          <div class="card-body">
-            <form id="portalWebsiteForm">
-              <div class="field">
-                <label for="portalHeadlineInput">Portal Headline</label>
-                <input id="portalHeadlineInput" type="text" placeholder="Welcome to Veteran Logistics" />
-              </div>
-
-              <div class="field">
-                <label for="portalIntroInput">Portal Intro</label>
-                <textarea id="portalIntroInput" class="textarea-tall" placeholder="Short intro that appears on the portal for this VTC..."></textarea>
-              </div>
-
-              <div class="field">
-                <label for="portalSlidesInput">Slideshow Image URLs</label>
-                <textarea id="portalSlidesInput" class="textarea-xl" placeholder="One image URL per line"></textarea>
-                <div class="helper">Managers can paste one truck screenshot or promo image URL per line for the portal slideshow.</div>
-              </div>
-
-              <div class="field">
-                <label for="portalEventsInput">Upcoming Events</label>
-                <textarea id="portalEventsInput" class="textarea-xl" placeholder="One event per line. Example: Friday Convoy | 8 PM EST | Phoenix to Elko"></textarea>
-                <div class="helper">Format each line like: Event Name | Date/Time | Short details</div>
-              </div>
-
-              <div class="field">
-                <label for="portalProfilesInput">Featured Driver Profiles</label>
-                <textarea id="portalProfilesInput" class="textarea-xl" placeholder="One profile per line. Example: BamBam87 | Admin | Freightliner Classic XL | Founder and dispatcher"></textarea>
-                <div class="helper">Format each line like: Name | Role | Truck/Favorite Rig | Short bio</div>
-              </div>
-
-              <div class="toolbar">
-                <button class="btn" id="savePortalWebsiteBtn" type="submit">Save Portal Website Content</button>
-                <a class="btn btn-ghost" id="openDriverPortalWebsiteLink" href="#">Open Portal</a>
-              </div>
-              <div id="portalWebsiteStatus" class="small muted" style="margin-top:10px;"></div>
-            </form>
-          </div>
-        </article>
-
-<article class="card">
+        <article class="card">
   <div class="card-head">
     <h3>Discord Auto Setup</h3>
   </div>
@@ -845,7 +782,7 @@
             <div class="toolbar">
               <a class="btn btn-ghost" href="/index.html">Home</a>
               <a class="btn btn-ghost" href="/select-vtc.html">Change VTC</a>
-              <a class="btn btn-ghost" id="openDriverPortalLink" href="#">Open Portal</a>
+              <a class="btn btn-ghost" id="openDriverPortalLink" href="#">Open Driver Portal</a>
             </div>
           </div>
         </article>
