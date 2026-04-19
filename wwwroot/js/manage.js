@@ -7,7 +7,6 @@
   const guildIdChip = document.getElementById("guildIdChip");
   const userNameChip = document.getElementById("userNameChip");
   const refreshBtn = document.getElementById("refreshBtn");
-  const portalBtn = document.getElementById("portalBtn");
   const logoutBtn = document.getElementById("logoutBtn");
   const openDriverPortalLink = document.getElementById("openDriverPortalLink");
 
@@ -69,10 +68,6 @@
   const reportIssueUrlInput = document.getElementById("reportIssueUrlInput");
   const heroImageUrlInput = document.getElementById("heroImageUrlInput");
   const learnMoreUrlInput = document.getElementById("learnMoreUrlInput");
-  const companyInfoInput = document.getElementById("companyInfoInput");
-  const latestInfoInput = document.getElementById("latestInfoInput");
-  const featuredDriversInput = document.getElementById("featuredDriversInput");
-  const selectedFeaturedDriverInput = document.getElementById("selectedFeaturedDriverInput");
   const homepageSettingsStatus = document.getElementById("homepageSettingsStatus");
 
   const discordAutoSetupForm = document.getElementById("discordAutoSetupForm");
@@ -104,39 +99,49 @@
   }
 
 
-  function formatJsonField(value, fallback = "") {
-    if (value == null || value === "") return fallback;
-    if (typeof value === "string") return value;
-    try { return JSON.stringify(value, null, 2); } catch { return fallback; }
-  }
-
-  function parseJsonField(value, fallback) {
-    const raw = String(value ?? "").trim();
-    if (!raw) return fallback;
-    try {
-      return JSON.parse(raw);
-    } catch {
-      return fallback;
+  function renderAnimatedRosterPreview(items) {
+    if (!rosterAnimatedList) return;
+    rosterAnimatedList.innerHTML = "";
+    if (!Array.isArray(items) || !items.length) {
+      rosterAnimatedList.innerHTML = '<div class="small muted">No roster entries loaded yet.</div>';
+      return;
     }
-  }
 
-  function refreshSelectedFeaturedDriverOptions() {
-    if (!selectedFeaturedDriverInput) return;
-    const current = selectedFeaturedDriverInput.value || "";
-    const items = parseJsonField(featuredDriversInput?.value, []);
-    selectedFeaturedDriverInput.innerHTML = '<option value="">Select featured driver...</option>';
-    if (Array.isArray(items)) {
-      items.forEach((item, index) => {
-        const key = String(item.id || item.key || item.name || ("driver_" + index)).trim();
-        const label = String(item.name || item.driverName || key).trim();
-        if (!key) return;
-        const opt = document.createElement("option");
-        opt.value = key;
-        opt.textContent = label;
-        selectedFeaturedDriverInput.appendChild(opt);
+    items.slice(0, 12).forEach((item, index) => {
+      const name = fmt(item.name || item.driverName || "Driver", "Driver");
+      const role = fmt(item.role || item.title || "Driver", "Driver");
+      const bio = fmt(item.bio || item.description || item.notes || "Featured member of the VTC.", "Featured member of the VTC.");
+      const imageUrl = String(item.imageUrl || item.photoUrl || "").trim();
+      const meta = fmt(item.favoriteTruck || item.achievement || item.yearsInVtc || "Member", "Member");
+      const avatar = imageUrl
+        ? '<img src="' + imageUrl + '" alt="' + name.replace(/"/g, '&quot;') + '" style="width:100%;height:100%;object-fit:cover;display:block;" />'
+        : name.substring(0,2).toUpperCase();
+
+      const html = ''
+        + '<button type="button" class="ghost-btn" data-roster-idx="' + index + '" style="display:grid;grid-template-columns:52px 1fr auto;gap:12px;align-items:center;padding:12px;border-radius:16px;border:1px solid rgba(255,255,255,.1);background:rgba(255,255,255,.04);text-align:left;">'
+        +   '<div style="width:52px;height:52px;border-radius:14px;overflow:hidden;background:linear-gradient(135deg,#4da3ff,#1e5faf);display:grid;place-items:center;font-weight:800;color:#fff;">' + avatar + '</div>'
+        +   '<div><div style="font-weight:800;margin-bottom:4px;">' + name + '</div><div style="color:#76beff;font-size:.84rem;font-weight:700;margin-bottom:4px;">' + role + '</div><div class="small muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + bio + '</div></div>'
+        +   '<div class="small muted">' + meta + '</div>'
+        + '</button>';
+      rosterAnimatedList.insertAdjacentHTML("beforeend", html);
+    });
+
+    rosterAnimatedList.querySelectorAll("[data-roster-idx]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.getAttribute("data-roster-idx") || "0");
+        const item = items[idx] || {};
+        const name = fmt(item.name || item.driverName || "Driver", "Driver");
+        const role = fmt(item.role || item.title || "Driver", "Driver");
+        const bio = fmt(item.bio || item.description || item.notes || "No details available.", "No details available.");
+        const truck = item.favoriteTruck ? " | Favorite Truck: " + item.favoriteTruck : "";
+        const achievement = item.achievement ? " | Achievement: " + item.achievement : "";
+        const years = item.yearsInVtc ? " | Years in VTC: " + item.yearsInVtc : "";
+        if (rosterAnimatedDetail) {
+          rosterAnimatedDetail.style.display = "block";
+          rosterAnimatedDetail.textContent = name + " — " + role + " | " + bio + truck + achievement + years;
+        }
       });
-    }
-    if (current) selectedFeaturedDriverInput.value = current;
+    });
   }
 
   async function getJson(url, options) {
@@ -567,11 +572,6 @@
     if (reportIssueUrlInput) reportIssueUrlInput.value = s.reportIssueUrl || "";
     if (heroImageUrlInput) heroImageUrlInput.value = s.heroImageUrl || s.bannerImageUrl || "";
     if (learnMoreUrlInput) learnMoreUrlInput.value = s.learnMoreUrl || "";
-    if (companyInfoInput) companyInfoInput.value = s.companyInfo || s.aboutText || "";
-    if (latestInfoInput) latestInfoInput.value = formatJsonField(s.latestInfo, "");
-    if (featuredDriversInput) featuredDriversInput.value = formatJsonField(s.featuredDrivers, "");
-    refreshSelectedFeaturedDriverOptions();
-    if (selectedFeaturedDriverInput) selectedFeaturedDriverInput.value = s.selectedFeaturedDriver || "";
   }
 
   async function saveHomepageSettings() {
@@ -587,10 +587,6 @@
       reportIssueUrl: reportIssueUrlInput?.value || "",
       heroImageUrl: heroImageUrlInput?.value || "",
       learnMoreUrl: learnMoreUrlInput?.value || "",
-      companyInfo: companyInfoInput?.value || "",
-      latestInfo: parseJsonField(latestInfoInput?.value, []),
-      featuredDrivers: parseJsonField(featuredDriversInput?.value, []),
-      selectedFeaturedDriver: selectedFeaturedDriverInput?.value || "",
       discord: {
         joinDiscordUrl: joinDiscordUrlInput?.value || ""
       }
@@ -893,18 +889,6 @@
     discordAutoSetupForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       await autoSetupDiscord();
-    });
-  }
-
-  if (featuredDriversInput) {
-    featuredDriversInput.addEventListener("input", refreshSelectedFeaturedDriverOptions);
-  }
-
-  if (portalBtn) {
-    portalBtn.addEventListener("click", () => {
-      const url = new URL("/portal.html", window.location.origin);
-      if (guildId) url.searchParams.set("guildId", guildId);
-      window.location.href = url.toString();
     });
   }
 
