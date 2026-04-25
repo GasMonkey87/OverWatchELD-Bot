@@ -1,323 +1,245 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>OverWatch ELD Management</title>
-  <link rel="stylesheet" href="/manage.css" />
+<meta charset="UTF-8">
+<title>OverWatch ELD - Management</title>
+
+<style>
+body {
+    margin:0;
+    font-family:Segoe UI;
+    background:#0f172a;
+    color:white;
+}
+
+/* Sidebar */
+.sidebar {
+    width:220px;
+    height:100vh;
+    background:#020617;
+    position:fixed;
+    padding-top:20px;
+}
+
+.sidebar button {
+    display:block;
+    width:100%;
+    padding:15px;
+    border:none;
+    background:none;
+    color:white;
+    text-align:left;
+    cursor:pointer;
+}
+
+.sidebar button:hover {
+    background:#1e293b;
+}
+
+/* Main */
+.main {
+    margin-left:220px;
+    padding:20px;
+}
+
+/* Cards */
+.card {
+    background:#1e293b;
+    padding:15px;
+    border-radius:10px;
+    margin-bottom:15px;
+}
+
+/* Driver list */
+.driver {
+    padding:10px;
+    border-bottom:1px solid #334155;
+    cursor:pointer;
+}
+
+.driver:hover {
+    background:#334155;
+}
+
+/* Modal */
+.modal {
+    display:none;
+    position:fixed;
+    top:0;
+    left:0;
+    width:100%;
+    height:100%;
+    background:rgba(0,0,0,0.7);
+}
+
+.modal-content {
+    background:#020617;
+    margin:10% auto;
+    padding:20px;
+    width:400px;
+    border-radius:10px;
+}
+</style>
 </head>
+
 <body>
-  <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand">
-        <div class="brand-mark">OW</div>
-        <div>
-          <div class="brand-title">OverWatch ELD</div>
-          <div class="brand-subtitle">Management Hub</div>
+
+<div class="sidebar">
+    <button onclick="loadPage('dashboard')">Dashboard</button>
+    <button onclick="loadPage('drivers')">Drivers</button>
+    <button onclick="loadPage('fleet')">Fleet</button>
+    <button onclick="loadPage('garage')">Garage</button>
+    <button onclick="loadPage('portal')">Portal</button>
+    <button onclick="loadPage('announcements')">Announcements</button>
+</div>
+
+<div class="main" id="content">
+    Loading...
+</div>
+
+<!-- Driver Modal -->
+<div id="driverModal" class="modal">
+  <div class="modal-content" id="driverDetails"></div>
+</div>
+
+<script>
+const API = "https://overwatcheld-bot-5.up.railway.app";
+const guildId = new URLSearchParams(window.location.search).get("guildId");
+
+/* ROUTER */
+function loadPage(page){
+    if(page==="dashboard") loadDashboard();
+    if(page==="drivers") loadDrivers();
+    if(page==="fleet") loadFleet();
+    if(page==="garage") loadGarage();
+    if(page==="portal") loadPortal();
+    if(page==="announcements") loadAnnouncements();
+}
+
+/* DASHBOARD */
+async function loadDashboard(){
+    document.getElementById("content").innerHTML = `
+        <div class="card"><h2>Dashboard</h2></div>
+    `;
+}
+
+/* DRIVERS */
+async function loadDrivers(){
+    let res = await fetch(`${API}/api/vtc/roster?guildId=${guildId}`);
+    let data = await res.json();
+
+    let html = `<div class="card"><h2>Drivers</h2>`;
+
+    if(!data.data || data.data.length===0){
+        html += "<p>No drivers found</p>";
+    } else {
+        data.data.forEach(d=>{
+            html += `
+                <div class="driver" onclick='showDriver(${JSON.stringify(d)})'>
+                    ${d.name}
+                </div>
+            `;
+        });
+    }
+
+    html += "</div>";
+    document.getElementById("content").innerHTML = html;
+}
+
+function showDriver(d){
+    document.getElementById("driverDetails").innerHTML = `
+        <h2>${d.name}</h2>
+        <p>ID: ${d.discordUserId}</p>
+        <p>Miles: ${d.miles || 0}</p>
+    `;
+    document.getElementById("driverModal").style.display="block";
+}
+
+/* FLEET */
+async function loadFleet(){
+    let res = await fetch(`${API}/api/fleet?guildId=${guildId}`);
+    let data = await res.json();
+
+    let html = `<div class="card"><h2>Fleet</h2>`;
+
+    if(!data.data){
+        html += "<p>No trucks found</p>";
+    } else {
+        data.data.forEach(t=>{
+            html += `
+                <div class="driver">
+                    Truck ${t.truckNumber} - ${t.driver || "Unassigned"}
+                </div>
+            `;
+        });
+    }
+
+    html += "</div>";
+    document.getElementById("content").innerHTML = html;
+}
+
+/* GARAGE */
+function loadGarage(){
+    document.getElementById("content").innerHTML = `
+        <div class="card">
+            <h2>Garage</h2>
+            <button onclick="buyGarage()">Buy Garage</button>
         </div>
-      </div>
+    `;
+}
 
-      <div class="vtc-card">
-        <img id="vtcLogo" class="vtc-logo" src="/assets/default-vtc.png" alt="VTC logo" />
-        <div>
-          <div id="vtcName" class="vtc-name">Loading VTC...</div>
-          <div id="userRole" class="role-pill">Checking access</div>
+function buyGarage(){
+    alert("Garage purchased (mock)");
+}
+
+/* PORTAL */
+function loadPortal(){
+    document.getElementById("content").innerHTML = `
+        <div class="card">
+            <h2>Portal Settings</h2>
+            <input id="desc" placeholder="Description"/><br><br>
+            <button onclick="savePortal()">Save</button>
         </div>
-      </div>
+    `;
+}
 
-      <nav class="nav">
-        <button class="nav-btn active" data-page="dashboard">Dashboard</button>
-        <button class="nav-btn" data-page="portal">Portal Page</button>
-        <button class="nav-btn" data-page="drivers">Drivers</button>
-        <button class="nav-btn" data-page="fleet">Fleet</button>
-        <button class="nav-btn" data-page="garage">Garage</button>
-        <button class="nav-btn" data-page="announcements">Announcements</button>
-        <button class="nav-btn" data-page="dispatch">Dispatch</button>
-        <button class="nav-btn" data-page="settings">Settings</button>
-      </nav>
+async function savePortal(){
+    alert("Saved (hook API next)");
+}
 
-      <div class="sidebar-footer">
-        <a href="/" class="small-link">Public Home</a>
-        <a id="portalOpenLink" href="/portal.html" class="small-link">Open Portal</a>
-      </div>
-    </aside>
-
-    <main class="main">
-      <header class="topbar">
-        <div>
-          <h1 id="pageTitle">Dashboard</h1>
-          <p id="pageSubtitle">Live overview of your VTC.</p>
+/* ANNOUNCEMENTS */
+function loadAnnouncements(){
+    document.getElementById("content").innerHTML = `
+        <div class="card">
+            <h2>Announcements</h2>
+            <textarea id="msg"></textarea><br>
+            <button onclick="sendAnnouncement()">Send</button>
         </div>
-        <div class="top-actions">
-          <button id="refreshBtn" class="btn secondary">Refresh</button>
-          <a class="btn primary" href="/auth/login">Discord Login</a>
-        </div>
-      </header>
+    `;
+}
 
-      <div id="toast" class="toast hidden"></div>
+async function sendAnnouncement(){
+    let msg = document.getElementById("msg").value;
 
-      <section id="page-dashboard" class="page active">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <span>Drivers</span>
-            <strong id="statDrivers">0</strong>
-          </div>
-          <div class="stat-card">
-            <span>Online</span>
-            <strong id="statOnline">0</strong>
-          </div>
-          <div class="stat-card">
-            <span>Fleet Trucks</span>
-            <strong id="statFleet">0</strong>
-          </div>
-          <div class="stat-card">
-            <span>Weekly Miles</span>
-            <strong id="statMiles">0</strong>
-          </div>
-        </div>
+    await fetch(`${API}/api/announcements`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({guildId,text:msg})
+    });
 
-        <div class="content-grid">
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Recent Announcements</h2>
-              <button class="btn tiny" data-jump="announcements">Manage</button>
-            </div>
-            <div id="recentAnnouncements" class="stack"></div>
-          </div>
+    alert("Sent");
+}
 
-          <div class="panel">
-            <div class="panel-head">
-              <h2>Driver Snapshot</h2>
-              <button class="btn tiny" data-jump="drivers">View All</button>
-            </div>
-            <div id="driverSnapshot" class="stack"></div>
-          </div>
-        </div>
-      </section>
+/* INIT */
+loadPage("dashboard");
 
-      <section id="page-portal" class="page">
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Portal Page Content</h2>
-            <button id="savePortalBtn" class="btn primary">Save Portal</button>
-          </div>
+/* CLOSE MODAL */
+window.onclick = function(e){
+    if(e.target.id==="driverModal"){
+        document.getElementById("driverModal").style.display="none";
+    }
+}
+</script>
 
-          <div class="form-grid">
-            <label>
-              Company Name
-              <input id="portalCompanyName" type="text" placeholder="Your VTC name" />
-            </label>
-
-            <label>
-              Tagline
-              <input id="portalTagline" type="text" placeholder="The ELD you can count on." />
-            </label>
-
-            <label class="wide">
-              About Company
-              <textarea id="portalAbout" rows="5" placeholder="Write basic company information for your public portal."></textarea>
-            </label>
-
-            <label>
-              Discord Invite URL
-              <input id="portalDiscordUrl" type="url" placeholder="https://discord.gg/..." />
-            </label>
-
-            <label>
-              Join Team URL
-              <input id="portalJoinUrl" type="url" placeholder="Application or Discord URL" />
-            </label>
-
-            <label>
-              Report Issue Email
-              <input id="portalIssueEmail" type="email" placeholder="GasMonkeyCreations@gmail.com" />
-            </label>
-
-            <label>
-              Banner Image URL
-              <input id="portalBannerUrl" type="url" placeholder="https://..." />
-            </label>
-
-            <label>
-              Logo Image URL
-              <input id="portalLogoUrl" type="url" placeholder="https://..." />
-            </label>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Featured Driver</h2>
-          </div>
-          <div class="form-grid">
-            <label>
-              Select Driver
-              <select id="featuredDriverSelect"></select>
-            </label>
-            <label>
-              Title
-              <input id="featuredDriverTitle" type="text" placeholder="Driver of the Month" />
-            </label>
-            <label class="wide">
-              Featured Note
-              <textarea id="featuredDriverNote" rows="4" placeholder="Why this driver is featured."></textarea>
-            </label>
-          </div>
-        </div>
-      </section>
-
-      <section id="page-drivers" class="page">
-        <div class="panel">
-          <div class="panel-head">
-            <div>
-              <h2>Driver Management</h2>
-              <p>Roster, mileage, Discord profile, role, and status.</p>
-            </div>
-            <input id="driverSearch" class="search" type="search" placeholder="Search drivers..." />
-          </div>
-
-          <div id="driversList" class="driver-list"></div>
-        </div>
-      </section>
-
-      <section id="page-fleet" class="page">
-        <div class="panel">
-          <div class="panel-head">
-            <div>
-              <h2>Fleet</h2>
-              <p>Company trucks shown on the portal fleet page.</p>
-            </div>
-            <button id="addTruckBtn" class="btn primary">Add Truck</button>
-          </div>
-
-          <div id="fleetList" class="fleet-list"></div>
-        </div>
-      </section>
-
-      <section id="page-garage" class="page">
-        <div class="panel">
-          <div class="panel-head">
-            <div>
-              <h2>Garage</h2>
-              <p>Owner/admin garage records for in-game company locations.</p>
-            </div>
-            <button id="addGarageBtn" class="btn primary">Add Garage</button>
-          </div>
-
-          <div id="garageList" class="fleet-list"></div>
-        </div>
-      </section>
-
-      <section id="page-announcements" class="page">
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Create Announcement</h2>
-            <button id="sendAnnouncementBtn" class="btn primary">Post Announcement</button>
-          </div>
-
-          <div class="form-grid">
-            <label>
-              Title
-              <input id="announcementTitle" type="text" placeholder="Announcement title" />
-            </label>
-
-            <label class="wide">
-              Message
-              <textarea id="announcementBody" rows="5" placeholder="Announcement message"></textarea>
-            </label>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head">
-            <h2>All Announcements</h2>
-          </div>
-          <div id="announcementsList" class="stack"></div>
-        </div>
-      </section>
-
-      <section id="page-dispatch" class="page">
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Send Dispatch Message</h2>
-            <button id="sendDispatchBtn" class="btn primary">Send</button>
-          </div>
-
-          <div class="form-grid">
-            <label>
-              Driver
-              <select id="dispatchDriverSelect"></select>
-            </label>
-
-            <label class="wide">
-              Message
-              <textarea id="dispatchMessage" rows="5" placeholder="Message to driver or fleet"></textarea>
-            </label>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Recent Dispatch Messages</h2>
-          </div>
-          <div id="dispatchList" class="stack"></div>
-        </div>
-      </section>
-
-      <section id="page-settings" class="page">
-        <div class="panel">
-          <div class="panel-head">
-            <h2>Company Settings</h2>
-            <button id="saveSettingsBtn" class="btn primary">Save Settings</button>
-          </div>
-
-          <div class="form-grid">
-            <label>
-              VTC Name
-              <input id="settingsVtcName" type="text" />
-            </label>
-
-            <label>
-              Short Name
-              <input id="settingsVtcShort" type="text" />
-            </label>
-
-            <label>
-              Dispatch Channel ID
-              <input id="settingsDispatchChannel" type="text" />
-            </label>
-
-            <label>
-              Announcement Channel ID
-              <input id="settingsAnnouncementChannel" type="text" />
-            </label>
-
-            <label>
-              System Log Channel ID
-              <input id="settingsSystemChannel" type="text" />
-            </label>
-
-            <label>
-              Loadboard Channel ID
-              <input id="settingsLoadboardChannel" type="text" />
-            </label>
-          </div>
-        </div>
-      </section>
-    </main>
-  </div>
-
-  <dialog id="editDialog">
-    <form method="dialog" class="dialog-card">
-      <h2 id="dialogTitle">Edit</h2>
-      <div id="dialogBody" class="form-grid"></div>
-      <div class="dialog-actions">
-        <button class="btn secondary" value="cancel">Cancel</button>
-        <button id="dialogSaveBtn" class="btn primary" value="default">Save</button>
-      </div>
-    </form>
-  </dialog>
-
-  <script src="/manage.js"></script>
 </body>
 </html>
