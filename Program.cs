@@ -197,6 +197,7 @@ public static partial class Program
         builder.Services.AddSingleton(new VtcAccessService(_client));
         builder.Services.AddHttpClient<DiscordOAuthService>();
         builder.Services.AddSingleton<PortalDataStore>();
+        builder.Services.AddHttpClient();
         
         var portStr = Environment.GetEnvironmentVariable("PORT") ?? "8080";
         if (!int.TryParse(portStr, out var port))
@@ -239,7 +240,7 @@ public static partial class Program
             utc = DateTimeOffset.UtcNow,
             discordReady = services.DiscordReady
         }));
-
+        app.MapMapAssetRoutes();
         app.MapGet("/api/status", () => Results.Ok(new
         {
             ok = true,
