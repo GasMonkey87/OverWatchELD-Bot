@@ -223,7 +223,7 @@ public static partial class Program
                 FileProvider = new PhysicalFileProvider(wwwroot)
             });
         }
-
+        app.MapTelemetryRoutes();
         app.MapGet("/health", () => Results.Ok(new
         {
             ok = true,
