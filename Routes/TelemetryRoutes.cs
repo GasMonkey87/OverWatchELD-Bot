@@ -17,11 +17,7 @@ public static class TelemetryRoutes
             lock (LockObj)
             {
                 Units.TryGetValue(guildId, out var units);
-                return Results.Ok(new
-                {
-                    ok = true,
-                    data = units ?? new List<TelemetryUnit>()
-                });
+                return Results.Ok(new { ok = true, data = units ?? new List<TelemetryUnit>() });
             }
         });
 
@@ -31,7 +27,7 @@ public static class TelemetryRoutes
                 return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
 
             if (string.IsNullOrWhiteSpace(unit.DriverDiscordUserId))
-                unit.DriverDiscordUserId = unit.Driver ?? unit.Truck ?? Guid.NewGuid().ToString("N");
+                unit.DriverDiscordUserId = unit.Driver ?? unit.DriverName ?? unit.Truck ?? Guid.NewGuid().ToString("N");
 
             unit.UpdatedUtc = DateTimeOffset.UtcNow;
 
@@ -58,6 +54,7 @@ public sealed class TelemetryUnit
 {
     public string GuildId { get; set; } = "";
     public string DriverDiscordUserId { get; set; } = "";
+
     public string? Driver { get; set; }
     public string? DriverName { get; set; }
     public string? Truck { get; set; }
@@ -67,6 +64,12 @@ public sealed class TelemetryUnit
     public double Y { get; set; }
     public double MapX { get; set; }
     public double MapY { get; set; }
+
+    public double? Longitude { get; set; }
+    public double? Latitude { get; set; }
+    public double? Lng { get; set; }
+    public double? Lat { get; set; }
+    public double? Lon { get; set; }
 
     public string? City { get; set; }
     public string? State { get; set; }
