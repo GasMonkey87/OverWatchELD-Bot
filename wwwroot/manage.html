@@ -1,245 +1,793 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>OverWatch ELD - Management</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>OverWatch ELD - VTC Management</title>
 
 <style>
-body {
-    margin:0;
-    font-family:Segoe UI;
-    background:#0f172a;
-    color:white;
+:root{
+  --bg:#0b1120;
+  --panel:#111827;
+  --panel2:#1f2937;
+  --line:#334155;
+  --text:#f8fafc;
+  --muted:#94a3b8;
+  --accent:#38bdf8;
+  --good:#22c55e;
+  --warn:#f59e0b;
+  --bad:#ef4444;
 }
 
-/* Sidebar */
-.sidebar {
-    width:220px;
-    height:100vh;
-    background:#020617;
-    position:fixed;
-    padding-top:20px;
+*{box-sizing:border-box}
+
+body{
+  margin:0;
+  font-family:Segoe UI,Arial,sans-serif;
+  background:linear-gradient(135deg,#020617,#0f172a);
+  color:var(--text);
 }
 
-.sidebar button {
+.layout{
+  display:flex;
+  min-height:100vh;
+}
+
+.sidebar{
+  width:250px;
+  background:#020617;
+  border-right:1px solid var(--line);
+  padding:18px;
+  position:fixed;
+  top:0;
+  bottom:0;
+  left:0;
+}
+
+.brand{
+  font-size:22px;
+  font-weight:800;
+  margin-bottom:4px;
+}
+
+.subbrand{
+  color:var(--muted);
+  font-size:13px;
+  margin-bottom:20px;
+}
+
+.nav button{
+  width:100%;
+  background:transparent;
+  border:1px solid transparent;
+  color:var(--text);
+  padding:13px;
+  text-align:left;
+  border-radius:12px;
+  cursor:pointer;
+  margin-bottom:7px;
+  font-size:15px;
+}
+
+.nav button:hover,
+.nav button.active{
+  background:#0f172a;
+  border-color:#1e3a8a;
+}
+
+.main{
+  margin-left:250px;
+  padding:24px;
+  width:calc(100% - 250px);
+}
+
+.topbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:16px;
+  margin-bottom:20px;
+}
+
+.badge{
+  background:#082f49;
+  color:#7dd3fc;
+  border:1px solid #0ea5e9;
+  padding:7px 10px;
+  border-radius:999px;
+  font-size:13px;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:16px;
+}
+
+.card{
+  background:rgba(15,23,42,.92);
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:18px;
+  box-shadow:0 15px 35px rgba(0,0,0,.22);
+}
+
+.card h2,.card h3{
+  margin-top:0;
+}
+
+.muted{color:var(--muted)}
+
+input,textarea,select{
+  width:100%;
+  background:#020617;
+  color:var(--text);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:11px;
+  margin:6px 0 12px;
+}
+
+textarea{
+  min-height:110px;
+  resize:vertical;
+}
+
+button.primary{
+  background:linear-gradient(135deg,#0284c7,#2563eb);
+  color:white;
+  border:none;
+  border-radius:12px;
+  padding:11px 15px;
+  cursor:pointer;
+  font-weight:700;
+}
+
+button.secondary{
+  background:#1f2937;
+  color:white;
+  border:1px solid var(--line);
+  border-radius:12px;
+  padding:10px 14px;
+  cursor:pointer;
+}
+
+button.danger{
+  background:#7f1d1d;
+  color:white;
+  border:1px solid #ef4444;
+  border-radius:12px;
+  padding:10px 14px;
+  cursor:pointer;
+}
+
+.list-item{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+  padding:13px;
+  border-bottom:1px solid var(--line);
+  cursor:pointer;
+}
+
+.list-item:hover{
+  background:#1e293b;
+}
+
+.avatar{
+  width:46px;
+  height:46px;
+  border-radius:50%;
+  background:#334155;
+  object-fit:cover;
+}
+
+.row{
+  display:flex;
+  gap:12px;
+  align-items:center;
+}
+
+.table{
+  width:100%;
+  border-collapse:collapse;
+}
+
+.table th,.table td{
+  padding:11px;
+  border-bottom:1px solid var(--line);
+  text-align:left;
+}
+
+.status-good{color:var(--good)}
+.status-warn{color:var(--warn)}
+.status-bad{color:var(--bad)}
+
+.modal{
+  display:none;
+  position:fixed;
+  inset:0;
+  background:rgba(0,0,0,.72);
+  z-index:20;
+  padding:30px;
+}
+
+.modal-card{
+  max-width:620px;
+  margin:5vh auto;
+  background:#020617;
+  border:1px solid var(--line);
+  border-radius:20px;
+  padding:22px;
+}
+
+.actions{
+  display:flex;
+  gap:10px;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+
+.notice{
+  padding:12px;
+  border-radius:12px;
+  background:#172554;
+  border:1px solid #1d4ed8;
+  margin-bottom:14px;
+}
+
+.error{
+  padding:12px;
+  border-radius:12px;
+  background:#450a0a;
+  border:1px solid #dc2626;
+  margin-bottom:14px;
+}
+
+@media(max-width:850px){
+  .sidebar{
+    position:relative;
+    width:100%;
+    height:auto;
+  }
+  .layout{
     display:block;
+  }
+  .main{
+    margin-left:0;
     width:100%;
-    padding:15px;
-    border:none;
-    background:none;
-    color:white;
-    text-align:left;
-    cursor:pointer;
-}
-
-.sidebar button:hover {
-    background:#1e293b;
-}
-
-/* Main */
-.main {
-    margin-left:220px;
-    padding:20px;
-}
-
-/* Cards */
-.card {
-    background:#1e293b;
-    padding:15px;
-    border-radius:10px;
-    margin-bottom:15px;
-}
-
-/* Driver list */
-.driver {
-    padding:10px;
-    border-bottom:1px solid #334155;
-    cursor:pointer;
-}
-
-.driver:hover {
-    background:#334155;
-}
-
-/* Modal */
-.modal {
-    display:none;
-    position:fixed;
-    top:0;
-    left:0;
-    width:100%;
-    height:100%;
-    background:rgba(0,0,0,0.7);
-}
-
-.modal-content {
-    background:#020617;
-    margin:10% auto;
-    padding:20px;
-    width:400px;
-    border-radius:10px;
+  }
 }
 </style>
 </head>
 
 <body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">OverWatch ELD</div>
+    <div class="subbrand">VTC Management Center</div>
 
-<div class="sidebar">
-    <button onclick="loadPage('dashboard')">Dashboard</button>
-    <button onclick="loadPage('drivers')">Drivers</button>
-    <button onclick="loadPage('fleet')">Fleet</button>
-    <button onclick="loadPage('garage')">Garage</button>
-    <button onclick="loadPage('portal')">Portal</button>
-    <button onclick="loadPage('announcements')">Announcements</button>
+    <div class="nav">
+      <button data-page="dashboard" onclick="route('dashboard')">Dashboard</button>
+      <button data-page="drivers" onclick="route('drivers')">Drivers</button>
+      <button data-page="fleet" onclick="route('fleet')">Fleet</button>
+      <button data-page="garage" onclick="route('garage')">Garage</button>
+      <button data-page="portal" onclick="route('portal')">Portal</button>
+      <button data-page="announcements" onclick="route('announcements')">Announcements</button>
+      <button data-page="settings" onclick="route('settings')">Settings</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="pageTitle">Dashboard</h1>
+        <div class="muted" id="guildLine">Loading VTC...</div>
+      </div>
+      <div class="badge" id="statusBadge">Connecting...</div>
+    </div>
+
+    <div id="content"></div>
+  </main>
 </div>
 
-<div class="main" id="content">
-    Loading...
-</div>
-
-<!-- Driver Modal -->
-<div id="driverModal" class="modal">
-  <div class="modal-content" id="driverDetails"></div>
+<div id="modal" class="modal" onclick="closeModal(event)">
+  <div class="modal-card" id="modalBody"></div>
 </div>
 
 <script>
-const API = "https://overwatcheld-bot-5.up.railway.app";
-const guildId = new URLSearchParams(window.location.search).get("guildId");
+const API = location.origin.includes("localhost")
+  ? "https://overwatcheld-bot-5.up.railway.app"
+  : location.origin;
 
-/* ROUTER */
-function loadPage(page){
-    if(page==="dashboard") loadDashboard();
-    if(page==="drivers") loadDrivers();
-    if(page==="fleet") loadFleet();
-    if(page==="garage") loadGarage();
-    if(page==="portal") loadPortal();
-    if(page==="announcements") loadAnnouncements();
+const qs = new URLSearchParams(location.search);
+const guildId = qs.get("guildId") || localStorage.getItem("oweld.guildId") || "";
+const apiKey = localStorage.getItem("oweld.apiKey") || "";
+
+if (guildId) localStorage.setItem("oweld.guildId", guildId);
+
+let state = {
+  me:null,
+  roster:[],
+  fleet:[],
+  garages:[],
+  portal:null,
+  announcements:[]
+};
+
+function headers(){
+  const h = {"Content-Type":"application/json"};
+  if(apiKey) h["X-API-Key"] = apiKey;
+  return h;
 }
 
-/* DASHBOARD */
+async function api(path, options={}){
+  const res = await fetch(`${API}${path}`, {
+    ...options,
+    headers:{...headers(), ...(options.headers || {})}
+  });
+
+  let json = null;
+  try { json = await res.json(); } catch {}
+
+  if(!res.ok || (json && json.ok === false)){
+    const msg = json?.error || json?.message || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  return json || {};
+}
+
+function setStatus(text, good=true){
+  const el = document.getElementById("statusBadge");
+  el.textContent = text;
+  el.style.borderColor = good ? "#0ea5e9" : "#ef4444";
+  el.style.color = good ? "#7dd3fc" : "#fecaca";
+  el.style.background = good ? "#082f49" : "#450a0a";
+}
+
+function setActive(page){
+  document.querySelectorAll(".nav button").forEach(b=>{
+    b.classList.toggle("active", b.dataset.page === page);
+  });
+}
+
+function money(n){
+  return `$${Number(n || 0).toLocaleString()}`;
+}
+
+function esc(v){
+  return String(v ?? "").replace(/[&<>"']/g, s => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
+  }[s]));
+}
+
+async function safeLoad(fn){
+  try{
+    setStatus("Syncing...", true);
+    await fn();
+    setStatus("Live", true);
+  }catch(e){
+    setStatus("Error", false);
+    document.getElementById("content").innerHTML =
+      `<div class="error"><b>Failed:</b> ${esc(e.message)}</div>`;
+  }
+}
+
+function route(page){
+  setActive(page);
+  document.getElementById("pageTitle").textContent =
+    page.charAt(0).toUpperCase() + page.slice(1);
+
+  if(page === "dashboard") safeLoad(loadDashboard);
+  if(page === "drivers") safeLoad(loadDrivers);
+  if(page === "fleet") safeLoad(loadFleet);
+  if(page === "garage") safeLoad(loadGarage);
+  if(page === "portal") safeLoad(loadPortal);
+  if(page === "announcements") safeLoad(loadAnnouncements);
+  if(page === "settings") loadSettings();
+}
+
+async function hydrateBasic(){
+  if(!guildId){
+    document.getElementById("guildLine").textContent = "No guildId found in URL.";
+    return;
+  }
+
+  document.getElementById("guildLine").textContent = `Guild ID: ${guildId}`;
+
+  try{
+    const me = await api(`/api/auth/me`);
+    state.me = me;
+  }catch{}
+}
+
 async function loadDashboard(){
-    document.getElementById("content").innerHTML = `
-        <div class="card"><h2>Dashboard</h2></div>
-    `;
+  const [roster, announcements] = await Promise.allSettled([
+    api(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`),
+    api(`/api/announcements?guildId=${encodeURIComponent(guildId)}`)
+  ]);
+
+  state.roster = roster.value?.data || roster.value?.drivers || [];
+  state.announcements = announcements.value?.data || announcements.value?.announcements || [];
+
+  document.getElementById("content").innerHTML = `
+    <div class="grid">
+      <div class="card">
+        <h3>Drivers</h3>
+        <div style="font-size:34px;font-weight:800">${state.roster.length}</div>
+        <div class="muted">Active roster records</div>
+      </div>
+
+      <div class="card">
+        <h3>Announcements</h3>
+        <div style="font-size:34px;font-weight:800">${state.announcements.length}</div>
+        <div class="muted">Synced posts</div>
+      </div>
+
+      <div class="card">
+        <h3>Portal</h3>
+        <div style="font-size:20px;font-weight:700">Public VTC Page</div>
+        <div class="actions">
+          <button class="primary" onclick="window.open('/portal.html?guildId=${guildId}','_blank')">Open Portal</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3>Recent Announcements</h3>
+      ${state.announcements.slice(0,5).map(a=>`
+        <div class="list-item">
+          <div>${esc(a.text || a.message || a.content || "Announcement")}</div>
+          <span class="muted">${esc(a.createdAt || a.createdUtc || "")}</span>
+        </div>
+      `).join("") || `<div class="muted">No announcements yet.</div>`}
+    </div>
+  `;
 }
 
-/* DRIVERS */
 async function loadDrivers(){
-    let res = await fetch(`${API}/api/vtc/roster?guildId=${guildId}`);
-    let data = await res.json();
+  const data = await api(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`);
+  state.roster = data.data || data.drivers || [];
 
-    let html = `<div class="card"><h2>Drivers</h2>`;
+  document.getElementById("content").innerHTML = `
+    <div class="notice">Click a driver to view mileage, Discord info, role, and profile details.</div>
 
-    if(!data.data || data.data.length===0){
-        html += "<p>No drivers found</p>";
-    } else {
-        data.data.forEach(d=>{
-            html += `
-                <div class="driver" onclick='showDriver(${JSON.stringify(d)})'>
-                    ${d.name}
-                </div>
-            `;
-        });
-    }
-
-    html += "</div>";
-    document.getElementById("content").innerHTML = html;
+    <div class="card">
+      <h2>Driver Roster</h2>
+      ${state.roster.length ? state.roster.map((d,i)=>`
+        <div class="list-item" onclick="openDriver(${i})">
+          <div class="row">
+            <img class="avatar" src="${esc(d.avatarUrl || d.discordAvatarUrl || "")}" onerror="this.style.display='none'"/>
+            <div>
+              <b>${esc(d.name || d.driverName || d.displayName || "Unknown Driver")}</b>
+              <div class="muted">${esc(d.discordUserId || d.userId || "")}</div>
+            </div>
+          </div>
+          <div>
+            <b>${Number(d.miles || d.milesTotal || d.totalMiles || 0).toLocaleString()}</b>
+            <span class="muted"> miles</span>
+          </div>
+        </div>
+      `).join("") : `<div class="muted">No drivers found. Check roster API or linked Discord users.</div>`}
+    </div>
+  `;
 }
 
-function showDriver(d){
-    document.getElementById("driverDetails").innerHTML = `
-        <h2>${d.name}</h2>
-        <p>ID: ${d.discordUserId}</p>
-        <p>Miles: ${d.miles || 0}</p>
-    `;
-    document.getElementById("driverModal").style.display="block";
+function openDriver(i){
+  const d = state.roster[i];
+
+  document.getElementById("modalBody").innerHTML = `
+    <div class="row">
+      <img class="avatar" src="${esc(d.avatarUrl || d.discordAvatarUrl || "")}" onerror="this.style.display='none'"/>
+      <div>
+        <h2 style="margin:0">${esc(d.name || d.driverName || d.displayName || "Driver")}</h2>
+        <div class="muted">${esc(d.discordUserId || d.userId || "")}</div>
+      </div>
+    </div>
+
+    <hr style="border-color:#334155;margin:18px 0"/>
+
+    <div class="grid">
+      <div class="card"><b>Total Miles</b><br>${Number(d.miles || d.milesTotal || d.totalMiles || 0).toLocaleString()}</div>
+      <div class="card"><b>Loads</b><br>${Number(d.loads || d.loadsTotal || 0).toLocaleString()}</div>
+      <div class="card"><b>Role</b><br>${esc(d.role || d.vtcRole || "Driver")}</div>
+      <div class="card"><b>Status</b><br>${esc(d.status || "Offline")}</div>
+    </div>
+
+    <div class="actions">
+      <button class="secondary" onclick="modal.style.display='none'">Close</button>
+    </div>
+  `;
+
+  document.getElementById("modal").style.display = "block";
 }
 
-/* FLEET */
 async function loadFleet(){
-    let res = await fetch(`${API}/api/fleet?guildId=${guildId}`);
-    let data = await res.json();
+  let data;
+  try{
+    data = await api(`/api/fleet?guildId=${encodeURIComponent(guildId)}`);
+  }catch{
+    data = {data:[]};
+  }
 
-    let html = `<div class="card"><h2>Fleet</h2>`;
+  state.fleet = data.data || data.trucks || [];
 
-    if(!data.data){
-        html += "<p>No trucks found</p>";
-    } else {
-        data.data.forEach(t=>{
-            html += `
-                <div class="driver">
-                    Truck ${t.truckNumber} - ${t.driver || "Unassigned"}
-                </div>
-            `;
-        });
-    }
+  document.getElementById("content").innerHTML = `
+    <div class="card">
+      <h2>Fleet</h2>
+      <div class="actions">
+        <button class="primary" onclick="openTruckForm()">Add Truck</button>
+        <button class="secondary" onclick="route('fleet')">Refresh</button>
+      </div>
 
-    html += "</div>";
-    document.getElementById("content").innerHTML = html;
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Truck</th>
+            <th>Driver</th>
+            <th>Odometer</th>
+            <th>Fuel</th>
+            <th>Condition</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${state.fleet.length ? state.fleet.map(t=>`
+            <tr>
+              <td>${esc(t.truckNumber || t.number || "N/A")}</td>
+              <td>${esc(t.driver || t.driverName || "Unassigned")}</td>
+              <td>${Number(t.odometer || 0).toLocaleString()}</td>
+              <td>${esc(t.fuel ?? "N/A")}%</td>
+              <td>${esc(t.condition ?? "N/A")}%</td>
+            </tr>
+          `).join("") : `<tr><td colspan="5" class="muted">No fleet records found.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
 }
 
-/* GARAGE */
-function loadGarage(){
-    document.getElementById("content").innerHTML = `
-        <div class="card">
-            <h2>Garage</h2>
-            <button onclick="buyGarage()">Buy Garage</button>
+function openTruckForm(){
+  document.getElementById("modalBody").innerHTML = `
+    <h2>Add Truck</h2>
+    <input id="truckNumber" placeholder="Truck Number">
+    <input id="truckDriver" placeholder="Assigned Driver">
+    <input id="truckOdometer" placeholder="Odometer" type="number">
+    <input id="truckFuel" placeholder="Fuel %" type="number">
+    <input id="truckCondition" placeholder="Condition %" type="number">
+
+    <div class="actions">
+      <button class="primary" onclick="saveTruck()">Save Truck</button>
+      <button class="secondary" onclick="modal.style.display='none'">Cancel</button>
+    </div>
+  `;
+
+  modal.style.display = "block";
+}
+
+async function saveTruck(){
+  const body = {
+    guildId,
+    truckNumber: truckNumber.value,
+    driver: truckDriver.value,
+    odometer: Number(truckOdometer.value || 0),
+    fuel: Number(truckFuel.value || 100),
+    condition: Number(truckCondition.value || 100)
+  };
+
+  await api(`/api/fleet`, {
+    method:"POST",
+    body:JSON.stringify(body)
+  });
+
+  modal.style.display = "none";
+  route("fleet");
+}
+
+async function loadGarage(){
+  let data;
+  try{
+    data = await api(`/api/garage?guildId=${encodeURIComponent(guildId)}`);
+  }catch{
+    data = {data:[]};
+  }
+
+  state.garages = data.data || data.garages || [];
+
+  document.getElementById("content").innerHTML = `
+    <div class="card">
+      <h2>Garage</h2>
+      <p class="muted">Owner/admin can add in-game garages and display them on the company portal.</p>
+
+      <div class="actions">
+        <button class="primary" onclick="openGarageForm()">Buy / Add Garage</button>
+      </div>
+
+      ${state.garages.length ? state.garages.map(g=>`
+        <div class="list-item">
+          <div>
+            <b>${esc(g.city || g.location || "Garage")}</b>
+            <div class="muted">${esc(g.slots || 0)} slots</div>
+          </div>
+          <div>${money(g.price || g.cost || 0)}</div>
         </div>
-    `;
+      `).join("") : `<div class="muted" style="margin-top:15px">No garages added yet.</div>`}
+    </div>
+  `;
 }
 
-function buyGarage(){
-    alert("Garage purchased (mock)");
+function openGarageForm(){
+  document.getElementById("modalBody").innerHTML = `
+    <h2>Add Garage</h2>
+    <input id="garageCity" placeholder="City / Location">
+    <input id="garageSlots" placeholder="Slots" type="number">
+    <input id="garagePrice" placeholder="Price" type="number">
+
+    <div class="actions">
+      <button class="primary" onclick="saveGarage()">Save Garage</button>
+      <button class="secondary" onclick="modal.style.display='none'">Cancel</button>
+    </div>
+  `;
+
+  modal.style.display = "block";
 }
 
-/* PORTAL */
-function loadPortal(){
-    document.getElementById("content").innerHTML = `
-        <div class="card">
-            <h2>Portal Settings</h2>
-            <input id="desc" placeholder="Description"/><br><br>
-            <button onclick="savePortal()">Save</button>
-        </div>
-    `;
+async function saveGarage(){
+  await api(`/api/garage`, {
+    method:"POST",
+    body:JSON.stringify({
+      guildId,
+      city: garageCity.value,
+      slots: Number(garageSlots.value || 0),
+      price: Number(garagePrice.value || 0)
+    })
+  });
+
+  modal.style.display = "none";
+  route("garage");
+}
+
+async function loadPortal(){
+  let data;
+  try{
+    data = await api(`/api/portal/settings?guildId=${encodeURIComponent(guildId)}`);
+  }catch{
+    data = {};
+  }
+
+  const p = data.data || data.portal || data || {};
+
+  document.getElementById("content").innerHTML = `
+    <div class="card">
+      <h2>Portal Settings</h2>
+
+      <label>VTC Name</label>
+      <input id="portalName" value="${esc(p.vtcName || p.name || "")}" placeholder="Company name">
+
+      <label>Description</label>
+      <textarea id="portalDescription" placeholder="Company description">${esc(p.description || "")}</textarea>
+
+      <label>Banner Image URL</label>
+      <input id="portalBanner" value="${esc(p.bannerUrl || "")}" placeholder="https://...">
+
+      <label>Discord Invite</label>
+      <input id="portalDiscord" value="${esc(p.discordUrl || "")}" placeholder="https://discord.gg/...">
+
+      <label>Join Team Link</label>
+      <input id="portalJoin" value="${esc(p.joinUrl || "")}" placeholder="https://...">
+
+      <label>Report Issue Link / Email</label>
+      <input id="portalReport" value="${esc(p.reportUrl || "")}" placeholder="mailto:GasMonkeyCreations@gmail.com">
+
+      <div class="actions">
+        <button class="primary" onclick="savePortal()">Save Portal</button>
+        <button class="secondary" onclick="window.open('/portal.html?guildId=${guildId}','_blank')">Preview Portal</button>
+      </div>
+    </div>
+  `;
 }
 
 async function savePortal(){
-    alert("Saved (hook API next)");
+  await api(`/api/portal/settings`, {
+    method:"POST",
+    body:JSON.stringify({
+      guildId,
+      vtcName:portalName.value,
+      description:portalDescription.value,
+      bannerUrl:portalBanner.value,
+      discordUrl:portalDiscord.value,
+      joinUrl:portalJoin.value,
+      reportUrl:portalReport.value
+    })
+  });
+
+  alert("Portal settings saved.");
 }
 
-/* ANNOUNCEMENTS */
-function loadAnnouncements(){
-    document.getElementById("content").innerHTML = `
-        <div class="card">
-            <h2>Announcements</h2>
-            <textarea id="msg"></textarea><br>
-            <button onclick="sendAnnouncement()">Send</button>
+async function loadAnnouncements(){
+  const data = await api(`/api/announcements?guildId=${encodeURIComponent(guildId)}`);
+  state.announcements = data.data || data.announcements || [];
+
+  document.getElementById("content").innerHTML = `
+    <div class="card">
+      <h2>Create Announcement</h2>
+      <textarea id="announcementText" placeholder="Write announcement..."></textarea>
+      <button class="primary" onclick="sendAnnouncement()">Post Announcement</button>
+    </div>
+
+    <div class="card">
+      <h2>Existing Announcements</h2>
+      ${state.announcements.length ? state.announcements.map(a=>`
+        <div class="list-item">
+          <div>${esc(a.text || a.message || a.content || "")}</div>
+          <span class="muted">${esc(a.createdAt || a.createdUtc || "")}</span>
         </div>
-    `;
+      `).join("") : `<div class="muted">No announcements found.</div>`}
+    </div>
+  `;
 }
 
 async function sendAnnouncement(){
-    let msg = document.getElementById("msg").value;
+  const text = announcementText.value.trim();
+  if(!text) return alert("Enter announcement text.");
 
-    await fetch(`${API}/api/announcements`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({guildId,text:msg})
-    });
+  await api(`/api/announcements`, {
+    method:"POST",
+    body:JSON.stringify({guildId,text})
+  });
 
-    alert("Sent");
+  route("announcements");
 }
 
-/* INIT */
-loadPage("dashboard");
+function loadSettings(){
+  document.getElementById("content").innerHTML = `
+    <div class="card">
+      <h2>Management Settings</h2>
 
-/* CLOSE MODAL */
-window.onclick = function(e){
-    if(e.target.id==="driverModal"){
-        document.getElementById("driverModal").style.display="none";
-    }
+      <label>Guild ID</label>
+      <input id="guildInput" value="${esc(guildId)}">
+
+      <label>Management API Key</label>
+      <input id="keyInput" type="password" value="${esc(apiKey)}" placeholder="Optional X-API-Key">
+
+      <div class="actions">
+        <button class="primary" onclick="saveSettings()">Save</button>
+        <button class="danger" onclick="clearSettings()">Clear Local Settings</button>
+      </div>
+
+      <p class="muted">
+        This stores values only in the browser local storage for this device.
+      </p>
+    </div>
+  `;
 }
+
+function saveSettings(){
+  localStorage.setItem("oweld.guildId", guildInput.value.trim());
+  localStorage.setItem("oweld.apiKey", keyInput.value.trim());
+  location.href = `/manage.html?guildId=${encodeURIComponent(guildInput.value.trim())}`;
+}
+
+function clearSettings(){
+  localStorage.removeItem("oweld.guildId");
+  localStorage.removeItem("oweld.apiKey");
+  location.href = "/manage.html";
+}
+
+function closeModal(e){
+  if(e.target.id === "modal"){
+    modal.style.display = "none";
+  }
+}
+
+hydrateBasic().then(()=>route("dashboard"));
+setInterval(()=> {
+  const active = document.querySelector(".nav button.active")?.dataset.page;
+  if(["dashboard","drivers","fleet","garage","announcements"].includes(active)){
+    route(active);
+  }
+}, 60000);
 </script>
-
 </body>
 </html>
