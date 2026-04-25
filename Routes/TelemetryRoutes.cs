@@ -16,8 +16,16 @@ public static class TelemetryRoutes
 
             lock (LockObj)
             {
-                Units.TryGetValue(guildId, out var units);
-                return Results.Ok(new { ok = true, data = units ?? new List<TelemetryUnit>() });
+                if (!Units.TryGetValue(guildId, out var units))
+                    units = new List<TelemetryUnit>();
+
+                units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalSeconds > 30);
+
+                return Results.Ok(new
+                {
+                    ok = true,
+                    data = units
+                });
             }
         });
 
@@ -27,14 +35,15 @@ public static class TelemetryRoutes
                 return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
 
             if (string.IsNullOrWhiteSpace(unit.DriverDiscordUserId))
+            {
                 unit.DriverDiscordUserId =
                     unit.Driver ??
                     unit.DriverName ??
                     unit.Truck ??
                     Guid.NewGuid().ToString("N");
+            }
 
             NormalizeCoordinates(unit);
-
             unit.UpdatedUtc = DateTimeOffset.UtcNow;
 
             lock (LockObj)
@@ -90,9 +99,6 @@ public static class TelemetryRoutes
         var gameX = unit.MapX != 0 ? unit.MapX : unit.X;
         var gameY = unit.MapY != 0 ? unit.MapY : unit.Y;
 
-        if (gameX == 0 && gameY == 0)
-            return;
-
         var converted = AtsCoordinateConverter.ToLngLat(gameX, gameY);
 
         unit.Longitude = converted.Longitude;
@@ -105,8 +111,6 @@ public static class TelemetryRoutes
 
 public static class AtsCoordinateConverter
 {
-    // Tune these if the truck marker is shifted.
-    // These cover the ATS visible map area approximately.
     private const double AtsMinX = -124000.0;
     private const double AtsMaxX =  124000.0;
     private const double AtsMinY = -98000.0;
@@ -123,8 +127,6 @@ public static class AtsCoordinateConverter
         var ny = Clamp((y - AtsMinY) / (AtsMaxY - AtsMinY), 0, 1);
 
         var lng = LngMin + (nx * (LngMax - LngMin));
-
-        // ATS/game Y usually grows opposite screen latitude.
         var lat = LatMax - (ny * (LatMax - LatMin));
 
         return (lng, lat);
