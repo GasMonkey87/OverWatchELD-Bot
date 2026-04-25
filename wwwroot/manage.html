@@ -1,783 +1,323 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Management Portal - OverWatch ELD</title>
-  <style>
-    :root {
-      --bg: #0b1220;
-      --panel: #121c2f;
-      --panel2: #18253d;
-      --border: rgba(255,255,255,0.08);
-      --text: #e8eef9;
-      --muted: #9fb0cc;
-      --accent: #4ea1ff;
-      --accent2: #2d79d6;
-      --good: #23c16b;
-      --warn: #ffb648;
-      --bad: #ff5f6d;
-      --radius: 18px;
-      --shadow: 0 12px 30px rgba(0,0,0,0.28);
-    }
-
-    * { box-sizing: border-box; }
-
-    html, body {
-      margin: 0;
-      padding: 0;
-      background: linear-gradient(180deg, #08111f 0%, #0d1728 100%);
-      color: var(--text);
-      font-family: Segoe UI, Arial, sans-serif;
-    }
-
-    a { color: inherit; text-decoration: none; }
-    button, input, select, textarea { font: inherit; }
-
-    .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 30;
-      background: rgba(8, 15, 28, 0.92);
-      backdrop-filter: blur(10px);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .topbar-inner {
-      width: min(1500px, calc(100% - 24px));
-      margin: 0 auto;
-      min-height: 72px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .brand-badge {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      background: linear-gradient(135deg, var(--accent), #7cc0ff);
-      display: grid;
-      place-items: center;
-      color: white;
-      font-weight: 800;
-      box-shadow: var(--shadow);
-    }
-
-    .brand h1 {
-      margin: 0;
-      font-size: 20px;
-    }
-
-    .brand p {
-      margin: 4px 0 0;
-      color: var(--muted);
-      font-size: 13px;
-    }
-
-    .top-actions {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .user-pill {
-      background: rgba(255,255,255,0.05);
-      border: 1px solid var(--border);
-      padding: 10px 14px;
-      border-radius: 12px;
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .btn {
-      border: 0;
-      cursor: pointer;
-      min-height: 42px;
-      padding: 0 16px;
-      border-radius: 12px;
-      font-weight: 700;
-      color: white;
-      background: var(--accent);
-    }
-
-    .btn:hover { background: var(--accent2); }
-    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-    .btn-ghost {
-      background: rgba(255,255,255,0.05);
-      border: 1px solid var(--border);
-      color: var(--text);
-    }
-
-    .btn-ghost:hover { background: rgba(255,255,255,0.10); }
-
-    .page {
-      width: min(1500px, calc(100% - 24px));
-      margin: 24px auto 40px;
-    }
-
-    .hero {
-      background: linear-gradient(145deg, rgba(78,161,255,0.16), rgba(255,255,255,0.03));
-      border: 1px solid var(--border);
-      border-radius: 24px;
-      box-shadow: var(--shadow);
-      padding: 28px;
-      margin-bottom: 20px;
-    }
-
-    .hero h2 {
-      margin: 0 0 10px;
-      font-size: 30px;
-    }
-
-    .hero p {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.6;
-      max-width: 980px;
-    }
-
-    .hero-meta {
-      margin-top: 18px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    .chip {
-      padding: 10px 14px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-size: 14px;
-    }
-
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(6, 1fr);
-      gap: 14px;
-      margin-bottom: 18px;
-    }
-
-    .kpi {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 18px;
-      box-shadow: var(--shadow);
-    }
-
-    .kpi-label {
-      font-size: 13px;
-      color: var(--muted);
-      margin-bottom: 8px;
-    }
-
-    .kpi-value {
-      font-size: 28px;
-      font-weight: 800;
-    }
-
-    .main-grid {
-      display: grid;
-      grid-template-columns: 1fr 1.1fr 1.1fr;
-      gap: 18px;
-    }
-
-    .stack {
-      display: grid;
-      gap: 18px;
-      min-width: 0;
-    }
-
-    .card {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      overflow: hidden;
-      min-width: 0;
-    }
-
-    .card-head {
-      padding: 18px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    .card-head h3 {
-      margin: 0;
-      font-size: 18px;
-    }
-
-    .card-body {
-      padding: 18px 20px;
-    }
-
-    .muted { color: var(--muted); }
-    .small { font-size: 12px; }
-
-    .list {
-      display: grid;
-      gap: 12px;
-    }
-
-    .list-item {
-      background: var(--panel2);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
-    }
-
-    .list-item strong {
-      display: block;
-      margin-bottom: 6px;
-    }
-
-    .roster-item {
-      background: var(--panel2);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 14px;
-      cursor: pointer;
-      transition: 0.15s ease;
-    }
-
-    .roster-item:hover { background: rgba(255,255,255,0.06); }
-    .roster-item.active {
-      outline: 2px solid var(--accent);
-      background: rgba(78,161,255,0.10);
-    }
-
-    .toolbar {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .field {
-      display: grid;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-
-    .field label {
-      font-size: 13px;
-      color: var(--muted);
-      font-weight: 600;
-    }
-
-    .field input,
-    .field select,
-    .field textarea {
-      width: 100%;
-      background: #0d1728;
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px 14px;
-      outline: none;
-    }
-
-    .field textarea {
-      min-height: 100px;
-      resize: vertical;
-    }
-
-    .split {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-    }
-
-    .triple {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 12px;
-    }
-
-    .board-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 12px;
-    }
-
-    .board-col {
-      background: rgba(255,255,255,0.03);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 12px;
-      min-height: 240px;
-    }
-
-    .board-col h4 {
-      margin: 0 0 10px;
-      font-size: 14px;
-    }
-
-    .load-card {
-      background: var(--panel2);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 12px;
-      margin-bottom: 10px;
-    }
-
-    .tag {
-      display: inline-block;
-      padding: 4px 8px;
-      border-radius: 999px;
-      font-size: 11px;
-      color: var(--muted);
-      border: 1px solid var(--border);
-      margin-right: 6px;
-      margin-top: 6px;
-    }
-
-    .footer-note {
-      margin-top: 20px;
-      color: var(--muted);
-      text-align: center;
-      font-size: 13px;
-    }
-
-    @media (max-width: 1320px) {
-      .main-grid { grid-template-columns: 1fr; }
-      .stats-grid { grid-template-columns: repeat(3, 1fr); }
-      .board-grid { grid-template-columns: repeat(2, 1fr); }
-    }
-
-    @media (max-width: 760px) {
-      .stats-grid,
-      .split,
-      .triple,
-      .board-grid {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
+  <title>OverWatch ELD Management</title>
+  <link rel="stylesheet" href="/manage.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="topbar-inner">
+  <div class="app-shell">
+    <aside class="sidebar">
       <div class="brand">
-        <div class="brand-badge">OW</div>
+        <div class="brand-mark">OW</div>
         <div>
-          <h1>OverWatch ELD Management Portal</h1>
-          <p>Driver profiles, dispatch board, announcements, and homepage settings</p>
+          <div class="brand-title">OverWatch ELD</div>
+          <div class="brand-subtitle">Management Hub</div>
         </div>
       </div>
 
-      <div class="top-actions">
-        <div class="user-pill" id="userPill">Checking login...</div>
-        <button class="btn btn-ghost" id="portalBtn" type="button">Portal</button>
-        <button class="btn btn-ghost" id="refreshBtn" type="button">Refresh</button>
-        <button class="btn" id="logoutBtn" type="button">Logout</button>
+      <div class="vtc-card">
+        <img id="vtcLogo" class="vtc-logo" src="/assets/default-vtc.png" alt="VTC logo" />
+        <div>
+          <div id="vtcName" class="vtc-name">Loading VTC...</div>
+          <div id="userRole" class="role-pill">Checking access</div>
+        </div>
       </div>
-    </div>
-  </header>
 
-  <main class="page">
-    <section class="hero">
-      <h2 id="heroTitle">Management Dashboard</h2>
-      <p>
-        This page now runs your management tools from one hub: driver profile editor,
-        dispatch board, announcements, and homepage customization.
-      </p>
-      <div class="hero-meta">
-        <div class="chip">Guild: <span id="guildIdChip">-</span></div>
-        <div class="chip">User: <span id="userNameChip">-</span></div>
-        <div class="chip">Portal: Management</div>
-      </div>
-    </section>
+      <nav class="nav">
+        <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+        <button class="nav-btn" data-page="portal">Portal Page</button>
+        <button class="nav-btn" data-page="drivers">Drivers</button>
+        <button class="nav-btn" data-page="fleet">Fleet</button>
+        <button class="nav-btn" data-page="garage">Garage</button>
+        <button class="nav-btn" data-page="announcements">Announcements</button>
+        <button class="nav-btn" data-page="dispatch">Dispatch</button>
+        <button class="nav-btn" data-page="settings">Settings</button>
+      </nav>
 
-    <section class="stats-grid">
-      <div class="kpi">
-        <div class="kpi-label">Drivers</div>
-        <div class="kpi-value" id="driverCountValue">0</div>
+      <div class="sidebar-footer">
+        <a href="/" class="small-link">Public Home</a>
+        <a id="portalOpenLink" href="/portal.html" class="small-link">Open Portal</a>
       </div>
-      <div class="kpi">
-        <div class="kpi-label">Live</div>
-        <div class="kpi-value" id="liveCountValue">0</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Unread Dispatch</div>
-        <div class="kpi-value" id="messageCountValue">0</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Needs Attention</div>
-        <div class="kpi-value" id="attentionCountValue">0</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Map Points</div>
-        <div class="kpi-value" id="mapPointValue">0</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Guild ID</div>
-        <div class="kpi-value" id="guildValue">-</div>
-      </div>
-    </section>
+    </aside>
 
-    <section class="main-grid">
-      <div class="stack">
-        <article class="card">
-          <div class="card-head">
-            <h3>Driver Roster</h3>
-            <div class="small muted">Click a driver to edit profile</div>
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">Dashboard</h1>
+          <p id="pageSubtitle">Live overview of your VTC.</p>
+        </div>
+        <div class="top-actions">
+          <button id="refreshBtn" class="btn secondary">Refresh</button>
+          <a class="btn primary" href="/auth/login">Discord Login</a>
+        </div>
+      </header>
+
+      <div id="toast" class="toast hidden"></div>
+
+      <section id="page-dashboard" class="page active">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span>Drivers</span>
+            <strong id="statDrivers">0</strong>
           </div>
-          <div class="card-body">
-            <div class="field">
-              <label for="driverSearch">Search Drivers</label>
-              <input id="driverSearch" type="text" placeholder="Search driver, truck, load, location" />
+          <div class="stat-card">
+            <span>Online</span>
+            <strong id="statOnline">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>Fleet Trucks</span>
+            <strong id="statFleet">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>Weekly Miles</span>
+            <strong id="statMiles">0</strong>
+          </div>
+        </div>
+
+        <div class="content-grid">
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Recent Announcements</h2>
+              <button class="btn tiny" data-jump="announcements">Manage</button>
             </div>
-            <div class="list" id="rosterList"></div>
+            <div id="recentAnnouncements" class="stack"></div>
           </div>
-        </article>
 
-        <article class="card">
-          <div class="card-head">
-            <h3>Fleet Announcement</h3>
-          </div>
-          <div class="card-body">
-            <form id="fleetMessageForm">
-              <div class="field">
-                <label for="fleetMessageText">Message to Entire Fleet</label>
-                <textarea id="fleetMessageText" placeholder="Send a fleet-wide dispatch message..."></textarea>
-              </div>
-              <div class="toolbar">
-                <button class="btn" id="sendFleetMessageBtn" type="submit">Send Fleet Message</button>
-              </div>
-              <div id="fleetMessageStatus" class="small muted" style="margin-top:10px;"></div>
-            </form>
-          </div>
-        </article>
-      </div>
-
-      <div class="stack">
-        <article class="card">
-          <div class="card-head">
-            <h3>Driver Profile Editor</h3>
-          </div>
-          <div class="card-body">
-            <div id="selectedDriverCard" class="empty">Select a driver from the roster.</div>
-
-            <form id="driverProfileForm" style="margin-top:14px;">
-              <div class="split">
-                <div class="field">
-                  <label for="profileDriverName">Driver</label>
-                  <input id="profileDriverName" type="text" readonly />
-                </div>
-                <div class="field">
-                  <label for="profileDiscordUserId">Discord User ID</label>
-                  <input id="profileDiscordUserId" type="text" readonly />
-                </div>
-              </div>
-
-              <div class="split">
-                <div class="field">
-                  <label for="profileRole">Role</label>
-                  <select id="profileRole">
-                    <option value="Driver">Driver</option>
-                    <option value="Dispatch">Dispatch</option>
-                    <option value="Manager">Manager</option>
-                    <option value="Admin">Admin</option>
-                    <option value="Owner">Owner</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="profileLoadNumber">Load Number</label>
-                  <input id="profileLoadNumber" type="text" />
-                </div>
-              </div>
-
-              <div class="field">
-                <label for="profileNotes">Driver Notes</label>
-                <textarea id="profileNotes" placeholder="Manager notes, reminders, internal comments..."></textarea>
-              </div>
-
-              <div class="toolbar">
-                <button class="btn" id="saveDriverProfileBtn" type="submit">Save Driver Profile</button>
-              </div>
-              <div id="profileStatus" class="small muted" style="margin-top:10px;"></div>
-            </form>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="card-head">
-            <h3>Dispatch Conversation</h3>
-          </div>
-          <div class="card-body">
-            <div class="list" id="conversationList"></div>
-          </div>
-        </article>
-
-        <article class="card">
-          <div class="card-head">
-            <h3>Send Dispatch Message</h3>
-          </div>
-          <div class="card-body">
-            <form id="dispatchForm">
-              <div class="split">
-                <div class="field">
-                  <label for="dispatchDriverName">Driver</label>
-                  <input id="dispatchDriverName" type="text" readonly />
-                </div>
-                <div class="field">
-                  <label for="dispatchLoadNumber">Load Number</label>
-                  <input id="dispatchLoadNumber" type="text" placeholder="Optional load number" />
-                </div>
-              </div>
-
-              <div class="field">
-                <label for="dispatchMessage">Message</label>
-                <textarea id="dispatchMessage" placeholder="Type a dispatch message..."></textarea>
-              </div>
-
-              <div class="toolbar">
-                <button class="btn" id="sendDispatchBtn" type="submit">Send Message</button>
-                <button class="btn btn-ghost" id="clearDispatchBtn" type="button">Clear</button>
-              </div>
-              <div id="dispatchStatus" class="small muted" style="margin-top:10px;"></div>
-            </form>
-          </div>
-        </article>
-      </div>
-
-      <div class="stack">
-        <article class="card">
-          <div class="card-head">
-            <h3>Dispatch Board</h3>
-          </div>
-          <div class="card-body">
-            <form id="loadForm">
-              <div class="triple">
-                <div class="field">
-                  <label for="loadNumberInput">Load Number</label>
-                  <input id="loadNumberInput" type="text" placeholder="LOAD-123" />
-                </div>
-                <div class="field">
-                  <label for="loadCommodityInput">Commodity</label>
-                  <input id="loadCommodityInput" type="text" placeholder="Cargo / commodity" />
-                </div>
-                <div class="field">
-                  <label for="loadPriorityInput">Priority</label>
-                  <select id="loadPriorityInput">
-                    <option value="normal">normal</option>
-                    <option value="high">high</option>
-                    <option value="urgent">urgent</option>
-                  </select>
-                </div>
-              </div>
-
-              <div class="split">
-                <div class="field">
-                  <label for="pickupInput">Pickup</label>
-                  <input id="pickupInput" type="text" placeholder="Origin" />
-                </div>
-                <div class="field">
-                  <label for="dropoffInput">Dropoff</label>
-                  <input id="dropoffInput" type="text" placeholder="Destination" />
-                </div>
-              </div>
-
-              <div class="split">
-                <div class="field">
-                  <label for="assignDriverInput">Assign Driver</label>
-                  <select id="assignDriverInput">
-                    <option value="">Unassigned</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="loadTruckInput">Truck</label>
-                  <input id="loadTruckInput" type="text" placeholder="Truck ID or unit" />
-                </div>
-              </div>
-
-              <div class="field">
-                <label for="loadNotesInput">Dispatcher Notes</label>
-                <textarea id="loadNotesInput" placeholder="Internal notes for the load..."></textarea>
-              </div>
-
-              <div class="toolbar">
-                <button class="btn" id="createLoadBtn" type="submit">Create Load</button>
-              </div>
-              <div id="loadStatus" class="small muted" style="margin-top:10px;"></div>
-            </form>
-
-            <div class="board-grid" id="dispatchBoard" style="margin-top:18px;">
-              <div class="board-col">
-                <h4>Unassigned</h4>
-                <div id="board-unassigned"></div>
-              </div>
-              <div class="board-col">
-                <h4>Assigned</h4>
-                <div id="board-assigned"></div>
-              </div>
-              <div class="board-col">
-                <h4>In Transit</h4>
-                <div id="board-in_transit"></div>
-              </div>
-              <div class="board-col">
-                <h4>Delivered</h4>
-                <div id="board-delivered"></div>
-              </div>
+          <div class="panel">
+            <div class="panel-head">
+              <h2>Driver Snapshot</h2>
+              <button class="btn tiny" data-jump="drivers">View All</button>
             </div>
+            <div id="driverSnapshot" class="stack"></div>
           </div>
-        </article>
+        </div>
+      </section>
 
-        <article class="card">
-          <div class="card-head">
-            <h3>Announcements</h3>
+      <section id="page-portal" class="page">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Portal Page Content</h2>
+            <button id="savePortalBtn" class="btn primary">Save Portal</button>
           </div>
-          <div class="card-body">
-            <form id="announcementForm">
-              <div class="field">
-                <label for="announcementTitle">Title</label>
-                <input id="announcementTitle" type="text" placeholder="Announcement title" />
-              </div>
 
-              <div class="field">
-                <label for="announcementBody">Body</label>
-                <textarea id="announcementBody" placeholder="Write your company announcement here..."></textarea>
-              </div>
+          <div class="form-grid">
+            <label>
+              Company Name
+              <input id="portalCompanyName" type="text" placeholder="Your VTC name" />
+            </label>
 
-              <div class="toolbar">
-                <button class="btn" id="postAnnouncementBtn" type="submit">Post Announcement</button>
-                <button class="btn btn-ghost" id="clearAnnouncementBtn" type="button">Clear</button>
-              </div>
+            <label>
+              Tagline
+              <input id="portalTagline" type="text" placeholder="The ELD you can count on." />
+            </label>
 
-              <div id="announcementStatus" class="small muted" style="margin-top:10px;"></div>
-            </form>
+            <label class="wide">
+              About Company
+              <textarea id="portalAbout" rows="5" placeholder="Write basic company information for your public portal."></textarea>
+            </label>
 
-            <div class="list" id="announcementList" style="margin-top:16px;"></div>
+            <label>
+              Discord Invite URL
+              <input id="portalDiscordUrl" type="url" placeholder="https://discord.gg/..." />
+            </label>
+
+            <label>
+              Join Team URL
+              <input id="portalJoinUrl" type="url" placeholder="Application or Discord URL" />
+            </label>
+
+            <label>
+              Report Issue Email
+              <input id="portalIssueEmail" type="email" placeholder="GasMonkeyCreations@gmail.com" />
+            </label>
+
+            <label>
+              Banner Image URL
+              <input id="portalBannerUrl" type="url" placeholder="https://..." />
+            </label>
+
+            <label>
+              Logo Image URL
+              <input id="portalLogoUrl" type="url" placeholder="https://..." />
+            </label>
           </div>
-        </article>
+        </div>
 
-        <article class="card">
-          <div class="card-head">
-            <h3>Homepage Settings</h3>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Featured Driver</h2>
           </div>
-          <div class="card-body">
-            <form id="homepageSettingsForm">
-              <div class="field">
-                <label for="siteTitleInput">Homepage Title</label>
-                <input id="siteTitleInput" type="text" placeholder="OverWatch ELD Hub" />
-              </div>
-
-              <div class="field">
-                <label for="welcomeTextInput">Welcome Text</label>
-                <textarea id="welcomeTextInput" placeholder="Welcome text for the homepage..."></textarea>
-              </div>
-
-              <div class="split">
-                <div class="field">
-                  <label for="joinDiscordUrlInput">Join Discord URL</label>
-                  <input id="joinDiscordUrlInput" type="text" placeholder="https://discord.gg/..." />
-                </div>
-                <div class="field">
-                  <label for="reportIssueUrlInput">Report Issue URL</label>
-                  <input id="reportIssueUrlInput" type="text" placeholder="https://..." />
-                </div>
-              </div>
-
-              <div class="split">
-                <div class="field">
-                  <label for="heroImageUrlInput">Hero Image URL</label>
-                  <input id="heroImageUrlInput" type="text" placeholder="https://..." />
-                </div>
-                <div class="field">
-                  <label for="learnMoreUrlInput">Learn More URL</label>
-                  <input id="learnMoreUrlInput" type="text" placeholder="https://..." />
-                </div>
-              </div>
-
-              <div class="toolbar">
-                <button class="btn" id="saveHomepageSettingsBtn" type="submit">Save Homepage Settings</button>
-              </div>
-              <div id="homepageSettingsStatus" class="small muted" style="margin-top:10px;"></div>
-            </form>
+          <div class="form-grid">
+            <label>
+              Select Driver
+              <select id="featuredDriverSelect"></select>
+            </label>
+            <label>
+              Title
+              <input id="featuredDriverTitle" type="text" placeholder="Driver of the Month" />
+            </label>
+            <label class="wide">
+              Featured Note
+              <textarea id="featuredDriverNote" rows="4" placeholder="Why this driver is featured."></textarea>
+            </label>
           </div>
-        </article>
+        </div>
+      </section>
 
-        <article class="card">
-  <div class="card-head">
-    <h3>Discord Auto Setup</h3>
+      <section id="page-drivers" class="page">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Driver Management</h2>
+              <p>Roster, mileage, Discord profile, role, and status.</p>
+            </div>
+            <input id="driverSearch" class="search" type="search" placeholder="Search drivers..." />
+          </div>
+
+          <div id="driversList" class="driver-list"></div>
+        </div>
+      </section>
+
+      <section id="page-fleet" class="page">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Fleet</h2>
+              <p>Company trucks shown on the portal fleet page.</p>
+            </div>
+            <button id="addTruckBtn" class="btn primary">Add Truck</button>
+          </div>
+
+          <div id="fleetList" class="fleet-list"></div>
+        </div>
+      </section>
+
+      <section id="page-garage" class="page">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Garage</h2>
+              <p>Owner/admin garage records for in-game company locations.</p>
+            </div>
+            <button id="addGarageBtn" class="btn primary">Add Garage</button>
+          </div>
+
+          <div id="garageList" class="fleet-list"></div>
+        </div>
+      </section>
+
+      <section id="page-announcements" class="page">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Create Announcement</h2>
+            <button id="sendAnnouncementBtn" class="btn primary">Post Announcement</button>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              Title
+              <input id="announcementTitle" type="text" placeholder="Announcement title" />
+            </label>
+
+            <label class="wide">
+              Message
+              <textarea id="announcementBody" rows="5" placeholder="Announcement message"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>All Announcements</h2>
+          </div>
+          <div id="announcementsList" class="stack"></div>
+        </div>
+      </section>
+
+      <section id="page-dispatch" class="page">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Send Dispatch Message</h2>
+            <button id="sendDispatchBtn" class="btn primary">Send</button>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              Driver
+              <select id="dispatchDriverSelect"></select>
+            </label>
+
+            <label class="wide">
+              Message
+              <textarea id="dispatchMessage" rows="5" placeholder="Message to driver or fleet"></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Recent Dispatch Messages</h2>
+          </div>
+          <div id="dispatchList" class="stack"></div>
+        </div>
+      </section>
+
+      <section id="page-settings" class="page">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Company Settings</h2>
+            <button id="saveSettingsBtn" class="btn primary">Save Settings</button>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              VTC Name
+              <input id="settingsVtcName" type="text" />
+            </label>
+
+            <label>
+              Short Name
+              <input id="settingsVtcShort" type="text" />
+            </label>
+
+            <label>
+              Dispatch Channel ID
+              <input id="settingsDispatchChannel" type="text" />
+            </label>
+
+            <label>
+              Announcement Channel ID
+              <input id="settingsAnnouncementChannel" type="text" />
+            </label>
+
+            <label>
+              System Log Channel ID
+              <input id="settingsSystemChannel" type="text" />
+            </label>
+
+            <label>
+              Loadboard Channel ID
+              <input id="settingsLoadboardChannel" type="text" />
+            </label>
+          </div>
+        </div>
+      </section>
+    </main>
   </div>
-  <div class="card-body">
-    <div class="muted">
-      This will create the Discord category, the main channels, and the dispatch / announcement webhooks for this VTC.
-    </div>
 
-    <form id="discordAutoSetupForm" style="margin-top:14px;">
-      <div class="field">
-        <label for="autoCategoryName">Category Name</label>
-        <input id="autoCategoryName" type="text" value="OverWatch ELD" />
+  <dialog id="editDialog">
+    <form method="dialog" class="dialog-card">
+      <h2 id="dialogTitle">Edit</h2>
+      <div id="dialogBody" class="form-grid"></div>
+      <div class="dialog-actions">
+        <button class="btn secondary" value="cancel">Cancel</button>
+        <button id="dialogSaveBtn" class="btn primary" value="default">Save</button>
       </div>
-
-      <div class="split">
-        <div class="field">
-          <label for="autoDispatchChannelName">Dispatch Channel</label>
-          <input id="autoDispatchChannelName" type="text" value="dispatch-center" />
-        </div>
-        <div class="field">
-          <label for="autoAnnouncementsChannelName">Announcements Channel</label>
-          <input id="autoAnnouncementsChannelName" type="text" value="announcements" />
-        </div>
-      </div>
-
-      <div class="split">
-        <div class="field">
-          <label for="autoBolChannelName">BOL Channel</label>
-          <input id="autoBolChannelName" type="text" value="bol-documents" />
-        </div>
-        <div class="field">
-          <label for="autoSystemLogChannelName">System Log Channel</label>
-          <input id="autoSystemLogChannelName" type="text" value="system-logs" />
-        </div>
-      </div>
-
-      <div class="toolbar">
-        <button class="btn" id="autoSetupDiscordBtn" type="submit">Create Channels + Webhooks</button>
-      </div>
-
-      <div id="autoSetupStatus" class="small muted" style="margin-top:10px;"></div>
-      <div id="autoSetupResult" class="list" style="margin-top:12px;"></div>
     </form>
-  </div>
-</article>
-        
-        <article class="card">
-          <div class="card-head">
-            <h3>Quick Links</h3>
-          </div>
-          <div class="card-body">
-            <div class="toolbar">
-              <a class="btn btn-ghost" href="/index.html">Home</a>
-              <a class="btn btn-ghost" href="/select-vtc.html">Change VTC</a>
-              <a class="btn btn-ghost" id="openDriverPortalLink" href="#">Open Driver Portal</a>
-            </div>
-          </div>
-        </article>
-      </div>
-    </section>
+  </dialog>
 
-    <div class="footer-note">OverWatch ELD Hub</div>
-  </main>
-
-  <script src="/js/manage.js"></script>
+  <script src="/manage.js"></script>
 </body>
 </html>
