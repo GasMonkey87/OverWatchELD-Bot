@@ -187,9 +187,9 @@ const API = location.origin.includes("localhost")
 const qs = new URLSearchParams(location.search);
 const guildId = qs.get("guildId") || localStorage.getItem("oweld.guildId") || "";
 
-const MAP_BASE = "https://github.com/GasMonkey87/OverWatchELD-Bot/releases/download/Maps";
-const PMTILES_URL = "https://cdn.jsdelivr.net/gh/GasMonkey87/OverWatchELD-Bot@Maps/ats.pmtiles";
-const SPRITE_URL = "https://cdn.jsdelivr.net/gh/GasMonkey87/OverWatchELD-Bot@Maps/sprites";
+const MAP_BASE = location.origin + "/map-assets";
+const PMTILES_URL = `${MAP_BASE}/ats.pmtiles`;
+const SPRITE_URL = `${MAP_BASE}/sprites`;
 
 let map;
 let markers = [];
