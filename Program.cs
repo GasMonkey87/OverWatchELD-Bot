@@ -196,7 +196,8 @@ public static partial class Program
         builder.Services.AddSingleton<WebSessionStore>();
         builder.Services.AddSingleton(new VtcAccessService(_client));
         builder.Services.AddHttpClient<DiscordOAuthService>();
-
+        builder.Services.AddSingleton<PortalDataStore>();
+        
         var portStr = Environment.GetEnvironmentVariable("PORT") ?? "8080";
         if (!int.TryParse(portStr, out var port))
             port = 8080;
@@ -550,7 +551,7 @@ public static partial class Program
         ManagementRoutes.Register(app, services, dispatchMessageStore, driverDisciplineStore);
 
         RegisterProgramRoutes(app, services, dataDir);
-
+        app.MapPortalDataRoutes();
         Console.WriteLine($"Bot running on :{port}");
         await app.RunAsync();
     }
