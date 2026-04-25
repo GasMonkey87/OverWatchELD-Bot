@@ -421,25 +421,48 @@ async function loadTelemetry(){
   markers = [];
 
   if(!map) return;
-
+  console.log("Telemetry units:", units);
   units.forEach(u=>{
-    const ll = getLngLat(u);
-    if(!ll) return;
+  const lng = Number(
+    u.longitude ??
+    u.lng ??
+    u.lon ??
+    u.Longitude ??
+    u.Lng ??
+    u.Lon
+  );
 
-    const el = document.createElement("div");
-    el.className = "truck-marker";
+  const lat = Number(
+    u.latitude ??
+    u.lat ??
+    u.Latitude ??
+    u.Lat
+  );
 
-    const marker = new maplibregl.Marker(el)
-      .setLngLat(ll)
-      .setPopup(new maplibregl.Popup().setHTML(`
-        <b>${esc(u.driver || u.driverName || "Driver")}</b><br>
-        ${esc(u.truck || u.truckNumber || "")}<br>
-        ${esc(u.status || "")}
-      `))
-      .addTo(map);
+  // 🔥 Proper validation
+  if(
+    !Number.isFinite(lng) ||
+    !Number.isFinite(lat) ||
+    Math.abs(lng) > 180 ||
+    Math.abs(lat) > 90
+  ){
+    console.warn("Invalid coords:", u);
+    return;
+  }
 
-    markers.push(marker);
-  });
+  const el = document.createElement("div");
+  el.className = "truck-marker";
+
+  const marker = new maplibregl.Marker(el)
+    .setLngLat([lng, lat])
+    .setPopup(new maplibregl.Popup().setHTML(`
+      <b>${u.driver || "Driver"}</b><br>
+      ${u.truck || ""}
+    `))
+    .addTo(map);
+
+  markers.push(marker);
+});
 
   if(markers.length === 1){
     map.flyTo({center:markers[0].getLngLat(), zoom:7});
