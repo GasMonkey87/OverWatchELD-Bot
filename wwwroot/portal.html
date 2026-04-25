@@ -5,12 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OverWatch ELD - VTC Portal</title>
 <style>
-:root{--line:#334155;--text:#f8fafc;--muted:#94a3b8}
+:root{--line:#334155;--text:#f8fafc;--muted:#94a3b8;--good:#22c55e;--warn:#f59e0b;--bad:#ef4444}
 *{box-sizing:border-box}
 body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:#020617;color:var(--text)}
-.hero{min-height:380px;background:linear-gradient(135deg,#020617,#0f172a);position:relative;padding:40px}
+.hero{min-height:390px;background:linear-gradient(135deg,#020617,#0f172a);position:relative;padding:40px}
 .hero:before{content:"";position:absolute;inset:0;background:var(--hero);background-size:cover;background-position:center;opacity:.28}
-.hero-content{position:relative;max-width:1150px;margin:auto;padding-top:70px}
+.hero-content{position:relative;max-width:1200px;margin:auto;padding-top:70px}
 .badge{display:inline-block;background:#082f49;color:#7dd3fc;border:1px solid #0ea5e9;border-radius:999px;padding:8px 13px;font-size:13px}
 h1{font-size:54px;margin:18px 0 10px}
 .hero p{max-width:760px;color:#cbd5e1;font-size:18px;line-height:1.6}
@@ -18,7 +18,7 @@ h1{font-size:54px;margin:18px 0 10px}
 .btn{display:inline-block;text-decoration:none;border-radius:12px;padding:12px 16px;font-weight:700}
 .btn.primary{background:linear-gradient(135deg,#0284c7,#2563eb);color:white}
 .btn.secondary{background:#1e293b;color:white;border:1px solid var(--line)}
-.main{max-width:1150px;margin:auto;padding:28px}
+.main{max-width:1200px;margin:auto;padding:28px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}
 .card{background:rgba(15,23,42,.94);border:1px solid var(--line);border-radius:20px;padding:20px;box-shadow:0 18px 40px rgba(0,0,0,.25)}
 .card h2,.card h3{margin-top:0}
@@ -31,6 +31,12 @@ h1{font-size:54px;margin:18px 0 10px}
 .stat{font-size:32px;font-weight:900}
 .table{width:100%;border-collapse:collapse}
 .table th,.table td{padding:11px;border-bottom:1px solid var(--line);text-align:left}
+.status{display:inline-block;border-radius:999px;padding:5px 9px;font-size:12px;border:1px solid var(--line)}
+.status.good{color:#86efac;background:#052e16;border-color:#16a34a}
+.status.warn{color:#fde68a;background:#451a03;border-color:#f59e0b}
+.status.bad{color:#fecaca;background:#450a0a;border-color:#ef4444}
+.mapbox{height:320px;border:1px dashed #334155;border-radius:18px;background:radial-gradient(circle at center,#172554,#020617);display:flex;align-items:center;justify-content:center;text-align:center;color:#94a3b8}
+.feed-item{padding:12px;border-bottom:1px solid var(--line)}
 .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10;padding:30px}
 .modal-card{max-width:620px;margin:6vh auto;background:#020617;border:1px solid var(--line);border-radius:20px;padding:22px}
 .footer{text-align:center;color:var(--muted);padding:30px}
@@ -54,21 +60,10 @@ h1{font-size:54px;margin:18px 0 10px}
 
 <main class="main">
   <div class="grid">
-    <div class="card">
-      <h3>Drivers</h3>
-      <div class="stat" id="driverCount">0</div>
-      <div class="muted">Company roster</div>
-    </div>
-    <div class="card">
-      <h3>Fleet</h3>
-      <div class="stat" id="fleetCount">0</div>
-      <div class="muted">Company trucks</div>
-    </div>
-    <div class="card">
-      <h3>Garages</h3>
-      <div class="stat" id="garageCount">0</div>
-      <div class="muted">Owned locations</div>
-    </div>
+    <div class="card"><h3>Drivers</h3><div class="stat" id="driverCount">0</div><div class="muted">Company roster</div></div>
+    <div class="card"><h3>Fleet</h3><div class="stat" id="fleetCount">0</div><div class="muted">Company trucks</div></div>
+    <div class="card"><h3>Garages</h3><div class="stat" id="garageCount">0</div><div class="muted">Owned locations</div></div>
+    <div class="card"><h3>Online</h3><div class="stat" id="onlineCount">0</div><div class="muted">Live driver status</div></div>
   </div>
 
   <section class="card" style="margin-top:18px">
@@ -76,9 +71,21 @@ h1{font-size:54px;margin:18px 0 10px}
     <p id="companyInfo" class="muted"></p>
   </section>
 
-  <section class="card" style="margin-top:18px" id="featuredCard">
+  <section class="card" style="margin-top:18px">
     <h2>Featured Driver</h2>
     <div id="featuredDriver"></div>
+  </section>
+
+  <section class="card" style="margin-top:18px">
+    <h2>Live Map</h2>
+    <div id="liveMap" class="mapbox">
+      Live truck map ready. Waiting for telemetry endpoint data.
+    </div>
+  </section>
+
+  <section class="card" style="margin-top:18px">
+    <h2>Dispatch Feed</h2>
+    <div id="dispatchFeed" class="muted">Loading dispatch feed...</div>
   </section>
 
   <section class="card" style="margin-top:18px">
@@ -89,9 +96,7 @@ h1{font-size:54px;margin:18px 0 10px}
   <section class="card" style="margin-top:18px">
     <h2>Fleet</h2>
     <table class="table">
-      <thead>
-        <tr><th>Truck</th><th>Driver</th><th>Plate</th><th>Location</th><th>Status</th></tr>
-      </thead>
+      <thead><tr><th>Truck</th><th>Driver</th><th>Plate</th><th>Location</th><th>Status</th></tr></thead>
       <tbody id="fleetTable"></tbody>
     </table>
   </section>
@@ -138,12 +143,15 @@ function normalizeDriver(d){
     id:d.id || d.Id || d.discordUserId || d.DiscordUserId || d.userId || "",
     name:d.name || d.Name || d.driverName || d.displayName || d.discordUsername || d.DiscordUsername || "Driver",
     role:d.role || d.Role || d.vtcRole || "Driver",
-    status:d.status || d.Status || "Member",
+    status:d.status || d.Status || "Offline",
+    dutyStatus:d.dutyStatus || d.DutyStatus || d.status || d.Status || "Offline",
     discordUserId:d.discordUserId || d.DiscordUserId || d.userId || "",
     discordUsername:d.discordUsername || d.DiscordUsername || d.username || "",
     discordAvatarUrl:d.discordAvatarUrl || d.DiscordAvatarUrl || d.avatarUrl || d.imageUrl || d.ImageUrl || "",
     assignedTruck:d.assignedTruck || d.AssignedTruck || d.truck || "",
     totalMiles:d.totalMiles || d.TotalMiles || d.milesTotal || d.miles || d.mileage || d.Mileage || "0",
+    loads:d.loads || d.Loads || d.loadsTotal || d.LoadsTotal || "0",
+    performancePct:d.performancePct || d.PerformancePct || "",
     bio:d.bio || d.Bio || ""
   };
 }
@@ -164,18 +172,41 @@ function lowerPortalData(d){
   };
 }
 
+async function safe(path, fallback){
+  try{return await api(path)}catch{return fallback}
+}
+
 async function loadRosterDrivers(){
-  try{
-    const r = await api(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`);
-    return (r.data || r.drivers || r.roster || []).map(normalizeDriver);
-  }catch{
-    return [];
-  }
+  const r = await safe(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`, {});
+  return (r.data || r.drivers || r.roster || []).map(normalizeDriver);
+}
+
+async function loadPerformance(){
+  const p = await safe(`/api/performance?guildId=${encodeURIComponent(guildId)}`, {});
+  return p.data || p.drivers || p.performance || [];
+}
+
+async function loadLiveStatuses(){
+  const s = await safe(`/api/eld/driver/status?guildId=${encodeURIComponent(guildId)}`, {});
+  return s.data || s.drivers || s.statuses || [];
+}
+
+async function loadDispatchFeed(){
+  const feed = await safe(`/api/dispatch/messages?guildId=${encodeURIComponent(guildId)}`, {});
+  return feed.data || feed.messages || feed.items || [];
+}
+
+async function loadTelemetry(){
+  const t = await safe(`/api/telemetry?guildId=${encodeURIComponent(guildId)}`, {});
+  return t.data || t.telemetry || t.trucks || [];
 }
 
 async function getMergedDrivers(portal){
   const portalDrivers = (portal.drivers || []).map(normalizeDriver);
   const rosterDrivers = await loadRosterDrivers();
+  const performance = await loadPerformance();
+  const statuses = await loadLiveStatuses();
+
   const merged = [];
 
   rosterDrivers.forEach(r=>{
@@ -191,7 +222,31 @@ async function getMergedDrivers(portal){
     if(!exists) merged.push(p);
   });
 
-  return merged;
+  return merged.map(d=>{
+    const perf = performance.find(x =>
+      String(x.discordUserId || x.driverDiscordUserId || x.userId || x.id || "") === String(d.discordUserId || d.id)
+    ) || {};
+
+    const stat = statuses.find(x =>
+      String(x.discordUserId || x.driverDiscordUserId || x.userId || x.id || "") === String(d.discordUserId || d.id)
+    ) || {};
+
+    return normalizeDriver({
+      ...d,
+      totalMiles: perf.milesTotal || perf.totalMiles || perf.milesMonth || perf.milesWeek || d.totalMiles,
+      loads: perf.loadsTotal || perf.loadsMonth || perf.loadsWeek || d.loads,
+      performancePct: perf.performancePct || perf.score || d.performancePct,
+      status: stat.status || stat.dutyStatus || d.status,
+      dutyStatus: stat.dutyStatus || stat.status || d.dutyStatus
+    });
+  });
+}
+
+function statusClass(s){
+  const v = String(s || "").toLowerCase();
+  if(v.includes("driving") || v.includes("online") || v.includes("on duty")) return "good";
+  if(v.includes("idle") || v.includes("sleeper")) return "warn";
+  return "bad";
 }
 
 async function loadPortal(){
@@ -202,24 +257,24 @@ async function loadPortal(){
   const drivers = await getMergedDrivers(portal);
   const trucks = portal.trucks || [];
   const garages = portal.garages || [];
+  const feed = await loadDispatchFeed();
+  const telemetry = await loadTelemetry();
 
   document.title = `${portal.siteTitle || "VTC"} - OverWatch ELD`;
-  document.getElementById("siteTitle").textContent = portal.siteTitle || "VTC Portal";
-  document.getElementById("welcomeText").textContent = portal.welcomeText || "Welcome to our company portal.";
-  document.getElementById("companyInfo").textContent = portal.companyInfo || "Company information has not been added yet.";
+  siteTitle.textContent = portal.siteTitle || "VTC Portal";
+  welcomeText.textContent = portal.welcomeText || "Welcome to our company portal.";
+  companyInfo.textContent = portal.companyInfo || "Company information has not been added yet.";
 
-  if(portal.heroImageUrl){
-    document.getElementById("hero").style.setProperty("--hero", `url('${portal.heroImageUrl}')`);
-  }else{
-    document.getElementById("hero").style.setProperty("--hero", "linear-gradient(135deg,#0f172a,#020617)");
-  }
+  if(portal.heroImageUrl) hero.style.setProperty("--hero", `url('${portal.heroImageUrl}')`);
+  else hero.style.setProperty("--hero", "linear-gradient(135deg,#0f172a,#020617)");
 
   setupLink("discordBtn", portal.joinDiscordUrl);
   setupLink("learnBtn", portal.learnMoreUrl);
 
-  document.getElementById("driverCount").textContent = drivers.length;
-  document.getElementById("fleetCount").textContent = trucks.length;
-  document.getElementById("garageCount").textContent = garages.length;
+  driverCount.textContent = drivers.length;
+  fleetCount.textContent = trucks.length;
+  garageCount.textContent = garages.length;
+  onlineCount.textContent = drivers.filter(d => statusClass(d.status) === "good").length;
 
   const featured = drivers.find(d =>
     d.discordUserId === portal.selectedFeaturedDriver ||
@@ -230,34 +285,32 @@ async function loadPortal(){
   renderDrivers(drivers);
   renderFleet(trucks);
   renderGarages(garages);
+  renderDispatch(feed);
+  renderTelemetry(telemetry);
 }
 
 function setupLink(id,url){
   const el = document.getElementById(id);
-  if(url){
-    el.href = url;
-    el.style.display = "inline-block";
-  }else{
-    el.style.display = "none";
-  }
+  if(url){el.href = url; el.style.display = "inline-block";}
+  else el.style.display = "none";
 }
 
 function renderFeatured(d){
-  const box = document.getElementById("featuredDriver");
   if(!d){
-    box.innerHTML = `<div class="muted">No featured driver selected.</div>`;
+    featuredDriver.innerHTML = `<div class="muted">No featured driver selected.</div>`;
     return;
   }
 
-  box.innerHTML = `
+  featuredDriver.innerHTML = `
     <div class="featured">
       <img class="avatar" src="${esc(d.discordAvatarUrl)}" onerror="this.style.display='none'">
       <div>
         <h2 style="margin:0">${esc(d.name)}</h2>
-        <div class="muted">${esc(d.role)} · ${esc(d.status)}</div>
+        <div><span class="status ${statusClass(d.status)}">${esc(d.status || "Offline")}</span></div>
         <p>${esc(d.bio || "A valued member of the company.")}</p>
         <div class="grid">
           <div><b>${esc(d.totalMiles)}</b><div class="muted">Miles</div></div>
+          <div><b>${esc(d.loads)}</b><div class="muted">Loads</div></div>
           <div><b>${esc(d.assignedTruck || "Unassigned")}</b><div class="muted">Truck</div></div>
         </div>
       </div>
@@ -266,50 +319,47 @@ function renderFeatured(d){
 }
 
 function renderDrivers(drivers){
-  const list = document.getElementById("driverList");
   if(!drivers.length){
-    list.innerHTML = `<div class="muted">No drivers found.</div>`;
+    driverList.innerHTML = `<div class="muted">No drivers found.</div>`;
     return;
   }
 
-  list.innerHTML = drivers.map(d=>`
+  driverList.innerHTML = drivers.map(d=>`
     <div class="driver-row" onclick='openDriver(${jsObj(d)})'>
       <img class="avatar" src="${esc(d.discordAvatarUrl)}" onerror="this.style.display='none'">
       <div style="flex:1">
         <b>${esc(d.name)}</b>
-        <div class="muted">${esc(d.role)} · ${esc(d.status)}</div>
+        <div class="muted">${esc(d.role)} · ${esc(d.totalMiles)} mi · ${esc(d.loads)} loads</div>
       </div>
-      <div>${esc(d.totalMiles)} mi</div>
+      <span class="status ${statusClass(d.status)}">${esc(d.status || "Offline")}</span>
     </div>
   `).join("");
 }
 
 function renderFleet(trucks){
-  const tbody = document.getElementById("fleetTable");
   if(!trucks.length){
-    tbody.innerHTML = `<tr><td colspan="5" class="muted">No fleet records yet.</td></tr>`;
+    fleetTable.innerHTML = `<tr><td colspan="5" class="muted">No fleet records yet.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = trucks.map(t=>`
+  fleetTable.innerHTML = trucks.map(t=>`
     <tr>
       <td>${esc(t.truckNumber || t.name || "Truck")}</td>
       <td>${esc(t.driver || "Unassigned")}</td>
       <td>${esc(t.plate || "")}</td>
       <td>${esc(t.location || "")}</td>
-      <td>${esc(t.status || "Available")}</td>
+      <td><span class="status ${statusClass(t.status)}">${esc(t.status || "Available")}</span></td>
     </tr>
   `).join("");
 }
 
 function renderGarages(garages){
-  const list = document.getElementById("garageList");
   if(!garages.length){
-    list.innerHTML = `<div class="muted">No garages added yet.</div>`;
+    garageList.innerHTML = `<div class="muted">No garages added yet.</div>`;
     return;
   }
 
-  list.innerHTML = garages.map(g=>`
+  garageList.innerHTML = garages.map(g=>`
     <div class="card">
       <h3>${esc(g.city || "Garage")}${g.state ? ", " + esc(g.state) : ""}</h3>
       <div class="muted">${esc(g.country || "")}</div>
@@ -320,25 +370,61 @@ function renderGarages(garages){
   `).join("");
 }
 
+function renderDispatch(feed){
+  if(!feed.length){
+    dispatchFeed.innerHTML = `<div class="muted">No dispatch messages available yet.</div>`;
+    return;
+  }
+
+  dispatchFeed.innerHTML = feed.slice(0,8).map(m=>`
+    <div class="feed-item">
+      <b>${esc(m.title || m.subject || m.driverName || m.driver || "Dispatch")}</b>
+      <div>${esc(m.text || m.message || m.content || m.body || "")}</div>
+      <div class="muted">${esc(m.createdAt || m.createdUtc || m.timestamp || "")}</div>
+    </div>
+  `).join("");
+}
+
+function renderTelemetry(items){
+  if(!items.length){
+    liveMap.innerHTML = `
+      <div>
+        <h3>Live Map Ready</h3>
+        <p>Telemetry endpoint is not returning truck locations yet.</p>
+      </div>
+    `;
+    return;
+  }
+
+  liveMap.innerHTML = `
+    <div>
+      <h3>${items.length} Live Unit${items.length === 1 ? "" : "s"}</h3>
+      <p>${items.map(x => esc(x.driver || x.driverName || x.truck || x.truckNumber || "Unit")).join(" · ")}</p>
+      <p class="muted">Map pin rendering can be upgraded next with Leaflet/OpenStreetMap.</p>
+    </div>
+  `;
+}
+
 function openDriver(d){
-  document.getElementById("modalBody").innerHTML = `
+  modalBody.innerHTML = `
     <div class="featured">
       <img class="avatar" src="${esc(d.discordAvatarUrl)}" onerror="this.style.display='none'">
       <div>
         <h2 style="margin:0">${esc(d.name)}</h2>
         <div class="muted">${esc(d.discordUsername || d.discordUserId || "")}</div>
+        <span class="status ${statusClass(d.status)}">${esc(d.status || "Offline")}</span>
       </div>
     </div>
     <hr style="border-color:#334155;margin:18px 0">
     <div class="grid">
       <div class="card"><b>Role</b><br>${esc(d.role)}</div>
-      <div class="card"><b>Status</b><br>${esc(d.status)}</div>
       <div class="card"><b>Miles</b><br>${esc(d.totalMiles)}</div>
+      <div class="card"><b>Loads</b><br>${esc(d.loads)}</div>
       <div class="card"><b>Truck</b><br>${esc(d.assignedTruck || "Unassigned")}</div>
     </div>
     <p class="muted">${esc(d.bio || "")}</p>
   `;
-  document.getElementById("modal").style.display = "block";
+  modal.style.display = "block";
 }
 
 function closeModal(e){
@@ -355,6 +441,10 @@ loadPortal().catch(err=>{
     </main>
   `;
 });
+
+setInterval(()=>{
+  if(modal.style.display !== "block") loadPortal().catch(()=>{});
+}, 30000);
 </script>
 </body>
 </html>
