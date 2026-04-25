@@ -5,9 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>OverWatch ELD - VTC Management</title>
 <style>
-:root{
-  --line:#334155;--text:#f8fafc;--muted:#94a3b8;
-}
+:root{--line:#334155;--text:#f8fafc;--muted:#94a3b8}
 *{box-sizing:border-box}
 body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:linear-gradient(135deg,#020617,#0f172a);color:var(--text)}
 .layout{display:flex;min-height:100vh}
@@ -87,10 +85,7 @@ function esc(v){
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
   }[s]));
 }
-
-function jsObj(o){
-  return esc(JSON.stringify(o));
-}
+function jsObj(o){ return esc(JSON.stringify(o)); }
 
 async function api(path, options={}){
   const res = await fetch(`${API}${path}`, {
@@ -175,6 +170,30 @@ async function loadRosterDrivers(){
   }
 }
 
+async function getMergedDrivers(){
+  const portal = await loadPortalData();
+  const portalDrivers = (portal.drivers || []).map(normalizeDriver);
+  const rosterDrivers = await loadRosterDrivers();
+  const merged = [];
+
+  rosterDrivers.forEach(r=>{
+    const existing = portalDrivers.find(p =>
+      p.discordUserId && r.discordUserId && p.discordUserId === r.discordUserId
+    );
+    merged.push(existing ? {...r, ...existing} : r);
+  });
+
+  portalDrivers.forEach(p=>{
+    const exists = merged.find(m =>
+      (m.discordUserId && p.discordUserId && m.discordUserId === p.discordUserId) ||
+      (m.id && p.id && m.id === p.id)
+    );
+    if(!exists) merged.push(p);
+  });
+
+  return merged;
+}
+
 async function safeLoad(fn){
   try{
     setStatus("Syncing...", true);
@@ -199,40 +218,35 @@ function route(page){
 
 async function loadDashboard(){
   const portal = await loadPortalData();
-  const roster = await loadRosterDrivers();
-
-  const drivers = portal.drivers.length ? portal.drivers.map(normalizeDriver) : roster;
+  const drivers = await getMergedDrivers();
   const trucks = portal.trucks || [];
   const garages = portal.garages || [];
+  const featured = drivers.find(d =>
+    d.id === portal.selectedFeaturedDriver ||
+    d.discordUserId === portal.selectedFeaturedDriver
+  );
 
   document.getElementById("content").innerHTML = `
     <div class="grid">
-      <div class="card"><h3>Drivers</h3><div style="font-size:36px;font-weight:800">${drivers.length}</div><div class="muted">${portal.drivers.length ? "Portal drivers" : "Live VTC roster fallback"}</div></div>
+      <div class="card"><h3>Drivers</h3><div style="font-size:36px;font-weight:800">${drivers.length}</div><div class="muted">Merged Discord roster + portal drivers</div></div>
       <div class="card"><h3>Fleet</h3><div style="font-size:36px;font-weight:800">${trucks.length}</div><div class="muted">Saved company trucks</div></div>
       <div class="card"><h3>Garages</h3><div style="font-size:36px;font-weight:800">${garages.length}</div><div class="muted">Saved garage locations</div></div>
-      <div class="card"><h3>Portal</h3><div class="muted">Public company page</div><div class="actions"><button class="primary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Open Portal</button></div></div>
+      <div class="card"><h3>Featured Driver</h3><div style="font-size:22px;font-weight:800">${esc(featured?.name || "Not selected")}</div><div class="muted">Shown on portal after portal upgrade</div></div>
     </div>
-
     <div class="card" style="margin-top:16px">
       <h3>Company Info</h3>
       <p>${esc(portal.companyInfo || portal.welcomeText || "No portal company information saved yet.")}</p>
+      <div class="actions"><button class="primary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Open Portal</button></div>
     </div>
   `;
 }
 
 async function loadDrivers(){
-  let portalDrivers = [];
-  try{
-    const p = await api(`/api/vtc/portal/drivers?guildId=${encodeURIComponent(guildId)}`);
-    portalDrivers = (p.data || []).map(normalizeDriver);
-  }catch{}
-
-  const rosterDrivers = await loadRosterDrivers();
-  const drivers = portalDrivers.length ? portalDrivers : rosterDrivers;
+  const drivers = await getMergedDrivers();
 
   document.getElementById("content").innerHTML = `
     <div class="notice">
-      Showing saved portal drivers first. If none exist, this page automatically falls back to the live Discord/VTC roster.
+      Drivers are merged from Discord/VTC roster and saved portal profiles. Portal edits override roster data.
     </div>
     <div class="card">
       <h2>Drivers</h2>
@@ -243,7 +257,7 @@ async function loadDrivers(){
         <div class="list-item" onclick='openDriverDetails(${jsObj(d)})'>
           <div class="row">
             <img class="avatar" src="${esc(d.discordAvatarUrl)}" onerror="this.style.display='none'">
-            <div><b>${esc(d.name)}</b><div class="muted">${esc(d.role)} · ${esc(d.status)}</div></div>
+            <div><b>${esc(d.name)}</b><div class="muted">${esc(d.role)} · ${esc(d.status)} · ${esc(d.discordUserId)}</div></div>
           </div>
           <div>${esc(d.totalMiles)} miles</div>
         </div>
@@ -268,6 +282,7 @@ function openDriverDetails(d){
     <p class="muted">${esc(d.bio)}</p>
     <div class="actions">
       <button class="primary" onclick='openDriverForm(${jsObj(d)})'>Save/Edit In Portal</button>
+      <button class="secondary" onclick="setFeaturedDriver('${esc(d.discordUserId || d.id)}')">Set Featured Driver</button>
       ${d.id ? `<button class="danger" onclick="deleteDriver('${esc(d.id)}')">Delete Portal Driver</button>` : ""}
       <button class="secondary" onclick="modal.style.display='none'">Close</button>
     </div>
@@ -326,6 +341,17 @@ async function deleteDriver(id){
   route("drivers");
 }
 
+async function setFeaturedDriver(driverKey){
+  const current = await loadPortalData();
+  await api(`/api/vtc/portal/settings`, {
+    method:"POST",
+    body:JSON.stringify({...current, guildId, selectedFeaturedDriver:driverKey})
+  });
+  modal.style.display = "none";
+  alert("Featured driver updated.");
+  route("dashboard");
+}
+
 async function loadFleet(){
   const json = await api(`/api/vtc/portal/fleet?guildId=${encodeURIComponent(guildId)}`);
   const trucks = json.data || [];
@@ -349,14 +375,21 @@ async function loadFleet(){
   `;
 }
 
-function openTruckForm(t={}){
+async function openTruckForm(t={}){
+  const drivers = await getMergedDrivers();
+  const currentDriver = t.driver || "";
+
   document.getElementById("modalBody").innerHTML = `
     <h2>${t.id ? "Edit Truck" : "Add Truck"}</h2>
     <input id="truckId" type="hidden" value="${esc(t.id || "")}">
     <input id="truckNumber" placeholder="Truck Number" value="${esc(t.truckNumber || "")}">
     <input id="truckName" placeholder="Truck Name" value="${esc(t.name || "")}">
     <input id="truckModel" placeholder="Model" value="${esc(t.model || "")}">
-    <input id="truckDriver" placeholder="Driver" value="${esc(t.driver || "")}">
+    <label>Assigned Driver</label>
+    <select id="truckDriver">
+      <option value="">Unassigned</option>
+      ${drivers.map(d=>`<option value="${esc(d.name)}" ${d.name === currentDriver ? "selected" : ""}>${esc(d.name)}</option>`).join("")}
+    </select>
     <input id="truckPlate" placeholder="Plate" value="${esc(t.plate || "")}">
     <input id="truckOdometer" placeholder="Odometer" value="${esc(t.odometer || "")}">
     <input id="truckLocation" placeholder="Location" value="${esc(t.location || "")}">
@@ -446,8 +479,8 @@ async function deleteGarage(id){
 }
 
 async function loadPortal(){
-  const json = await api(`/api/vtc/portal/settings?guildId=${encodeURIComponent(guildId)}`);
-  const p = lowerPortalData(json.data || {});
+  const p = await loadPortalData();
+  const drivers = await getMergedDrivers();
 
   document.getElementById("content").innerHTML = `
     <div class="card">
@@ -458,6 +491,14 @@ async function loadPortal(){
       <label>Hero Image URL</label><input id="heroImageUrl" value="${esc(p.heroImageUrl)}" placeholder="https://...">
       <label>Discord Invite URL</label><input id="joinDiscordUrl" value="${esc(p.joinDiscordUrl)}" placeholder="https://discord.gg/...">
       <label>Learn More / Join Team URL</label><input id="learnMoreUrl" value="${esc(p.learnMoreUrl)}" placeholder="https://...">
+      <label>Featured Driver</label>
+      <select id="selectedFeaturedDriver">
+        <option value="">None</option>
+        ${drivers.map(d=>{
+          const key = d.discordUserId || d.id;
+          return `<option value="${esc(key)}" ${p.selectedFeaturedDriver === key ? "selected" : ""}>${esc(d.name)}</option>`;
+        }).join("")}
+      </select>
       <div class="actions"><button class="primary" onclick="savePortal()">Save Portal</button><button class="secondary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Preview Portal</button></div>
     </div>
   `;
@@ -474,7 +515,8 @@ async function savePortal(){
     companyInfo:companyInfo.value,
     heroImageUrl:heroImageUrl.value,
     joinDiscordUrl:joinDiscordUrl.value,
-    learnMoreUrl:learnMoreUrl.value
+    learnMoreUrl:learnMoreUrl.value,
+    selectedFeaturedDriver:selectedFeaturedDriver.value
   };
 
   await api(`/api/vtc/portal/settings`, { method:"POST", body:JSON.stringify(payload) });
@@ -509,6 +551,11 @@ function closeModal(e){
 }
 
 route("dashboard");
+
+setInterval(()=>{
+  const active = document.querySelector(".nav button.active")?.dataset.page;
+  if(active && modal.style.display !== "block") route(active);
+}, 30000);
 </script>
 </body>
 </html>
