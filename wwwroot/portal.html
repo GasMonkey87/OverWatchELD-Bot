@@ -1,136 +1,502 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="utf-8" />
 <title>OverWatch ELD - VTC Portal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 
 <style>
-body{margin:0;font-family:Segoe UI;background:#020617;color:#fff}
-.hero{padding:40px;background:#0f172a}
-h1{margin:0}
-.main{padding:20px;max-width:1200px;margin:auto}
-.card{background:#111827;border:1px solid #334155;border-radius:16px;padding:20px;margin-bottom:20px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:15px}
-.mapbox{height:350px;border-radius:16px;overflow:hidden;position:relative;background:#020617}
-.pin{position:absolute;width:14px;height:14px;border-radius:50%;background:#38bdf8;border:2px solid white}
-.pin label{position:absolute;left:18px;top:-6px;font-size:12px;background:#020617;padding:4px;border-radius:6px;border:1px solid #334155}
+:root{
+  --bg:#020617;
+  --panel:#0f172a;
+  --line:#334155;
+  --text:#f8fafc;
+  --muted:#94a3b8;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family:Segoe UI,Arial,sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+.hero{
+  padding:28px;
+  background:#111827;
+  border-bottom:1px solid #1f2937;
+}
+.hero h1{margin:0;font-size:28px}
+.hero p{color:var(--muted)}
+.main{
+  max-width:1250px;
+  margin:auto;
+  padding:24px;
+}
+.card{
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:18px;
+  padding:18px;
+  margin-bottom:20px;
+}
+.mapbox{
+  width:100%;
+  height:520px;
+  border-radius:16px;
+  overflow:hidden;
+  background:#020617;
+  border:1px solid var(--line);
+}
+.grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
+  gap:16px;
+}
+.stat{
+  font-size:32px;
+  font-weight:800;
+}
+.muted{color:var(--muted)}
+.driver-row{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px;
+  border-bottom:1px solid var(--line);
+}
+.table{
+  width:100%;
+  border-collapse:collapse;
+}
+.table th,.table td{
+  padding:10px;
+  border-bottom:1px solid var(--line);
+  text-align:left;
+}
+.truck-marker{
+  width:18px;
+  height:18px;
+  border-radius:50%;
+  background:#38bdf8;
+  border:2px solid white;
+  box-shadow:0 0 14px rgba(56,189,248,.9);
+}
+.footer{
+  text-align:center;
+  color:var(--muted);
+  padding:28px;
+}
 </style>
 </head>
 
 <body>
 
-<div class="hero">
-  <h1 id="title">Loading...</h1>
-  <p id="desc"></p>
-</div>
+<header class="hero">
+  <h1 id="siteTitle">VTC Portal</h1>
+  <p id="welcomeText"></p>
+</header>
 
-<div class="main">
+<main class="main">
 
-<div class="card">
-<h2>Live Map</h2>
-<div id="map" class="mapbox"></div>
-</div>
+  <section class="grid">
+    <div class="card">
+      <h3>Drivers</h3>
+      <div class="stat" id="driverCount">0</div>
+      <div class="muted">Company roster</div>
+    </div>
 
-</div>
+    <div class="card">
+      <h3>Fleet</h3>
+      <div class="stat" id="fleetCount">0</div>
+      <div class="muted">Company trucks</div>
+    </div>
 
-<script>
+    <div class="card">
+      <h3>Garages</h3>
+      <div class="stat" id="garageCount">0</div>
+      <div class="muted">Owned locations</div>
+    </div>
+
+    <div class="card">
+      <h3>Live Units</h3>
+      <div class="stat" id="liveCount">0</div>
+      <div class="muted">Telemetry trucks</div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Live ATS Map</h2>
+    <div id="map" class="mapbox"></div>
+    <p class="muted">
+      Uses your PMTiles ATS map from the GitHub Maps release. If trucks do not appear, telemetry needs longitude/latitude values.
+    </p>
+  </section>
+
+  <section class="card">
+    <h2>Company Info</h2>
+    <p id="companyInfo" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <h2>Featured Driver</h2>
+    <div id="featuredDriver" class="muted">No featured driver selected.</div>
+  </section>
+
+  <section class="card">
+    <h2>Driver Roster</h2>
+    <div id="driverList" class="muted">Loading drivers...</div>
+  </section>
+
+  <section class="card">
+    <h2>Fleet</h2>
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Truck</th>
+          <th>Driver</th>
+          <th>Plate</th>
+          <th>Location</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="fleetTable"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Garages</h2>
+    <div id="garageList" class="grid"></div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  Powered by OverWatch ELD · The ELD you can count on.
+</footer>
+
+<script type="module">
+import { PMTiles, Protocol } from "https://cdn.jsdelivr.net/npm/pmtiles@3.2.0/+esm";
+
 const API = location.origin.includes("localhost")
- ? "https://overwatcheld-bot-5.up.railway.app"
- : location.origin;
+  ? "https://overwatcheld-bot-5.up.railway.app"
+  : location.origin;
 
-const guildId = new URLSearchParams(location.search).get("guildId");
+const qs = new URLSearchParams(location.search);
+const guildId = qs.get("guildId") || localStorage.getItem("oweld.guildId") || "";
 
-// 🔥 CHANGE THIS ONLY IF YOUR TILE PATH IS DIFFERENT
-const TILE_URL = "/map/tiles/{z}/{x}/{y}.png";
+const MAP_BASE = "https://github.com/GasMonkey87/OverWatchELD-Bot/releases/download/Maps";
+const PMTILES_URL = `${MAP_BASE}/ats.pmtiles`;
+const SPRITE_URL = `${MAP_BASE}/sprites`;
+
+let map;
+let markers = [];
+
+function esc(v){
+  return String(v ?? "").replace(/[&<>"']/g, s => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
+  }[s]));
+}
 
 async function api(path){
-  try{
-    const res = await fetch(API + path);
-    return await res.json();
-  }catch{
-    return {};
-  }
+  const res = await fetch(`${API}${path}`);
+  let json = null;
+  try{ json = await res.json(); }catch{}
+  if(!res.ok || json?.ok === false) throw new Error(json?.error || `HTTP ${res.status}`);
+  return json || {};
 }
 
-async function load(){
-  const portal = await api(`/api/vtc/portal/data?guildId=${guildId}`);
-  const telemetry = await api(`/api/telemetry?guildId=${guildId}`);
-
-  const data = portal.data || {};
-  const units = telemetry.data || [];
-
-  title.textContent = data.siteTitle || "VTC Portal";
-  desc.textContent = data.welcomeText || "";
-
-  drawMap(units);
+async function safe(path, fallback){
+  try{ return await api(path); }
+  catch{ return fallback; }
 }
 
-function drawMap(units){
-  const map = document.getElementById("map");
-  map.innerHTML = "";
+function normalizeDriver(d){
+  return {
+    id:d.id || d.Id || d.discordUserId || d.DiscordUserId || d.userId || "",
+    name:d.name || d.Name || d.driverName || d.displayName || d.discordUsername || d.DiscordUsername || "Driver",
+    role:d.role || d.Role || d.vtcRole || "Driver",
+    status:d.status || d.Status || "Member",
+    discordUserId:d.discordUserId || d.DiscordUserId || d.userId || "",
+    discordUsername:d.discordUsername || d.DiscordUsername || d.username || "",
+    discordAvatarUrl:d.discordAvatarUrl || d.DiscordAvatarUrl || d.avatarUrl || d.imageUrl || d.ImageUrl || "",
+    assignedTruck:d.assignedTruck || d.AssignedTruck || d.truck || "",
+    totalMiles:d.totalMiles || d.TotalMiles || d.milesTotal || d.miles || d.mileage || d.Mileage || "0",
+    bio:d.bio || d.Bio || ""
+  };
+}
 
-  const width = map.clientWidth;
-  const height = map.clientHeight;
+function lowerPortalData(d){
+  return {
+    guildId:d.guildId || d.GuildId || guildId,
+    siteTitle:d.siteTitle || d.SiteTitle || "",
+    welcomeText:d.welcomeText || d.WelcomeText || "",
+    companyInfo:d.companyInfo || d.CompanyInfo || "",
+    heroImageUrl:d.heroImageUrl || d.HeroImageUrl || "",
+    joinDiscordUrl:d.joinDiscordUrl || d.JoinDiscordUrl || "",
+    learnMoreUrl:d.learnMoreUrl || d.LearnMoreUrl || "",
+    selectedFeaturedDriver:d.selectedFeaturedDriver || d.SelectedFeaturedDriver || "",
+    drivers:d.drivers || d.Drivers || [],
+    trucks:d.trucks || d.Trucks || [],
+    garages:d.garages || d.Garages || []
+  };
+}
 
-  // draw tiles
-  const tileSize = 256;
-  const cols = Math.ceil(width / tileSize)+1;
-  const rows = Math.ceil(height / tileSize)+1;
+async function loadRosterDrivers(){
+  const r = await safe(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`, {});
+  return (r.data || r.drivers || r.roster || []).map(normalizeDriver);
+}
 
-  for(let y=0;y<rows;y++){
-    for(let x=0;x<cols;x++){
-      const img = document.createElement("img");
-      img.src = TILE_URL
-        .replace("{z}",3)
-        .replace("{x}",x)
-        .replace("{y}",y);
+async function getMergedDrivers(portal){
+  const portalDrivers = (portal.drivers || []).map(normalizeDriver);
+  const rosterDrivers = await loadRosterDrivers();
 
-      img.style.position="absolute";
-      img.style.left = x*tileSize+"px";
-      img.style.top = y*tileSize+"px";
-      img.style.width = tileSize+"px";
-      img.style.height = tileSize+"px";
+  const merged = [];
 
-      map.appendChild(img);
-    }
-  }
+  rosterDrivers.forEach(r=>{
+    const existing = portalDrivers.find(p =>
+      p.discordUserId && r.discordUserId && p.discordUserId === r.discordUserId
+    );
+    merged.push(existing ? {...r, ...existing} : r);
+  });
 
-  // no trucks
-  if(!units.length){
-    const msg = document.createElement("div");
-    msg.innerHTML = "No telemetry data. Start ATS + ELD.";
-    msg.style.position="absolute";
-    msg.style.top="50%";
-    msg.style.left="50%";
-    msg.style.transform="translate(-50%,-50%)";
-    map.appendChild(msg);
-    return;
-  }
+  portalDrivers.forEach(p=>{
+    const exists = merged.find(m =>
+      (m.discordUserId && p.discordUserId && m.discordUserId === p.discordUserId) ||
+      (m.id && p.id && m.id === p.id)
+    );
+    if(!exists) merged.push(p);
+  });
 
-  // draw trucks
-  units.forEach(u=>{
-    const x = Number(u.x || u.mapX || 0);
-    const y = Number(u.y || u.mapY || 0);
+  return merged;
+}
 
-    const px = (x/10000)*width;
-    const py = (y/10000)*height;
+async function initMap(){
+  const protocol = new Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
 
-    const pin = document.createElement("div");
-    pin.className="pin";
-    pin.style.left = px+"px";
-    pin.style.top = py+"px";
+  const pmtiles = new PMTiles(PMTILES_URL);
+  protocol.add(pmtiles);
 
-    const label = document.createElement("label");
-    label.textContent = u.driver || u.truck || "Unit";
+  map = new maplibregl.Map({
+    container:"map",
+    style:{
+      version:8,
+      sources:{
+        ats:{
+          type:"vector",
+          url:"pmtiles://" + pmtiles.source
+        }
+      },
+      sprite:SPRITE_URL,
+      glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+      layers:[
+        {
+          id:"background",
+          type:"background",
+          paint:{
+            "background-color":"#07111f"
+          }
+        },
+        {
+          id:"roads",
+          type:"line",
+          source:"ats",
+          "source-layer":"roads",
+          paint:{
+            "line-color":"#4da3ff",
+            "line-width":2
+          }
+        },
+        {
+          id:"road-casing",
+          type:"line",
+          source:"ats",
+          "source-layer":"roads",
+          paint:{
+            "line-color":"rgba(255,255,255,.2)",
+            "line-width":4
+          }
+        }
+      ]
+    },
+    center:[-98.5795,39.8283],
+    zoom:4.2
+  });
 
-    pin.appendChild(label);
-    map.appendChild(pin);
+  map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+  map.on("error", e=>{
+    console.warn("Map error:", e?.error || e);
   });
 }
 
-load();
-setInterval(load,30000);
+function getLngLat(unit){
+  const lng = Number(
+    unit.longitude ??
+    unit.lng ??
+    unit.lon ??
+    unit.Longitude ??
+    unit.Lng ??
+    unit.Lon
+  );
+
+  const lat = Number(
+    unit.latitude ??
+    unit.lat ??
+    unit.Latitude ??
+    unit.Lat
+  );
+
+  if(Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lng) <= 180 && Math.abs(lat) <= 90){
+    return [lng, lat];
+  }
+
+  return null;
+}
+
+async function loadTelemetry(){
+  const json = await safe(`/api/telemetry?guildId=${encodeURIComponent(guildId)}`, {});
+  const units = json.data || [];
+
+  liveCount.textContent = units.length;
+
+  markers.forEach(m=>m.remove());
+  markers = [];
+
+  if(!map) return;
+
+  units.forEach(u=>{
+    const ll = getLngLat(u);
+    if(!ll) return;
+
+    const el = document.createElement("div");
+    el.className = "truck-marker";
+
+    const marker = new maplibregl.Marker(el)
+      .setLngLat(ll)
+      .setPopup(new maplibregl.Popup().setHTML(`
+        <b>${esc(u.driver || u.driverName || "Driver")}</b><br>
+        ${esc(u.truck || u.truckNumber || "")}<br>
+        ${esc(u.status || "")}
+      `))
+      .addTo(map);
+
+    markers.push(marker);
+  });
+
+  if(markers.length === 1){
+    map.flyTo({center:markers[0].getLngLat(), zoom:7});
+  }
+}
+
+async function loadPortal(){
+  if(!guildId){
+    siteTitle.textContent = "Missing guildId";
+    welcomeText.textContent = "Open portal.html?guildId=YOUR_SERVER_ID";
+    return;
+  }
+
+  const json = await safe(`/api/vtc/portal/data?guildId=${encodeURIComponent(guildId)}`, {});
+  const portal = lowerPortalData(json.data || {});
+  const drivers = await getMergedDrivers(portal);
+
+  const trucks = portal.trucks || [];
+  const garages = portal.garages || [];
+
+  document.title = `${portal.siteTitle || "VTC Portal"} - OverWatch ELD`;
+  siteTitle.textContent = portal.siteTitle || "VTC Portal";
+  welcomeText.textContent = portal.welcomeText || "";
+  companyInfo.textContent = portal.companyInfo || "Company information has not been added yet.";
+
+  driverCount.textContent = drivers.length;
+  fleetCount.textContent = trucks.length;
+  garageCount.textContent = garages.length;
+
+  const featured = drivers.find(d =>
+    d.discordUserId === portal.selectedFeaturedDriver ||
+    d.id === portal.selectedFeaturedDriver
+  ) || drivers[0];
+
+  renderFeatured(featured);
+  renderDrivers(drivers);
+  renderFleet(trucks);
+  renderGarages(garages);
+}
+
+function renderFeatured(d){
+  if(!d){
+    featuredDriver.innerHTML = `<div class="muted">No featured driver selected.</div>`;
+    return;
+  }
+
+  featuredDriver.innerHTML = `
+    <h3>${esc(d.name)}</h3>
+    <p class="muted">${esc(d.role)} · ${esc(d.status)}</p>
+    <p>${esc(d.bio || "A valued member of the company.")}</p>
+    <p><b>Miles:</b> ${esc(d.totalMiles)} · <b>Truck:</b> ${esc(d.assignedTruck || "Unassigned")}</p>
+  `;
+}
+
+function renderDrivers(drivers){
+  if(!drivers.length){
+    driverList.innerHTML = `<div class="muted">No drivers found.</div>`;
+    return;
+  }
+
+  driverList.innerHTML = drivers.map(d=>`
+    <div class="driver-row">
+      <div>
+        <b>${esc(d.name)}</b>
+        <div class="muted">${esc(d.role)} · ${esc(d.status)}</div>
+      </div>
+      <div>${esc(d.totalMiles)} mi</div>
+    </div>
+  `).join("");
+}
+
+function renderFleet(trucks){
+  if(!trucks.length){
+    fleetTable.innerHTML = `<tr><td colspan="5" class="muted">No fleet records yet.</td></tr>`;
+    return;
+  }
+
+  fleetTable.innerHTML = trucks.map(t=>`
+    <tr>
+      <td>${esc(t.truckNumber || t.name || "Truck")}</td>
+      <td>${esc(t.driver || "Unassigned")}</td>
+      <td>${esc(t.plate || "")}</td>
+      <td>${esc(t.location || "")}</td>
+      <td>${esc(t.status || "Available")}</td>
+    </tr>
+  `).join("");
+}
+
+function renderGarages(garages){
+  if(!garages.length){
+    garageList.innerHTML = `<div class="muted">No garages added yet.</div>`;
+    return;
+  }
+
+  garageList.innerHTML = garages.map(g=>`
+    <div class="card">
+      <h3>${esc(g.city || "Garage")}${g.state ? ", " + esc(g.state) : ""}</h3>
+      <div class="muted">${esc(g.country || "")}</div>
+      <p><b>Slots:</b> ${esc(g.slots || "0")}</p>
+      <p><b>Cost:</b> $${esc(g.cost || "0")}</p>
+      <p class="muted">${esc(g.notes || "")}</p>
+    </div>
+  `).join("");
+}
+
+await initMap();
+await loadPortal();
+await loadTelemetry();
+
+setInterval(loadTelemetry, 5000);
+setInterval(loadPortal, 30000);
 </script>
 
 </body>
