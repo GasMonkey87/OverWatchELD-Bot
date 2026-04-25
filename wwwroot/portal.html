@@ -77,12 +77,24 @@ body{
   text-align:left;
 }
 .truck-marker{
-  width:18px;
-  height:18px;
+  width:20px;
+  height:20px;
   border-radius:50%;
   background:#38bdf8;
-  border:2px solid white;
-  box-shadow:0 0 14px rgba(56,189,248,.9);
+  border:3px solid white;
+  box-shadow:0 0 18px rgba(56,189,248,.95);
+}
+.truck-label{
+  position:absolute;
+  transform:translate(20px,-8px);
+  background:rgba(2,6,23,.92);
+  border:1px solid #334155;
+  border-radius:8px;
+  padding:4px 7px;
+  color:white;
+  font-size:12px;
+  white-space:nowrap;
+  pointer-events:none;
 }
 .footer{
   text-align:center;
@@ -130,8 +142,8 @@ body{
   <section class="card">
     <h2>Live ATS Map</h2>
     <div id="map" class="mapbox"></div>
-    <p class="muted">
-      Uses your PMTiles ATS map from the GitHub Maps release. If trucks do not appear, telemetry needs longitude/latitude values.
+    <p class="muted" id="mapStatus">
+      Loading ATS map...
     </p>
   </section>
 
@@ -221,7 +233,6 @@ function normalizeDriver(d){
     status:d.status || d.Status || "Member",
     discordUserId:d.discordUserId || d.DiscordUserId || d.userId || "",
     discordUsername:d.discordUsername || d.DiscordUsername || d.username || "",
-    discordAvatarUrl:d.discordAvatarUrl || d.DiscordAvatarUrl || d.avatarUrl || d.imageUrl || d.ImageUrl || "",
     assignedTruck:d.assignedTruck || d.AssignedTruck || d.truck || "",
     totalMiles:d.totalMiles || d.TotalMiles || d.milesTotal || d.miles || d.mileage || d.Mileage || "0",
     bio:d.bio || d.Bio || ""
@@ -234,9 +245,6 @@ function lowerPortalData(d){
     siteTitle:d.siteTitle || d.SiteTitle || "",
     welcomeText:d.welcomeText || d.WelcomeText || "",
     companyInfo:d.companyInfo || d.CompanyInfo || "",
-    heroImageUrl:d.heroImageUrl || d.HeroImageUrl || "",
-    joinDiscordUrl:d.joinDiscordUrl || d.JoinDiscordUrl || "",
-    learnMoreUrl:d.learnMoreUrl || d.LearnMoreUrl || "",
     selectedFeaturedDriver:d.selectedFeaturedDriver || d.SelectedFeaturedDriver || "",
     drivers:d.drivers || d.Drivers || [],
     trucks:d.trucks || d.Trucks || [],
@@ -252,7 +260,6 @@ async function loadRosterDrivers(){
 async function getMergedDrivers(portal){
   const portalDrivers = (portal.drivers || []).map(normalizeDriver);
   const rosterDrivers = await loadRosterDrivers();
-
   const merged = [];
 
   rosterDrivers.forEach(r=>{
@@ -274,12 +281,18 @@ async function getMergedDrivers(portal){
 }
 
 async function detectSourceLayer(pmtilesUrl){
-  const p = new PMTiles(pmtilesUrl);
-  const metadata = await p.getMetadata();
-  const vectorLayers = metadata?.vector_layers || [];
+  try{
+    const p = new PMTiles(pmtilesUrl);
+    const metadata = await p.getMetadata();
+    const vectorLayers = metadata?.vector_layers || [];
 
-  if(vectorLayers.length > 0 && vectorLayers[0]?.id)
-    return vectorLayers[0].id;
+    if(vectorLayers.length > 0 && vectorLayers[0]?.id){
+      console.log("PMTiles source layer:", vectorLayers[0].id);
+      return vectorLayers[0].id;
+    }
+  }catch(e){
+    console.warn("Source layer detect failed:", e);
+  }
 
   return "default";
 }
@@ -311,23 +324,13 @@ async function initMap(){
           }
         },
         {
-          id:"ats-polygons",
+          id:"ats-fill",
           type:"fill",
           source:"ats",
           "source-layer":sourceLayer,
           paint:{
-            "fill-color":[
-              "match",
-              ["coalesce",["get","color"],-1],
-              0,"#0f1822",
-              1,"#142231",
-              2,"#173042",
-              3,"#112131",
-              4,"#193449",
-              5,"#142838",
-              "#13202c"
-            ],
-            "fill-opacity":0.76
+            "fill-color":"#102033",
+            "fill-opacity":0.55
           }
         },
         {
@@ -337,16 +340,15 @@ async function initMap(){
           "source-layer":sourceLayer,
           filter:["has","roadType"],
           paint:{
-            "line-color":"#13263b",
+            "line-color":"#10243a",
             "line-width":[
               "interpolate",["linear"],["zoom"],
-              4,1.8,
-              6,3.1,
-              8,4.6,
-              10,6.2,
-              13,8.6
+              3,1.5,
+              6,3,
+              9,5,
+              12,8
             ],
-            "line-opacity":0.96
+            "line-opacity":0.95
           }
         },
         {
@@ -360,18 +362,18 @@ async function initMap(){
               "match",
               ["get","roadType"],
               "freeway","#4fc3ff",
-              "highway","#4fc3ff",
-              "#295d86"
+              "highway","#38bdf8",
+              "local","#1d75a8",
+              "#2b88bd"
             ],
             "line-width":[
               "interpolate",["linear"],["zoom"],
-              4,0.9,
+              3,0.8,
               6,1.7,
-              8,2.6,
-              10,3.6,
-              13,5.2
+              9,3,
+              12,5
             ],
-            "line-opacity":0.9
+            "line-opacity":0.96
           }
         }
       ]
@@ -382,6 +384,10 @@ async function initMap(){
 
   map.addControl(new maplibregl.NavigationControl(), "top-right");
 
+  map.on("load", ()=>{
+    mapStatus.textContent = "ATS map loaded. Waiting for live telemetry.";
+  });
+
   map.on("error", e=>{
     console.warn("Map error:", e?.error || e);
   });
@@ -390,30 +396,65 @@ async function initMap(){
 function getLngLat(unit){
   const lng = Number(
     unit.longitude ??
-    unit.lng ??
-    unit.lon ??
     unit.Longitude ??
+    unit.lng ??
     unit.Lng ??
+    unit.lon ??
     unit.Lon
   );
 
   const lat = Number(
     unit.latitude ??
-    unit.lat ??
     unit.Latitude ??
+    unit.lat ??
     unit.Lat
   );
 
-  if(Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lng) <= 180 && Math.abs(lat) <= 90){
+  if(
+    Number.isFinite(lng) &&
+    Number.isFinite(lat) &&
+    Math.abs(lng) <= 180 &&
+    Math.abs(lat) <= 90
+  ){
     return [lng, lat];
   }
 
+  console.warn("Skipping invalid telemetry coords:", unit);
   return null;
+}
+
+function createTruckMarker(unit){
+  const wrap = document.createElement("div");
+  wrap.style.position = "relative";
+
+  const dot = document.createElement("div");
+  dot.className = "truck-marker";
+
+  const label = document.createElement("div");
+  label.className = "truck-label";
+  label.textContent =
+    unit.driver ||
+    unit.Driver ||
+    unit.driverName ||
+    unit.DriverName ||
+    unit.truck ||
+    unit.Truck ||
+    unit.truckNumber ||
+    unit.TruckNumber ||
+    "Unit";
+
+  wrap.appendChild(dot);
+  wrap.appendChild(label);
+
+  return wrap;
 }
 
 async function loadTelemetry(){
   const json = await safe(`/api/telemetry?guildId=${encodeURIComponent(guildId)}`, {});
-  const units = json.data || [];
+  const units = json.data || json.Data || [];
+
+  console.log("Telemetry API:", json);
+  console.log("Telemetry units:", units);
 
   liveCount.textContent = units.length;
 
@@ -421,51 +462,36 @@ async function loadTelemetry(){
   markers = [];
 
   if(!map) return;
-  console.log("Telemetry units:", units);
+
   units.forEach(u=>{
-  const lng = Number(
-    u.longitude ??
-    u.lng ??
-    u.lon ??
-    u.Longitude ??
-    u.Lng ??
-    u.Lon
-  );
+    const ll = getLngLat(u);
+    if(!ll) return;
 
-  const lat = Number(
-    u.latitude ??
-    u.lat ??
-    u.Latitude ??
-    u.Lat
-  );
+    const el = createTruckMarker(u);
 
-  // 🔥 Proper validation
-  if(
-    !Number.isFinite(lng) ||
-    !Number.isFinite(lat) ||
-    Math.abs(lng) > 180 ||
-    Math.abs(lat) > 90
-  ){
-    console.warn("Invalid coords:", u);
-    return;
-  }
+    const marker = new maplibregl.Marker(el)
+      .setLngLat(ll)
+      .setPopup(new maplibregl.Popup().setHTML(`
+        <b>${esc(u.driver || u.Driver || u.driverName || u.DriverName || "Driver")}</b><br>
+        ${esc(u.truck || u.Truck || u.truckNumber || u.TruckNumber || "")}<br>
+        ${esc(u.status || u.Status || "")}
+      `))
+      .addTo(map);
 
-  const el = document.createElement("div");
-  el.className = "truck-marker";
+    markers.push(marker);
+  });
 
-  const marker = new maplibregl.Marker(el)
-    .setLngLat([lng, lat])
-    .setPopup(new maplibregl.Popup().setHTML(`
-      <b>${u.driver || "Driver"}</b><br>
-      ${u.truck || ""}
-    `))
-    .addTo(map);
+  if(markers.length > 0){
+    mapStatus.textContent = `Showing ${markers.length} live unit${markers.length === 1 ? "" : "s"}.`;
 
-  markers.push(marker);
-});
-
-  if(markers.length === 1){
-    map.flyTo({center:markers[0].getLngLat(), zoom:7});
+    if(markers.length === 1){
+      const center = markers[0].getLngLat();
+      map.flyTo({center, zoom:7});
+    }
+  }else if(units.length > 0){
+    mapStatus.textContent = "Telemetry received, but no valid longitude/latitude found.";
+  }else{
+    mapStatus.textContent = "No live telemetry units yet.";
   }
 }
 
