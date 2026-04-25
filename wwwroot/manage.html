@@ -6,185 +6,37 @@
 <title>OverWatch ELD - VTC Management</title>
 <style>
 :root{
-  --bg:#0b1120;
-  --panel:#111827;
-  --panel2:#1f2937;
-  --line:#334155;
-  --text:#f8fafc;
-  --muted:#94a3b8;
-  --accent:#38bdf8;
-  --good:#22c55e;
-  --warn:#f59e0b;
-  --bad:#ef4444;
+  --line:#334155;--text:#f8fafc;--muted:#94a3b8;
 }
 *{box-sizing:border-box}
-body{
-  margin:0;
-  font-family:Segoe UI,Arial,sans-serif;
-  background:linear-gradient(135deg,#020617,#0f172a);
-  color:var(--text);
-}
+body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:linear-gradient(135deg,#020617,#0f172a);color:var(--text)}
 .layout{display:flex;min-height:100vh}
-.sidebar{
-  width:250px;
-  background:#020617;
-  border-right:1px solid var(--line);
-  padding:18px;
-  position:fixed;
-  inset:0 auto 0 0;
-}
-.brand{font-size:22px;font-weight:800}
-.subbrand{color:var(--muted);font-size:13px;margin-bottom:20px}
-.nav button{
-  width:100%;
-  background:transparent;
-  border:1px solid transparent;
-  color:var(--text);
-  padding:13px;
-  text-align:left;
-  border-radius:12px;
-  cursor:pointer;
-  margin-bottom:7px;
-  font-size:15px;
-}
-.nav button:hover,.nav button.active{
-  background:#0f172a;
-  border-color:#1e3a8a;
-}
-.main{
-  margin-left:250px;
-  padding:24px;
-  width:calc(100% - 250px);
-}
-.topbar{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  gap:16px;
-  margin-bottom:20px;
-}
-.badge{
-  background:#082f49;
-  color:#7dd3fc;
-  border:1px solid #0ea5e9;
-  padding:7px 10px;
-  border-radius:999px;
-  font-size:13px;
-}
-.grid{
-  display:grid;
-  grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
-  gap:16px;
-}
-.card{
-  background:rgba(15,23,42,.92);
-  border:1px solid var(--line);
-  border-radius:18px;
-  padding:18px;
-  box-shadow:0 15px 35px rgba(0,0,0,.22);
-}
-.card h2,.card h3{margin-top:0}
-.muted{color:var(--muted)}
-input,textarea,select{
-  width:100%;
-  background:#020617;
-  color:var(--text);
-  border:1px solid var(--line);
-  border-radius:10px;
-  padding:11px;
-  margin:6px 0 12px;
-}
+.sidebar{width:250px;background:#020617;border-right:1px solid var(--line);padding:18px;position:fixed;inset:0 auto 0 0}
+.brand{font-size:22px;font-weight:800}.subbrand{color:var(--muted);font-size:13px;margin-bottom:20px}
+.nav button{width:100%;background:transparent;border:1px solid transparent;color:var(--text);padding:13px;text-align:left;border-radius:12px;cursor:pointer;margin-bottom:7px;font-size:15px}
+.nav button:hover,.nav button.active{background:#0f172a;border-color:#1e3a8a}
+.main{margin-left:250px;padding:24px;width:calc(100% - 250px)}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:20px}
+.badge{background:#082f49;color:#7dd3fc;border:1px solid #0ea5e9;padding:7px 10px;border-radius:999px;font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
+.card{background:rgba(15,23,42,.92);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 15px 35px rgba(0,0,0,.22)}
+.card h2,.card h3{margin-top:0}.muted{color:var(--muted)}
+input,textarea,select{width:100%;background:#020617;color:var(--text);border:1px solid var(--line);border-radius:10px;padding:11px;margin:6px 0 12px}
 textarea{min-height:110px;resize:vertical}
-button.primary{
-  background:linear-gradient(135deg,#0284c7,#2563eb);
-  color:white;
-  border:none;
-  border-radius:12px;
-  padding:11px 15px;
-  cursor:pointer;
-  font-weight:700;
-}
-button.secondary{
-  background:#1f2937;
-  color:white;
-  border:1px solid var(--line);
-  border-radius:12px;
-  padding:10px 14px;
-  cursor:pointer;
-}
-button.danger{
-  background:#7f1d1d;
-  color:white;
-  border:1px solid #ef4444;
-  border-radius:12px;
-  padding:10px 14px;
-  cursor:pointer;
-}
-.list-item{
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  align-items:center;
-  padding:13px;
-  border-bottom:1px solid var(--line);
-  cursor:pointer;
-}
+button.primary{background:linear-gradient(135deg,#0284c7,#2563eb);color:white;border:none;border-radius:12px;padding:11px 15px;cursor:pointer;font-weight:700}
+button.secondary{background:#1f2937;color:white;border:1px solid var(--line);border-radius:12px;padding:10px 14px;cursor:pointer}
+button.danger{background:#7f1d1d;color:white;border:1px solid #ef4444;border-radius:12px;padding:10px 14px;cursor:pointer}
+.list-item{display:flex;justify-content:space-between;gap:12px;align-items:center;padding:13px;border-bottom:1px solid var(--line);cursor:pointer}
 .list-item:hover{background:#1e293b}
-.avatar{
-  width:46px;
-  height:46px;
-  border-radius:50%;
-  background:#334155;
-  object-fit:cover;
-}
+.avatar{width:46px;height:46px;border-radius:50%;background:#334155;object-fit:cover}
 .row{display:flex;gap:12px;align-items:center}
-.table{width:100%;border-collapse:collapse}
-.table th,.table td{
-  padding:11px;
-  border-bottom:1px solid var(--line);
-  text-align:left;
-}
-.modal{
-  display:none;
-  position:fixed;
-  inset:0;
-  background:rgba(0,0,0,.72);
-  z-index:20;
-  padding:30px;
-}
-.modal-card{
-  max-width:620px;
-  margin:5vh auto;
-  background:#020617;
-  border:1px solid var(--line);
-  border-radius:20px;
-  padding:22px;
-}
-.actions{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  margin-top:10px;
-}
-.notice{
-  padding:12px;
-  border-radius:12px;
-  background:#172554;
-  border:1px solid #1d4ed8;
-  margin-bottom:14px;
-}
-.error{
-  padding:12px;
-  border-radius:12px;
-  background:#450a0a;
-  border:1px solid #dc2626;
-  margin-bottom:14px;
-}
-@media(max-width:850px){
-  .sidebar{position:relative;width:100%;height:auto}
-  .layout{display:block}
-  .main{margin-left:0;width:100%}
-}
+.table{width:100%;border-collapse:collapse}.table th,.table td{padding:11px;border-bottom:1px solid var(--line);text-align:left}
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:20;padding:30px}
+.modal-card{max-width:620px;margin:5vh auto;background:#020617;border:1px solid var(--line);border-radius:20px;padding:22px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.notice{padding:12px;border-radius:12px;background:#172554;border:1px solid #1d4ed8;margin-bottom:14px}
+.error{padding:12px;border-radius:12px;background:#450a0a;border:1px solid #dc2626;margin-bottom:14px}
+@media(max-width:850px){.sidebar{position:relative;width:100%;height:auto}.layout{display:block}.main{margin-left:0;width:100%}}
 </style>
 </head>
 
@@ -226,7 +78,7 @@ const API = location.origin.includes("localhost")
 
 const qs = new URLSearchParams(location.search);
 let guildId = qs.get("guildId") || localStorage.getItem("oweld.guildId") || "";
-let portalData = null;
+let portalData = {};
 
 if (guildId) localStorage.setItem("oweld.guildId", guildId);
 
@@ -236,13 +88,14 @@ function esc(v){
   }[s]));
 }
 
+function jsObj(o){
+  return esc(JSON.stringify(o));
+}
+
 async function api(path, options={}){
   const res = await fetch(`${API}${path}`, {
     ...options,
-    headers:{
-      "Content-Type":"application/json",
-      ...(options.headers || {})
-    }
+    headers:{ "Content-Type":"application/json", ...(options.headers || {}) }
   });
 
   let json = null;
@@ -251,7 +104,6 @@ async function api(path, options={}){
   if(!res.ok || json?.ok === false){
     throw new Error(json?.error || json?.message || `HTTP ${res.status}`);
   }
-
   return json || {};
 }
 
@@ -264,30 +116,63 @@ function setStatus(text, good=true){
 }
 
 function setActive(page){
-  document.querySelectorAll(".nav button").forEach(b=>{
-    b.classList.toggle("active", b.dataset.page === page);
-  });
+  document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active", b.dataset.page === page));
 }
 
 function setTitle(page){
-  const names = {
-    dashboard:"Dashboard",
-    drivers:"Drivers",
-    fleet:"Fleet",
-    garage:"Garage",
-    portal:"Portal",
-    settings:"Settings"
+  document.getElementById("pageTitle").textContent = {
+    dashboard:"Dashboard",drivers:"Drivers",fleet:"Fleet",garage:"Garage",portal:"Portal",settings:"Settings"
+  }[page] || "Management";
+}
+
+function normalizeDriver(d){
+  return {
+    id: d.id || d.Id || d.discordUserId || d.DiscordUserId || d.userId || "",
+    name: d.name || d.Name || d.driverName || d.displayName || d.discordUsername || d.DiscordUsername || "Driver",
+    role: d.role || d.Role || d.vtcRole || "Driver",
+    status: d.status || d.Status || "Member",
+    discordUserId: d.discordUserId || d.DiscordUserId || d.userId || "",
+    discordUsername: d.discordUsername || d.DiscordUsername || d.username || "",
+    discordAvatarUrl: d.discordAvatarUrl || d.DiscordAvatarUrl || d.avatarUrl || d.imageUrl || d.ImageUrl || "",
+    assignedTruck: d.assignedTruck || d.AssignedTruck || d.truck || "",
+    totalMiles: d.totalMiles || d.TotalMiles || d.milesTotal || d.miles || d.mileage || d.Mileage || "0",
+    bio: d.bio || d.Bio || ""
   };
-  document.getElementById("pageTitle").textContent = names[page] || "Management";
+}
+
+function lowerPortalData(d){
+  return {
+    guildId: d.guildId || d.GuildId || guildId,
+    siteTitle: d.siteTitle || d.SiteTitle || "",
+    welcomeText: d.welcomeText || d.WelcomeText || "",
+    companyInfo: d.companyInfo || d.CompanyInfo || "",
+    heroImageUrl: d.heroImageUrl || d.HeroImageUrl || "",
+    joinDiscordUrl: d.joinDiscordUrl || d.JoinDiscordUrl || "",
+    learnMoreUrl: d.learnMoreUrl || d.LearnMoreUrl || "",
+    latestInfo: d.latestInfo || d.LatestInfo || [],
+    featuredDrivers: d.featuredDrivers || d.FeaturedDrivers || [],
+    selectedFeaturedDriver: d.selectedFeaturedDriver || d.SelectedFeaturedDriver || "",
+    drivers: d.drivers || d.Drivers || [],
+    trucks: d.trucks || d.Trucks || [],
+    garages: d.garages || d.Garages || []
+  };
 }
 
 async function loadPortalData(){
   if(!guildId) throw new Error("Missing guildId. Open manage.html?guildId=YOUR_SERVER_ID");
   const json = await api(`/api/vtc/portal/data?guildId=${encodeURIComponent(guildId)}`);
-  portalData = json.data || {};
-  document.getElementById("guildLine").textContent =
-    `${portalData.siteTitle || portalData.SiteTitle || "VTC"} · Guild ${guildId}`;
+  portalData = lowerPortalData(json.data || {});
+  document.getElementById("guildLine").textContent = `${portalData.siteTitle || "VTC"} · Guild ${guildId}`;
   return portalData;
+}
+
+async function loadRosterDrivers(){
+  try{
+    const r = await api(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`);
+    return (r.data || r.drivers || r.roster || []).map(normalizeDriver);
+  }catch{
+    return [];
+  }
 }
 
 async function safeLoad(fn){
@@ -297,15 +182,13 @@ async function safeLoad(fn){
     setStatus("Live", true);
   }catch(e){
     setStatus("Error", false);
-    document.getElementById("content").innerHTML =
-      `<div class="error"><b>Failed:</b> ${esc(e.message)}</div>`;
+    document.getElementById("content").innerHTML = `<div class="error"><b>Failed:</b> ${esc(e.message)}</div>`;
   }
 }
 
 function route(page){
   setActive(page);
   setTitle(page);
-
   if(page === "dashboard") safeLoad(loadDashboard);
   if(page === "drivers") safeLoad(loadDrivers);
   if(page === "fleet") safeLoad(loadFleet);
@@ -315,62 +198,56 @@ function route(page){
 }
 
 async function loadDashboard(){
-  const d = await loadPortalData();
-  const drivers = d.drivers || d.Drivers || [];
-  const trucks = d.trucks || d.Trucks || [];
-  const garages = d.garages || d.Garages || [];
+  const portal = await loadPortalData();
+  const roster = await loadRosterDrivers();
+
+  const drivers = portal.drivers.length ? portal.drivers.map(normalizeDriver) : roster;
+  const trucks = portal.trucks || [];
+  const garages = portal.garages || [];
 
   document.getElementById("content").innerHTML = `
     <div class="grid">
-      <div class="card">
-        <h3>Drivers</h3>
-        <div style="font-size:36px;font-weight:800">${drivers.length}</div>
-        <div class="muted">Portal driver records</div>
-      </div>
-      <div class="card">
-        <h3>Fleet</h3>
-        <div style="font-size:36px;font-weight:800">${trucks.length}</div>
-        <div class="muted">Company trucks</div>
-      </div>
-      <div class="card">
-        <h3>Garages</h3>
-        <div style="font-size:36px;font-weight:800">${garages.length}</div>
-        <div class="muted">Owned locations</div>
-      </div>
-      <div class="card">
-        <h3>Portal</h3>
-        <div class="muted">Public company page</div>
-        <div class="actions">
-          <button class="primary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Open Portal</button>
-        </div>
-      </div>
+      <div class="card"><h3>Drivers</h3><div style="font-size:36px;font-weight:800">${drivers.length}</div><div class="muted">${portal.drivers.length ? "Portal drivers" : "Live VTC roster fallback"}</div></div>
+      <div class="card"><h3>Fleet</h3><div style="font-size:36px;font-weight:800">${trucks.length}</div><div class="muted">Saved company trucks</div></div>
+      <div class="card"><h3>Garages</h3><div style="font-size:36px;font-weight:800">${garages.length}</div><div class="muted">Saved garage locations</div></div>
+      <div class="card"><h3>Portal</h3><div class="muted">Public company page</div><div class="actions"><button class="primary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Open Portal</button></div></div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h3>Company Info</h3>
+      <p>${esc(portal.companyInfo || portal.welcomeText || "No portal company information saved yet.")}</p>
     </div>
   `;
 }
 
 async function loadDrivers(){
-  const json = await api(`/api/vtc/portal/drivers?guildId=${encodeURIComponent(guildId)}`);
-  const drivers = json.data || [];
+  let portalDrivers = [];
+  try{
+    const p = await api(`/api/vtc/portal/drivers?guildId=${encodeURIComponent(guildId)}`);
+    portalDrivers = (p.data || []).map(normalizeDriver);
+  }catch{}
+
+  const rosterDrivers = await loadRosterDrivers();
+  const drivers = portalDrivers.length ? portalDrivers : rosterDrivers;
 
   document.getElementById("content").innerHTML = `
-    <div class="notice">Click a driver to view details. Add/edit/delete uses your existing PortalDataStore driver list.</div>
+    <div class="notice">
+      Showing saved portal drivers first. If none exist, this page automatically falls back to the live Discord/VTC roster.
+    </div>
     <div class="card">
       <h2>Drivers</h2>
       <div class="actions">
-        <button class="primary" onclick="openDriverForm()">Add Driver</button>
+        <button class="primary" onclick="openDriverForm()">Add Portal Driver</button>
       </div>
-      ${drivers.length ? drivers.map((d,i)=>`
-        <div class="list-item" onclick='openDriverDetails(${JSON.stringify(d).replace(/'/g,"&#39;")})'>
+      ${drivers.length ? drivers.map(d=>`
+        <div class="list-item" onclick='openDriverDetails(${jsObj(d)})'>
           <div class="row">
-            <img class="avatar" src="${esc(d.discordAvatarUrl || d.imageUrl || d.DiscordAvatarUrl || d.ImageUrl || "")}" onerror="this.style.display='none'">
-            <div>
-              <b>${esc(d.name || d.Name || "Driver")}</b>
-              <div class="muted">${esc(d.role || d.Role || "Driver")} · ${esc(d.status || d.Status || "Member")}</div>
-            </div>
+            <img class="avatar" src="${esc(d.discordAvatarUrl)}" onerror="this.style.display='none'">
+            <div><b>${esc(d.name)}</b><div class="muted">${esc(d.role)} · ${esc(d.status)}</div></div>
           </div>
-          <div>${esc(d.totalMiles || d.TotalMiles || d.mileage || d.Mileage || "0")} miles</div>
+          <div>${esc(d.totalMiles)} miles</div>
         </div>
-      `).join("") : `<div class="muted">No drivers saved yet.</div>`}
+      `).join("") : `<div class="muted">No drivers found from portal or live roster API.</div>`}
     </div>
   `;
 }
@@ -378,23 +255,20 @@ async function loadDrivers(){
 function openDriverDetails(d){
   document.getElementById("modalBody").innerHTML = `
     <div class="row">
-      <img class="avatar" src="${esc(d.discordAvatarUrl || d.imageUrl || "")}" onerror="this.style.display='none'">
-      <div>
-        <h2 style="margin:0">${esc(d.name || "Driver")}</h2>
-        <div class="muted">${esc(d.discordUsername || d.discordUserId || "")}</div>
-      </div>
+      <img class="avatar" src="${esc(d.discordAvatarUrl)}" onerror="this.style.display='none'">
+      <div><h2 style="margin:0">${esc(d.name)}</h2><div class="muted">${esc(d.discordUsername || d.discordUserId)}</div></div>
     </div>
     <hr style="border-color:#334155;margin:18px 0">
     <div class="grid">
-      <div class="card"><b>Role</b><br>${esc(d.role || "Driver")}</div>
-      <div class="card"><b>Status</b><br>${esc(d.status || "Member")}</div>
-      <div class="card"><b>Total Miles</b><br>${esc(d.totalMiles || d.mileage || "0")}</div>
-      <div class="card"><b>Truck</b><br>${esc(d.assignedTruck || d.favoriteTruck || "")}</div>
+      <div class="card"><b>Role</b><br>${esc(d.role)}</div>
+      <div class="card"><b>Status</b><br>${esc(d.status)}</div>
+      <div class="card"><b>Total Miles</b><br>${esc(d.totalMiles)}</div>
+      <div class="card"><b>Truck</b><br>${esc(d.assignedTruck)}</div>
     </div>
-    <p class="muted">${esc(d.bio || "")}</p>
+    <p class="muted">${esc(d.bio)}</p>
     <div class="actions">
-      <button class="primary" onclick='openDriverForm(${JSON.stringify(d).replace(/'/g,"&#39;")})'>Edit</button>
-      <button class="danger" onclick="deleteDriver('${esc(d.id || d.Id)}')">Delete</button>
+      <button class="primary" onclick='openDriverForm(${jsObj(d)})'>Save/Edit In Portal</button>
+      ${d.id ? `<button class="danger" onclick="deleteDriver('${esc(d.id)}')">Delete Portal Driver</button>` : ""}
       <button class="secondary" onclick="modal.style.display='none'">Close</button>
     </div>
   `;
@@ -412,7 +286,7 @@ function openDriverForm(d={}){
     <input id="driverDiscordUsername" placeholder="Discord Username" value="${esc(d.discordUsername || "")}">
     <input id="driverDiscordAvatarUrl" placeholder="Avatar URL" value="${esc(d.discordAvatarUrl || "")}">
     <input id="driverAssignedTruck" placeholder="Assigned Truck" value="${esc(d.assignedTruck || "")}">
-    <input id="driverTotalMiles" placeholder="Total Miles" value="${esc(d.totalMiles || d.mileage || "")}">
+    <input id="driverTotalMiles" placeholder="Total Miles" value="${esc(d.totalMiles || "")}">
     <textarea id="driverBio" placeholder="Bio">${esc(d.bio || "")}</textarea>
     <div class="actions">
       <button class="primary" onclick="saveDriver()">Save Driver</button>
@@ -438,8 +312,7 @@ async function saveDriver(){
   };
 
   await api(`/api/vtc/portal/drivers?guildId=${encodeURIComponent(guildId)}`, {
-    method:"POST",
-    body:JSON.stringify(driver)
+    method:"POST", body:JSON.stringify(driver)
   });
 
   modal.style.display = "none";
@@ -447,13 +320,8 @@ async function saveDriver(){
 }
 
 async function deleteDriver(id){
-  if(!id) return;
-  if(!confirm("Delete this driver?")) return;
-
-  await api(`/api/vtc/portal/drivers/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, {
-    method:"DELETE"
-  });
-
+  if(!id || !confirm("Delete this portal driver?")) return;
+  await api(`/api/vtc/portal/drivers/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, { method:"DELETE" });
   modal.style.display = "none";
   route("drivers");
 }
@@ -465,36 +333,16 @@ async function loadFleet(){
   document.getElementById("content").innerHTML = `
     <div class="card">
       <h2>Fleet</h2>
-      <div class="actions">
-        <button class="primary" onclick="openTruckForm()">Add Truck</button>
-      </div>
+      <div class="actions"><button class="primary" onclick="openTruckForm()">Add Truck</button></div>
       <table class="table">
-        <thead>
-          <tr>
-            <th>Truck #</th>
-            <th>Name/Model</th>
-            <th>Driver</th>
-            <th>Plate</th>
-            <th>Odometer</th>
-            <th>Status</th>
-            <th></th>
-          </tr>
-        </thead>
+        <thead><tr><th>Truck #</th><th>Name/Model</th><th>Driver</th><th>Plate</th><th>Odometer</th><th>Status</th><th></th></tr></thead>
         <tbody>
-          ${trucks.length ? trucks.map(t=>`
-            <tr>
-              <td>${esc(t.truckNumber || "")}</td>
-              <td>${esc(t.name || t.model || "")}</td>
-              <td>${esc(t.driver || "Unassigned")}</td>
-              <td>${esc(t.plate || "")}</td>
-              <td>${esc(t.odometer || "")}</td>
-              <td>${esc(t.status || "Available")}</td>
-              <td>
-                <button class="secondary" onclick='openTruckForm(${JSON.stringify(t).replace(/'/g,"&#39;")})'>Edit</button>
-                <button class="danger" onclick="deleteTruck('${esc(t.id || "")}')">Delete</button>
-              </td>
-            </tr>
-          `).join("") : `<tr><td colspan="7" class="muted">No trucks saved yet.</td></tr>`}
+        ${trucks.length ? trucks.map(t=>`
+          <tr>
+            <td>${esc(t.truckNumber || "")}</td><td>${esc(t.name || t.model || "")}</td><td>${esc(t.driver || "Unassigned")}</td><td>${esc(t.plate || "")}</td><td>${esc(t.odometer || "")}</td><td>${esc(t.status || "Available")}</td>
+            <td><button class="secondary" onclick='openTruckForm(${jsObj(t)})'>Edit</button> <button class="danger" onclick="deleteTruck('${esc(t.id || "")}')">Delete</button></td>
+          </tr>
+        `).join("") : `<tr><td colspan="7" class="muted">No trucks saved yet.</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -516,33 +364,21 @@ function openTruckForm(t={}){
     <input id="truckCondition" placeholder="Condition %" value="${esc(t.condition || "")}">
     <input id="truckFuel" placeholder="Fuel %" value="${esc(t.fuel || "")}">
     <textarea id="truckNotes" placeholder="Notes">${esc(t.notes || "")}</textarea>
-    <div class="actions">
-      <button class="primary" onclick="saveTruck()">Save Truck</button>
-      <button class="secondary" onclick="modal.style.display='none'">Cancel</button>
-    </div>
+    <div class="actions"><button class="primary" onclick="saveTruck()">Save Truck</button><button class="secondary" onclick="modal.style.display='none'">Cancel</button></div>
   `;
   modal.style.display = "block";
 }
 
 async function saveTruck(){
   const truck = {
-    id: truckId.value,
-    truckNumber: truckNumber.value,
-    name: truckName.value,
-    model: truckModel.value,
-    driver: truckDriver.value,
-    plate: truckPlate.value,
-    odometer: truckOdometer.value,
-    location: truckLocation.value,
-    status: truckStatus.value,
-    condition: truckCondition.value,
-    fuel: truckFuel.value,
-    notes: truckNotes.value
+    id:truckId.value, truckNumber:truckNumber.value, name:truckName.value, model:truckModel.value,
+    driver:truckDriver.value, plate:truckPlate.value, odometer:truckOdometer.value,
+    location:truckLocation.value, status:truckStatus.value, condition:truckCondition.value,
+    fuel:truckFuel.value, notes:truckNotes.value
   };
 
   await api(`/api/vtc/portal/fleet?guildId=${encodeURIComponent(guildId)}`, {
-    method:"POST",
-    body:JSON.stringify(truck)
+    method:"POST", body:JSON.stringify(truck)
   });
 
   modal.style.display = "none";
@@ -550,13 +386,8 @@ async function saveTruck(){
 }
 
 async function deleteTruck(id){
-  if(!id) return;
-  if(!confirm("Delete this truck?")) return;
-
-  await api(`/api/vtc/portal/fleet/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, {
-    method:"DELETE"
-  });
-
+  if(!id || !confirm("Delete this truck?")) return;
+  await api(`/api/vtc/portal/fleet/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, { method:"DELETE" });
   route("fleet");
 }
 
@@ -567,19 +398,11 @@ async function loadGarage(){
   document.getElementById("content").innerHTML = `
     <div class="card">
       <h2>Garages</h2>
-      <div class="actions">
-        <button class="primary" onclick="openGarageForm()">Add Garage</button>
-      </div>
+      <div class="actions"><button class="primary" onclick="openGarageForm()">Add Garage</button></div>
       ${garages.length ? garages.map(g=>`
         <div class="list-item">
-          <div>
-            <b>${esc(g.city || "Garage")}${g.state ? ", " + esc(g.state) : ""}</b>
-            <div class="muted">${esc(g.country || "")} · ${esc(g.slots || "0")} slots</div>
-          </div>
-          <div class="actions">
-            <button class="secondary" onclick='openGarageForm(${JSON.stringify(g).replace(/'/g,"&#39;")})'>Edit</button>
-            <button class="danger" onclick="deleteGarage('${esc(g.id || "")}')">Delete</button>
-          </div>
+          <div><b>${esc(g.city || "Garage")}${g.state ? ", " + esc(g.state) : ""}</b><div class="muted">${esc(g.country || "")} · ${esc(g.slots || "0")} slots · $${esc(g.cost || "0")}</div></div>
+          <div class="actions"><button class="secondary" onclick='openGarageForm(${jsObj(g)})'>Edit</button><button class="danger" onclick="deleteGarage('${esc(g.id || "")}')">Delete</button></div>
         </div>
       `).join("") : `<div class="muted">No garages saved yet.</div>`}
     </div>
@@ -597,29 +420,19 @@ function openGarageForm(g={}){
     <input id="garageCost" placeholder="Cost" value="${esc(g.cost || "")}">
     <input id="garagePurchasedBy" placeholder="Purchased By" value="${esc(g.purchasedBy || "")}">
     <textarea id="garageNotes" placeholder="Notes">${esc(g.notes || "")}</textarea>
-    <div class="actions">
-      <button class="primary" onclick="saveGarage()">Save Garage</button>
-      <button class="secondary" onclick="modal.style.display='none'">Cancel</button>
-    </div>
+    <div class="actions"><button class="primary" onclick="saveGarage()">Save Garage</button><button class="secondary" onclick="modal.style.display='none'">Cancel</button></div>
   `;
   modal.style.display = "block";
 }
 
 async function saveGarage(){
   const garage = {
-    id: garageId.value,
-    city: garageCity.value,
-    state: garageState.value,
-    country: garageCountry.value,
-    slots: garageSlots.value,
-    cost: garageCost.value,
-    purchasedBy: garagePurchasedBy.value,
-    notes: garageNotes.value
+    id:garageId.value, city:garageCity.value, state:garageState.value, country:garageCountry.value,
+    slots:garageSlots.value, cost:garageCost.value, purchasedBy:garagePurchasedBy.value, notes:garageNotes.value
   };
 
   await api(`/api/vtc/portal/garages?guildId=${encodeURIComponent(guildId)}`, {
-    method:"POST",
-    body:JSON.stringify(garage)
+    method:"POST", body:JSON.stringify(garage)
   });
 
   modal.style.display = "none";
@@ -627,46 +440,25 @@ async function saveGarage(){
 }
 
 async function deleteGarage(id){
-  if(!id) return;
-  if(!confirm("Delete this garage?")) return;
-
-  await api(`/api/vtc/portal/garages/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, {
-    method:"DELETE"
-  });
-
+  if(!id || !confirm("Delete this garage?")) return;
+  await api(`/api/vtc/portal/garages/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, { method:"DELETE" });
   route("garage");
 }
 
 async function loadPortal(){
   const json = await api(`/api/vtc/portal/settings?guildId=${encodeURIComponent(guildId)}`);
-  const p = json.data || {};
+  const p = lowerPortalData(json.data || {});
 
   document.getElementById("content").innerHTML = `
     <div class="card">
       <h2>Portal Settings</h2>
-
-      <label>Site Title</label>
-      <input id="siteTitle" value="${esc(p.siteTitle || "")}" placeholder="VTC name">
-
-      <label>Welcome Text</label>
-      <textarea id="welcomeText">${esc(p.welcomeText || "")}</textarea>
-
-      <label>Company Info</label>
-      <textarea id="companyInfo">${esc(p.companyInfo || "")}</textarea>
-
-      <label>Hero Image URL</label>
-      <input id="heroImageUrl" value="${esc(p.heroImageUrl || "")}" placeholder="https://...">
-
-      <label>Discord Invite URL</label>
-      <input id="joinDiscordUrl" value="${esc(p.joinDiscordUrl || "")}" placeholder="https://discord.gg/...">
-
-      <label>Learn More / Join Team URL</label>
-      <input id="learnMoreUrl" value="${esc(p.learnMoreUrl || "")}" placeholder="https://...">
-
-      <div class="actions">
-        <button class="primary" onclick="savePortal()">Save Portal</button>
-        <button class="secondary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Preview Portal</button>
-      </div>
+      <label>Site Title</label><input id="siteTitle" value="${esc(p.siteTitle)}" placeholder="VTC name">
+      <label>Welcome Text</label><textarea id="welcomeText">${esc(p.welcomeText)}</textarea>
+      <label>Company Info</label><textarea id="companyInfo">${esc(p.companyInfo)}</textarea>
+      <label>Hero Image URL</label><input id="heroImageUrl" value="${esc(p.heroImageUrl)}" placeholder="https://...">
+      <label>Discord Invite URL</label><input id="joinDiscordUrl" value="${esc(p.joinDiscordUrl)}" placeholder="https://discord.gg/...">
+      <label>Learn More / Join Team URL</label><input id="learnMoreUrl" value="${esc(p.learnMoreUrl)}" placeholder="https://...">
+      <div class="actions"><button class="primary" onclick="savePortal()">Save Portal</button><button class="secondary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Preview Portal</button></div>
     </div>
   `;
 }
@@ -677,19 +469,15 @@ async function savePortal(){
   const payload = {
     ...current,
     guildId,
-    siteTitle: siteTitle.value,
-    welcomeText: welcomeText.value,
-    companyInfo: companyInfo.value,
-    heroImageUrl: heroImageUrl.value,
-    joinDiscordUrl: joinDiscordUrl.value,
-    learnMoreUrl: learnMoreUrl.value
+    siteTitle:siteTitle.value,
+    welcomeText:welcomeText.value,
+    companyInfo:companyInfo.value,
+    heroImageUrl:heroImageUrl.value,
+    joinDiscordUrl:joinDiscordUrl.value,
+    learnMoreUrl:learnMoreUrl.value
   };
 
-  await api(`/api/vtc/portal/settings`, {
-    method:"POST",
-    body:JSON.stringify(payload)
-  });
-
+  await api(`/api/vtc/portal/settings`, { method:"POST", body:JSON.stringify(payload) });
   alert("Portal saved.");
   route("portal");
 }
@@ -700,10 +488,7 @@ function loadSettings(){
       <h2>Settings</h2>
       <label>Guild ID</label>
       <input id="guildInput" value="${esc(guildId)}">
-      <div class="actions">
-        <button class="primary" onclick="saveSettings()">Save</button>
-        <button class="danger" onclick="clearSettings()">Clear</button>
-      </div>
+      <div class="actions"><button class="primary" onclick="saveSettings()">Save</button><button class="danger" onclick="clearSettings()">Clear</button></div>
     </div>
   `;
 }
