@@ -273,57 +273,111 @@ async function getMergedDrivers(portal){
   return merged;
 }
 
+async function detectSourceLayer(pmtilesUrl){
+  const p = new PMTiles(pmtilesUrl);
+  const metadata = await p.getMetadata();
+  const vectorLayers = metadata?.vector_layers || [];
+
+  if(vectorLayers.length > 0 && vectorLayers[0]?.id)
+    return vectorLayers[0].id;
+
+  return "default";
+}
+
 async function initMap(){
   const protocol = new Protocol();
   maplibregl.addProtocol("pmtiles", protocol.tile);
 
-  const pmtiles = new PMTiles(PMTILES_URL);
-  protocol.add(pmtiles);
+  const sourceLayer = await detectSourceLayer(PMTILES_URL);
 
   map = new maplibregl.Map({
     container:"map",
     style:{
       version:8,
+      glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
       sources:{
         ats:{
           type:"vector",
-          url:"pmtiles://" + pmtiles.source
+          url:`pmtiles://${PMTILES_URL}`
         }
       },
       sprite:SPRITE_URL,
-      glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
       layers:[
         {
           id:"background",
           type:"background",
           paint:{
-            "background-color":"#07111f"
+            "background-color":"#081018"
           }
         },
         {
-          id:"roads",
-          type:"line",
+          id:"ats-polygons",
+          type:"fill",
           source:"ats",
-          "source-layer":"roads",
+          "source-layer":sourceLayer,
           paint:{
-            "line-color":"#4da3ff",
-            "line-width":2
+            "fill-color":[
+              "match",
+              ["coalesce",["get","color"],-1],
+              0,"#0f1822",
+              1,"#142231",
+              2,"#173042",
+              3,"#112131",
+              4,"#193449",
+              5,"#142838",
+              "#13202c"
+            ],
+            "fill-opacity":0.76
           }
         },
         {
-          id:"road-casing",
+          id:"ats-roads-casing",
           type:"line",
           source:"ats",
-          "source-layer":"roads",
+          "source-layer":sourceLayer,
+          filter:["has","roadType"],
           paint:{
-            "line-color":"rgba(255,255,255,.2)",
-            "line-width":4
+            "line-color":"#13263b",
+            "line-width":[
+              "interpolate",["linear"],["zoom"],
+              4,1.8,
+              6,3.1,
+              8,4.6,
+              10,6.2,
+              13,8.6
+            ],
+            "line-opacity":0.96
+          }
+        },
+        {
+          id:"ats-roads",
+          type:"line",
+          source:"ats",
+          "source-layer":sourceLayer,
+          filter:["has","roadType"],
+          paint:{
+            "line-color":[
+              "match",
+              ["get","roadType"],
+              "freeway","#4fc3ff",
+              "highway","#4fc3ff",
+              "#295d86"
+            ],
+            "line-width":[
+              "interpolate",["linear"],["zoom"],
+              4,0.9,
+              6,1.7,
+              8,2.6,
+              10,3.6,
+              13,5.2
+            ],
+            "line-opacity":0.9
           }
         }
       ]
     },
     center:[-98.5795,39.8283],
-    zoom:4.2
+    zoom:4.8
   });
 
   map.addControl(new maplibregl.NavigationControl(), "top-right");
