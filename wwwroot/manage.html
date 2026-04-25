@@ -4,7 +4,6 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>OverWatch ELD - VTC Management</title>
-
 <style>
 :root{
   --bg:#0b1120;
@@ -18,44 +17,24 @@
   --warn:#f59e0b;
   --bad:#ef4444;
 }
-
 *{box-sizing:border-box}
-
 body{
   margin:0;
   font-family:Segoe UI,Arial,sans-serif;
   background:linear-gradient(135deg,#020617,#0f172a);
   color:var(--text);
 }
-
-.layout{
-  display:flex;
-  min-height:100vh;
-}
-
+.layout{display:flex;min-height:100vh}
 .sidebar{
   width:250px;
   background:#020617;
   border-right:1px solid var(--line);
   padding:18px;
   position:fixed;
-  top:0;
-  bottom:0;
-  left:0;
+  inset:0 auto 0 0;
 }
-
-.brand{
-  font-size:22px;
-  font-weight:800;
-  margin-bottom:4px;
-}
-
-.subbrand{
-  color:var(--muted);
-  font-size:13px;
-  margin-bottom:20px;
-}
-
+.brand{font-size:22px;font-weight:800}
+.subbrand{color:var(--muted);font-size:13px;margin-bottom:20px}
 .nav button{
   width:100%;
   background:transparent;
@@ -68,19 +47,15 @@ body{
   margin-bottom:7px;
   font-size:15px;
 }
-
-.nav button:hover,
-.nav button.active{
+.nav button:hover,.nav button.active{
   background:#0f172a;
   border-color:#1e3a8a;
 }
-
 .main{
   margin-left:250px;
   padding:24px;
   width:calc(100% - 250px);
 }
-
 .topbar{
   display:flex;
   justify-content:space-between;
@@ -88,7 +63,6 @@ body{
   gap:16px;
   margin-bottom:20px;
 }
-
 .badge{
   background:#082f49;
   color:#7dd3fc;
@@ -97,13 +71,11 @@ body{
   border-radius:999px;
   font-size:13px;
 }
-
 .grid{
   display:grid;
   grid-template-columns:repeat(auto-fit,minmax(230px,1fr));
   gap:16px;
 }
-
 .card{
   background:rgba(15,23,42,.92);
   border:1px solid var(--line);
@@ -111,13 +83,8 @@ body{
   padding:18px;
   box-shadow:0 15px 35px rgba(0,0,0,.22);
 }
-
-.card h2,.card h3{
-  margin-top:0;
-}
-
+.card h2,.card h3{margin-top:0}
 .muted{color:var(--muted)}
-
 input,textarea,select{
   width:100%;
   background:#020617;
@@ -127,12 +94,7 @@ input,textarea,select{
   padding:11px;
   margin:6px 0 12px;
 }
-
-textarea{
-  min-height:110px;
-  resize:vertical;
-}
-
+textarea{min-height:110px;resize:vertical}
 button.primary{
   background:linear-gradient(135deg,#0284c7,#2563eb);
   color:white;
@@ -142,7 +104,6 @@ button.primary{
   cursor:pointer;
   font-weight:700;
 }
-
 button.secondary{
   background:#1f2937;
   color:white;
@@ -151,7 +112,6 @@ button.secondary{
   padding:10px 14px;
   cursor:pointer;
 }
-
 button.danger{
   background:#7f1d1d;
   color:white;
@@ -160,7 +120,6 @@ button.danger{
   padding:10px 14px;
   cursor:pointer;
 }
-
 .list-item{
   display:flex;
   justify-content:space-between;
@@ -170,11 +129,7 @@ button.danger{
   border-bottom:1px solid var(--line);
   cursor:pointer;
 }
-
-.list-item:hover{
-  background:#1e293b;
-}
-
+.list-item:hover{background:#1e293b}
 .avatar{
   width:46px;
   height:46px;
@@ -182,28 +137,13 @@ button.danger{
   background:#334155;
   object-fit:cover;
 }
-
-.row{
-  display:flex;
-  gap:12px;
-  align-items:center;
-}
-
-.table{
-  width:100%;
-  border-collapse:collapse;
-}
-
+.row{display:flex;gap:12px;align-items:center}
+.table{width:100%;border-collapse:collapse}
 .table th,.table td{
   padding:11px;
   border-bottom:1px solid var(--line);
   text-align:left;
 }
-
-.status-good{color:var(--good)}
-.status-warn{color:var(--warn)}
-.status-bad{color:var(--bad)}
-
 .modal{
   display:none;
   position:fixed;
@@ -212,7 +152,6 @@ button.danger{
   z-index:20;
   padding:30px;
 }
-
 .modal-card{
   max-width:620px;
   margin:5vh auto;
@@ -221,14 +160,12 @@ button.danger{
   border-radius:20px;
   padding:22px;
 }
-
 .actions{
   display:flex;
   gap:10px;
   flex-wrap:wrap;
   margin-top:10px;
 }
-
 .notice{
   padding:12px;
   border-radius:12px;
@@ -236,7 +173,6 @@ button.danger{
   border:1px solid #1d4ed8;
   margin-bottom:14px;
 }
-
 .error{
   padding:12px;
   border-radius:12px;
@@ -244,20 +180,10 @@ button.danger{
   border:1px solid #dc2626;
   margin-bottom:14px;
 }
-
 @media(max-width:850px){
-  .sidebar{
-    position:relative;
-    width:100%;
-    height:auto;
-  }
-  .layout{
-    display:block;
-  }
-  .main{
-    margin-left:0;
-    width:100%;
-  }
+  .sidebar{position:relative;width:100%;height:auto}
+  .layout{display:block}
+  .main{margin-left:0;width:100%}
 }
 </style>
 </head>
@@ -267,14 +193,12 @@ button.danger{
   <aside class="sidebar">
     <div class="brand">OverWatch ELD</div>
     <div class="subbrand">VTC Management Center</div>
-
     <div class="nav">
       <button data-page="dashboard" onclick="route('dashboard')">Dashboard</button>
       <button data-page="drivers" onclick="route('drivers')">Drivers</button>
       <button data-page="fleet" onclick="route('fleet')">Fleet</button>
       <button data-page="garage" onclick="route('garage')">Garage</button>
       <button data-page="portal" onclick="route('portal')">Portal</button>
-      <button data-page="announcements" onclick="route('announcements')">Announcements</button>
       <button data-page="settings" onclick="route('settings')">Settings</button>
     </div>
   </aside>
@@ -287,7 +211,6 @@ button.danger{
       </div>
       <div class="badge" id="statusBadge">Connecting...</div>
     </div>
-
     <div id="content"></div>
   </main>
 </div>
@@ -302,38 +225,31 @@ const API = location.origin.includes("localhost")
   : location.origin;
 
 const qs = new URLSearchParams(location.search);
-const guildId = qs.get("guildId") || localStorage.getItem("oweld.guildId") || "";
-const apiKey = localStorage.getItem("oweld.apiKey") || "";
+let guildId = qs.get("guildId") || localStorage.getItem("oweld.guildId") || "";
+let portalData = null;
 
 if (guildId) localStorage.setItem("oweld.guildId", guildId);
 
-let state = {
-  me:null,
-  roster:[],
-  fleet:[],
-  garages:[],
-  portal:null,
-  announcements:[]
-};
-
-function headers(){
-  const h = {"Content-Type":"application/json"};
-  if(apiKey) h["X-API-Key"] = apiKey;
-  return h;
+function esc(v){
+  return String(v ?? "").replace(/[&<>"']/g, s => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
+  }[s]));
 }
 
 async function api(path, options={}){
   const res = await fetch(`${API}${path}`, {
     ...options,
-    headers:{...headers(), ...(options.headers || {})}
+    headers:{
+      "Content-Type":"application/json",
+      ...(options.headers || {})
+    }
   });
 
   let json = null;
-  try { json = await res.json(); } catch {}
+  try{ json = await res.json(); }catch{}
 
-  if(!res.ok || (json && json.ok === false)){
-    const msg = json?.error || json?.message || `HTTP ${res.status}`;
-    throw new Error(msg);
+  if(!res.ok || json?.ok === false){
+    throw new Error(json?.error || json?.message || `HTTP ${res.status}`);
   }
 
   return json || {};
@@ -353,14 +269,25 @@ function setActive(page){
   });
 }
 
-function money(n){
-  return `$${Number(n || 0).toLocaleString()}`;
+function setTitle(page){
+  const names = {
+    dashboard:"Dashboard",
+    drivers:"Drivers",
+    fleet:"Fleet",
+    garage:"Garage",
+    portal:"Portal",
+    settings:"Settings"
+  };
+  document.getElementById("pageTitle").textContent = names[page] || "Management";
 }
 
-function esc(v){
-  return String(v ?? "").replace(/[&<>"']/g, s => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
-  }[s]));
+async function loadPortalData(){
+  if(!guildId) throw new Error("Missing guildId. Open manage.html?guildId=YOUR_SERVER_ID");
+  const json = await api(`/api/vtc/portal/data?guildId=${encodeURIComponent(guildId)}`);
+  portalData = json.data || {};
+  document.getElementById("guildLine").textContent =
+    `${portalData.siteTitle || portalData.SiteTitle || "VTC"} · Guild ${guildId}`;
+  return portalData;
 }
 
 async function safeLoad(fn){
@@ -377,417 +304,426 @@ async function safeLoad(fn){
 
 function route(page){
   setActive(page);
-  document.getElementById("pageTitle").textContent =
-    page.charAt(0).toUpperCase() + page.slice(1);
+  setTitle(page);
 
   if(page === "dashboard") safeLoad(loadDashboard);
   if(page === "drivers") safeLoad(loadDrivers);
   if(page === "fleet") safeLoad(loadFleet);
   if(page === "garage") safeLoad(loadGarage);
   if(page === "portal") safeLoad(loadPortal);
-  if(page === "announcements") safeLoad(loadAnnouncements);
   if(page === "settings") loadSettings();
 }
 
-async function hydrateBasic(){
-  if(!guildId){
-    document.getElementById("guildLine").textContent = "No guildId found in URL.";
-    return;
-  }
-
-  document.getElementById("guildLine").textContent = `Guild ID: ${guildId}`;
-
-  try{
-    const me = await api(`/api/auth/me`);
-    state.me = me;
-  }catch{}
-}
-
 async function loadDashboard(){
-  const [roster, announcements] = await Promise.allSettled([
-    api(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`),
-    api(`/api/announcements?guildId=${encodeURIComponent(guildId)}`)
-  ]);
-
-  state.roster = roster.value?.data || roster.value?.drivers || [];
-  state.announcements = announcements.value?.data || announcements.value?.announcements || [];
+  const d = await loadPortalData();
+  const drivers = d.drivers || d.Drivers || [];
+  const trucks = d.trucks || d.Trucks || [];
+  const garages = d.garages || d.Garages || [];
 
   document.getElementById("content").innerHTML = `
     <div class="grid">
       <div class="card">
         <h3>Drivers</h3>
-        <div style="font-size:34px;font-weight:800">${state.roster.length}</div>
-        <div class="muted">Active roster records</div>
+        <div style="font-size:36px;font-weight:800">${drivers.length}</div>
+        <div class="muted">Portal driver records</div>
       </div>
-
       <div class="card">
-        <h3>Announcements</h3>
-        <div style="font-size:34px;font-weight:800">${state.announcements.length}</div>
-        <div class="muted">Synced posts</div>
+        <h3>Fleet</h3>
+        <div style="font-size:36px;font-weight:800">${trucks.length}</div>
+        <div class="muted">Company trucks</div>
       </div>
-
+      <div class="card">
+        <h3>Garages</h3>
+        <div style="font-size:36px;font-weight:800">${garages.length}</div>
+        <div class="muted">Owned locations</div>
+      </div>
       <div class="card">
         <h3>Portal</h3>
-        <div style="font-size:20px;font-weight:700">Public VTC Page</div>
+        <div class="muted">Public company page</div>
         <div class="actions">
-          <button class="primary" onclick="window.open('/portal.html?guildId=${guildId}','_blank')">Open Portal</button>
+          <button class="primary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Open Portal</button>
         </div>
       </div>
-    </div>
-
-    <div class="card" style="margin-top:16px">
-      <h3>Recent Announcements</h3>
-      ${state.announcements.slice(0,5).map(a=>`
-        <div class="list-item">
-          <div>${esc(a.text || a.message || a.content || "Announcement")}</div>
-          <span class="muted">${esc(a.createdAt || a.createdUtc || "")}</span>
-        </div>
-      `).join("") || `<div class="muted">No announcements yet.</div>`}
     </div>
   `;
 }
 
 async function loadDrivers(){
-  const data = await api(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`);
-  state.roster = data.data || data.drivers || [];
+  const json = await api(`/api/vtc/portal/drivers?guildId=${encodeURIComponent(guildId)}`);
+  const drivers = json.data || [];
 
   document.getElementById("content").innerHTML = `
-    <div class="notice">Click a driver to view mileage, Discord info, role, and profile details.</div>
-
+    <div class="notice">Click a driver to view details. Add/edit/delete uses your existing PortalDataStore driver list.</div>
     <div class="card">
-      <h2>Driver Roster</h2>
-      ${state.roster.length ? state.roster.map((d,i)=>`
-        <div class="list-item" onclick="openDriver(${i})">
+      <h2>Drivers</h2>
+      <div class="actions">
+        <button class="primary" onclick="openDriverForm()">Add Driver</button>
+      </div>
+      ${drivers.length ? drivers.map((d,i)=>`
+        <div class="list-item" onclick='openDriverDetails(${JSON.stringify(d).replace(/'/g,"&#39;")})'>
           <div class="row">
-            <img class="avatar" src="${esc(d.avatarUrl || d.discordAvatarUrl || "")}" onerror="this.style.display='none'"/>
+            <img class="avatar" src="${esc(d.discordAvatarUrl || d.imageUrl || d.DiscordAvatarUrl || d.ImageUrl || "")}" onerror="this.style.display='none'">
             <div>
-              <b>${esc(d.name || d.driverName || d.displayName || "Unknown Driver")}</b>
-              <div class="muted">${esc(d.discordUserId || d.userId || "")}</div>
+              <b>${esc(d.name || d.Name || "Driver")}</b>
+              <div class="muted">${esc(d.role || d.Role || "Driver")} · ${esc(d.status || d.Status || "Member")}</div>
             </div>
           </div>
-          <div>
-            <b>${Number(d.miles || d.milesTotal || d.totalMiles || 0).toLocaleString()}</b>
-            <span class="muted"> miles</span>
-          </div>
+          <div>${esc(d.totalMiles || d.TotalMiles || d.mileage || d.Mileage || "0")} miles</div>
         </div>
-      `).join("") : `<div class="muted">No drivers found. Check roster API or linked Discord users.</div>`}
+      `).join("") : `<div class="muted">No drivers saved yet.</div>`}
     </div>
   `;
 }
 
-function openDriver(i){
-  const d = state.roster[i];
-
+function openDriverDetails(d){
   document.getElementById("modalBody").innerHTML = `
     <div class="row">
-      <img class="avatar" src="${esc(d.avatarUrl || d.discordAvatarUrl || "")}" onerror="this.style.display='none'"/>
+      <img class="avatar" src="${esc(d.discordAvatarUrl || d.imageUrl || "")}" onerror="this.style.display='none'">
       <div>
-        <h2 style="margin:0">${esc(d.name || d.driverName || d.displayName || "Driver")}</h2>
-        <div class="muted">${esc(d.discordUserId || d.userId || "")}</div>
+        <h2 style="margin:0">${esc(d.name || "Driver")}</h2>
+        <div class="muted">${esc(d.discordUsername || d.discordUserId || "")}</div>
       </div>
     </div>
-
-    <hr style="border-color:#334155;margin:18px 0"/>
-
+    <hr style="border-color:#334155;margin:18px 0">
     <div class="grid">
-      <div class="card"><b>Total Miles</b><br>${Number(d.miles || d.milesTotal || d.totalMiles || 0).toLocaleString()}</div>
-      <div class="card"><b>Loads</b><br>${Number(d.loads || d.loadsTotal || 0).toLocaleString()}</div>
-      <div class="card"><b>Role</b><br>${esc(d.role || d.vtcRole || "Driver")}</div>
-      <div class="card"><b>Status</b><br>${esc(d.status || "Offline")}</div>
+      <div class="card"><b>Role</b><br>${esc(d.role || "Driver")}</div>
+      <div class="card"><b>Status</b><br>${esc(d.status || "Member")}</div>
+      <div class="card"><b>Total Miles</b><br>${esc(d.totalMiles || d.mileage || "0")}</div>
+      <div class="card"><b>Truck</b><br>${esc(d.assignedTruck || d.favoriteTruck || "")}</div>
     </div>
-
+    <p class="muted">${esc(d.bio || "")}</p>
     <div class="actions">
+      <button class="primary" onclick='openDriverForm(${JSON.stringify(d).replace(/'/g,"&#39;")})'>Edit</button>
+      <button class="danger" onclick="deleteDriver('${esc(d.id || d.Id)}')">Delete</button>
       <button class="secondary" onclick="modal.style.display='none'">Close</button>
     </div>
   `;
+  modal.style.display = "block";
+}
 
-  document.getElementById("modal").style.display = "block";
+function openDriverForm(d={}){
+  document.getElementById("modalBody").innerHTML = `
+    <h2>${d.id ? "Edit Driver" : "Add Driver"}</h2>
+    <input id="driverId" type="hidden" value="${esc(d.id || "")}">
+    <input id="driverName" placeholder="Driver Name" value="${esc(d.name || "")}">
+    <input id="driverRole" placeholder="Role" value="${esc(d.role || "Driver")}">
+    <input id="driverStatus" placeholder="Status" value="${esc(d.status || "Member")}">
+    <input id="driverDiscordUserId" placeholder="Discord User ID" value="${esc(d.discordUserId || "")}">
+    <input id="driverDiscordUsername" placeholder="Discord Username" value="${esc(d.discordUsername || "")}">
+    <input id="driverDiscordAvatarUrl" placeholder="Avatar URL" value="${esc(d.discordAvatarUrl || "")}">
+    <input id="driverAssignedTruck" placeholder="Assigned Truck" value="${esc(d.assignedTruck || "")}">
+    <input id="driverTotalMiles" placeholder="Total Miles" value="${esc(d.totalMiles || d.mileage || "")}">
+    <textarea id="driverBio" placeholder="Bio">${esc(d.bio || "")}</textarea>
+    <div class="actions">
+      <button class="primary" onclick="saveDriver()">Save Driver</button>
+      <button class="secondary" onclick="modal.style.display='none'">Cancel</button>
+    </div>
+  `;
+  modal.style.display = "block";
+}
+
+async function saveDriver(){
+  const driver = {
+    id: driverId.value,
+    name: driverName.value,
+    role: driverRole.value,
+    status: driverStatus.value,
+    discordUserId: driverDiscordUserId.value,
+    discordUsername: driverDiscordUsername.value,
+    discordAvatarUrl: driverDiscordAvatarUrl.value,
+    assignedTruck: driverAssignedTruck.value,
+    totalMiles: driverTotalMiles.value,
+    mileage: driverTotalMiles.value,
+    bio: driverBio.value
+  };
+
+  await api(`/api/vtc/portal/drivers?guildId=${encodeURIComponent(guildId)}`, {
+    method:"POST",
+    body:JSON.stringify(driver)
+  });
+
+  modal.style.display = "none";
+  route("drivers");
+}
+
+async function deleteDriver(id){
+  if(!id) return;
+  if(!confirm("Delete this driver?")) return;
+
+  await api(`/api/vtc/portal/drivers/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, {
+    method:"DELETE"
+  });
+
+  modal.style.display = "none";
+  route("drivers");
 }
 
 async function loadFleet(){
-  let data;
-  try{
-    data = await api(`/api/fleet?guildId=${encodeURIComponent(guildId)}`);
-  }catch{
-    data = {data:[]};
-  }
-
-  state.fleet = data.data || data.trucks || [];
+  const json = await api(`/api/vtc/portal/fleet?guildId=${encodeURIComponent(guildId)}`);
+  const trucks = json.data || [];
 
   document.getElementById("content").innerHTML = `
     <div class="card">
       <h2>Fleet</h2>
       <div class="actions">
         <button class="primary" onclick="openTruckForm()">Add Truck</button>
-        <button class="secondary" onclick="route('fleet')">Refresh</button>
       </div>
-
       <table class="table">
         <thead>
           <tr>
-            <th>Truck</th>
+            <th>Truck #</th>
+            <th>Name/Model</th>
             <th>Driver</th>
+            <th>Plate</th>
             <th>Odometer</th>
-            <th>Fuel</th>
-            <th>Condition</th>
+            <th>Status</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
-          ${state.fleet.length ? state.fleet.map(t=>`
+          ${trucks.length ? trucks.map(t=>`
             <tr>
-              <td>${esc(t.truckNumber || t.number || "N/A")}</td>
-              <td>${esc(t.driver || t.driverName || "Unassigned")}</td>
-              <td>${Number(t.odometer || 0).toLocaleString()}</td>
-              <td>${esc(t.fuel ?? "N/A")}%</td>
-              <td>${esc(t.condition ?? "N/A")}%</td>
+              <td>${esc(t.truckNumber || "")}</td>
+              <td>${esc(t.name || t.model || "")}</td>
+              <td>${esc(t.driver || "Unassigned")}</td>
+              <td>${esc(t.plate || "")}</td>
+              <td>${esc(t.odometer || "")}</td>
+              <td>${esc(t.status || "Available")}</td>
+              <td>
+                <button class="secondary" onclick='openTruckForm(${JSON.stringify(t).replace(/'/g,"&#39;")})'>Edit</button>
+                <button class="danger" onclick="deleteTruck('${esc(t.id || "")}')">Delete</button>
+              </td>
             </tr>
-          `).join("") : `<tr><td colspan="5" class="muted">No fleet records found.</td></tr>`}
+          `).join("") : `<tr><td colspan="7" class="muted">No trucks saved yet.</td></tr>`}
         </tbody>
       </table>
     </div>
   `;
 }
 
-function openTruckForm(){
+function openTruckForm(t={}){
   document.getElementById("modalBody").innerHTML = `
-    <h2>Add Truck</h2>
-    <input id="truckNumber" placeholder="Truck Number">
-    <input id="truckDriver" placeholder="Assigned Driver">
-    <input id="truckOdometer" placeholder="Odometer" type="number">
-    <input id="truckFuel" placeholder="Fuel %" type="number">
-    <input id="truckCondition" placeholder="Condition %" type="number">
-
+    <h2>${t.id ? "Edit Truck" : "Add Truck"}</h2>
+    <input id="truckId" type="hidden" value="${esc(t.id || "")}">
+    <input id="truckNumber" placeholder="Truck Number" value="${esc(t.truckNumber || "")}">
+    <input id="truckName" placeholder="Truck Name" value="${esc(t.name || "")}">
+    <input id="truckModel" placeholder="Model" value="${esc(t.model || "")}">
+    <input id="truckDriver" placeholder="Driver" value="${esc(t.driver || "")}">
+    <input id="truckPlate" placeholder="Plate" value="${esc(t.plate || "")}">
+    <input id="truckOdometer" placeholder="Odometer" value="${esc(t.odometer || "")}">
+    <input id="truckLocation" placeholder="Location" value="${esc(t.location || "")}">
+    <input id="truckStatus" placeholder="Status" value="${esc(t.status || "Available")}">
+    <input id="truckCondition" placeholder="Condition %" value="${esc(t.condition || "")}">
+    <input id="truckFuel" placeholder="Fuel %" value="${esc(t.fuel || "")}">
+    <textarea id="truckNotes" placeholder="Notes">${esc(t.notes || "")}</textarea>
     <div class="actions">
       <button class="primary" onclick="saveTruck()">Save Truck</button>
       <button class="secondary" onclick="modal.style.display='none'">Cancel</button>
     </div>
   `;
-
   modal.style.display = "block";
 }
 
 async function saveTruck(){
-  const body = {
-    guildId,
+  const truck = {
+    id: truckId.value,
     truckNumber: truckNumber.value,
+    name: truckName.value,
+    model: truckModel.value,
     driver: truckDriver.value,
-    odometer: Number(truckOdometer.value || 0),
-    fuel: Number(truckFuel.value || 100),
-    condition: Number(truckCondition.value || 100)
+    plate: truckPlate.value,
+    odometer: truckOdometer.value,
+    location: truckLocation.value,
+    status: truckStatus.value,
+    condition: truckCondition.value,
+    fuel: truckFuel.value,
+    notes: truckNotes.value
   };
 
-  await api(`/api/fleet`, {
+  await api(`/api/vtc/portal/fleet?guildId=${encodeURIComponent(guildId)}`, {
     method:"POST",
-    body:JSON.stringify(body)
+    body:JSON.stringify(truck)
   });
 
   modal.style.display = "none";
   route("fleet");
 }
 
-async function loadGarage(){
-  let data;
-  try{
-    data = await api(`/api/garage?guildId=${encodeURIComponent(guildId)}`);
-  }catch{
-    data = {data:[]};
-  }
+async function deleteTruck(id){
+  if(!id) return;
+  if(!confirm("Delete this truck?")) return;
 
-  state.garages = data.data || data.garages || [];
+  await api(`/api/vtc/portal/fleet/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, {
+    method:"DELETE"
+  });
+
+  route("fleet");
+}
+
+async function loadGarage(){
+  const json = await api(`/api/vtc/portal/garages?guildId=${encodeURIComponent(guildId)}`);
+  const garages = json.data || [];
 
   document.getElementById("content").innerHTML = `
     <div class="card">
-      <h2>Garage</h2>
-      <p class="muted">Owner/admin can add in-game garages and display them on the company portal.</p>
-
+      <h2>Garages</h2>
       <div class="actions">
-        <button class="primary" onclick="openGarageForm()">Buy / Add Garage</button>
+        <button class="primary" onclick="openGarageForm()">Add Garage</button>
       </div>
-
-      ${state.garages.length ? state.garages.map(g=>`
+      ${garages.length ? garages.map(g=>`
         <div class="list-item">
           <div>
-            <b>${esc(g.city || g.location || "Garage")}</b>
-            <div class="muted">${esc(g.slots || 0)} slots</div>
+            <b>${esc(g.city || "Garage")}${g.state ? ", " + esc(g.state) : ""}</b>
+            <div class="muted">${esc(g.country || "")} · ${esc(g.slots || "0")} slots</div>
           </div>
-          <div>${money(g.price || g.cost || 0)}</div>
+          <div class="actions">
+            <button class="secondary" onclick='openGarageForm(${JSON.stringify(g).replace(/'/g,"&#39;")})'>Edit</button>
+            <button class="danger" onclick="deleteGarage('${esc(g.id || "")}')">Delete</button>
+          </div>
         </div>
-      `).join("") : `<div class="muted" style="margin-top:15px">No garages added yet.</div>`}
+      `).join("") : `<div class="muted">No garages saved yet.</div>`}
     </div>
   `;
 }
 
-function openGarageForm(){
+function openGarageForm(g={}){
   document.getElementById("modalBody").innerHTML = `
-    <h2>Add Garage</h2>
-    <input id="garageCity" placeholder="City / Location">
-    <input id="garageSlots" placeholder="Slots" type="number">
-    <input id="garagePrice" placeholder="Price" type="number">
-
+    <h2>${g.id ? "Edit Garage" : "Add Garage"}</h2>
+    <input id="garageId" type="hidden" value="${esc(g.id || "")}">
+    <input id="garageCity" placeholder="City" value="${esc(g.city || "")}">
+    <input id="garageState" placeholder="State" value="${esc(g.state || "")}">
+    <input id="garageCountry" placeholder="Country" value="${esc(g.country || "")}">
+    <input id="garageSlots" placeholder="Slots" value="${esc(g.slots || "")}">
+    <input id="garageCost" placeholder="Cost" value="${esc(g.cost || "")}">
+    <input id="garagePurchasedBy" placeholder="Purchased By" value="${esc(g.purchasedBy || "")}">
+    <textarea id="garageNotes" placeholder="Notes">${esc(g.notes || "")}</textarea>
     <div class="actions">
       <button class="primary" onclick="saveGarage()">Save Garage</button>
       <button class="secondary" onclick="modal.style.display='none'">Cancel</button>
     </div>
   `;
-
   modal.style.display = "block";
 }
 
 async function saveGarage(){
-  await api(`/api/garage`, {
+  const garage = {
+    id: garageId.value,
+    city: garageCity.value,
+    state: garageState.value,
+    country: garageCountry.value,
+    slots: garageSlots.value,
+    cost: garageCost.value,
+    purchasedBy: garagePurchasedBy.value,
+    notes: garageNotes.value
+  };
+
+  await api(`/api/vtc/portal/garages?guildId=${encodeURIComponent(guildId)}`, {
     method:"POST",
-    body:JSON.stringify({
-      guildId,
-      city: garageCity.value,
-      slots: Number(garageSlots.value || 0),
-      price: Number(garagePrice.value || 0)
-    })
+    body:JSON.stringify(garage)
   });
 
   modal.style.display = "none";
   route("garage");
 }
 
-async function loadPortal(){
-  let data;
-  try{
-    data = await api(`/api/portal/settings?guildId=${encodeURIComponent(guildId)}`);
-  }catch{
-    data = {};
-  }
+async function deleteGarage(id){
+  if(!id) return;
+  if(!confirm("Delete this garage?")) return;
 
-  const p = data.data || data.portal || data || {};
+  await api(`/api/vtc/portal/garages/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, {
+    method:"DELETE"
+  });
+
+  route("garage");
+}
+
+async function loadPortal(){
+  const json = await api(`/api/vtc/portal/settings?guildId=${encodeURIComponent(guildId)}`);
+  const p = json.data || {};
 
   document.getElementById("content").innerHTML = `
     <div class="card">
       <h2>Portal Settings</h2>
 
-      <label>VTC Name</label>
-      <input id="portalName" value="${esc(p.vtcName || p.name || "")}" placeholder="Company name">
+      <label>Site Title</label>
+      <input id="siteTitle" value="${esc(p.siteTitle || "")}" placeholder="VTC name">
 
-      <label>Description</label>
-      <textarea id="portalDescription" placeholder="Company description">${esc(p.description || "")}</textarea>
+      <label>Welcome Text</label>
+      <textarea id="welcomeText">${esc(p.welcomeText || "")}</textarea>
 
-      <label>Banner Image URL</label>
-      <input id="portalBanner" value="${esc(p.bannerUrl || "")}" placeholder="https://...">
+      <label>Company Info</label>
+      <textarea id="companyInfo">${esc(p.companyInfo || "")}</textarea>
 
-      <label>Discord Invite</label>
-      <input id="portalDiscord" value="${esc(p.discordUrl || "")}" placeholder="https://discord.gg/...">
+      <label>Hero Image URL</label>
+      <input id="heroImageUrl" value="${esc(p.heroImageUrl || "")}" placeholder="https://...">
 
-      <label>Join Team Link</label>
-      <input id="portalJoin" value="${esc(p.joinUrl || "")}" placeholder="https://...">
+      <label>Discord Invite URL</label>
+      <input id="joinDiscordUrl" value="${esc(p.joinDiscordUrl || "")}" placeholder="https://discord.gg/...">
 
-      <label>Report Issue Link / Email</label>
-      <input id="portalReport" value="${esc(p.reportUrl || "")}" placeholder="mailto:GasMonkeyCreations@gmail.com">
+      <label>Learn More / Join Team URL</label>
+      <input id="learnMoreUrl" value="${esc(p.learnMoreUrl || "")}" placeholder="https://...">
 
       <div class="actions">
         <button class="primary" onclick="savePortal()">Save Portal</button>
-        <button class="secondary" onclick="window.open('/portal.html?guildId=${guildId}','_blank')">Preview Portal</button>
+        <button class="secondary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Preview Portal</button>
       </div>
     </div>
   `;
 }
 
 async function savePortal(){
-  await api(`/api/portal/settings`, {
+  const current = await loadPortalData();
+
+  const payload = {
+    ...current,
+    guildId,
+    siteTitle: siteTitle.value,
+    welcomeText: welcomeText.value,
+    companyInfo: companyInfo.value,
+    heroImageUrl: heroImageUrl.value,
+    joinDiscordUrl: joinDiscordUrl.value,
+    learnMoreUrl: learnMoreUrl.value
+  };
+
+  await api(`/api/vtc/portal/settings`, {
     method:"POST",
-    body:JSON.stringify({
-      guildId,
-      vtcName:portalName.value,
-      description:portalDescription.value,
-      bannerUrl:portalBanner.value,
-      discordUrl:portalDiscord.value,
-      joinUrl:portalJoin.value,
-      reportUrl:portalReport.value
-    })
+    body:JSON.stringify(payload)
   });
 
-  alert("Portal settings saved.");
-}
-
-async function loadAnnouncements(){
-  const data = await api(`/api/announcements?guildId=${encodeURIComponent(guildId)}`);
-  state.announcements = data.data || data.announcements || [];
-
-  document.getElementById("content").innerHTML = `
-    <div class="card">
-      <h2>Create Announcement</h2>
-      <textarea id="announcementText" placeholder="Write announcement..."></textarea>
-      <button class="primary" onclick="sendAnnouncement()">Post Announcement</button>
-    </div>
-
-    <div class="card">
-      <h2>Existing Announcements</h2>
-      ${state.announcements.length ? state.announcements.map(a=>`
-        <div class="list-item">
-          <div>${esc(a.text || a.message || a.content || "")}</div>
-          <span class="muted">${esc(a.createdAt || a.createdUtc || "")}</span>
-        </div>
-      `).join("") : `<div class="muted">No announcements found.</div>`}
-    </div>
-  `;
-}
-
-async function sendAnnouncement(){
-  const text = announcementText.value.trim();
-  if(!text) return alert("Enter announcement text.");
-
-  await api(`/api/announcements`, {
-    method:"POST",
-    body:JSON.stringify({guildId,text})
-  });
-
-  route("announcements");
+  alert("Portal saved.");
+  route("portal");
 }
 
 function loadSettings(){
   document.getElementById("content").innerHTML = `
     <div class="card">
-      <h2>Management Settings</h2>
-
+      <h2>Settings</h2>
       <label>Guild ID</label>
       <input id="guildInput" value="${esc(guildId)}">
-
-      <label>Management API Key</label>
-      <input id="keyInput" type="password" value="${esc(apiKey)}" placeholder="Optional X-API-Key">
-
       <div class="actions">
         <button class="primary" onclick="saveSettings()">Save</button>
-        <button class="danger" onclick="clearSettings()">Clear Local Settings</button>
+        <button class="danger" onclick="clearSettings()">Clear</button>
       </div>
-
-      <p class="muted">
-        This stores values only in the browser local storage for this device.
-      </p>
     </div>
   `;
 }
 
 function saveSettings(){
-  localStorage.setItem("oweld.guildId", guildInput.value.trim());
-  localStorage.setItem("oweld.apiKey", keyInput.value.trim());
-  location.href = `/manage.html?guildId=${encodeURIComponent(guildInput.value.trim())}`;
+  guildId = guildInput.value.trim();
+  localStorage.setItem("oweld.guildId", guildId);
+  location.href = `/manage.html?guildId=${encodeURIComponent(guildId)}`;
 }
 
 function clearSettings(){
   localStorage.removeItem("oweld.guildId");
-  localStorage.removeItem("oweld.apiKey");
   location.href = "/manage.html";
 }
 
 function closeModal(e){
-  if(e.target.id === "modal"){
-    modal.style.display = "none";
-  }
+  if(e.target.id === "modal") modal.style.display = "none";
 }
 
-hydrateBasic().then(()=>route("dashboard"));
-setInterval(()=> {
-  const active = document.querySelector(".nav button.active")?.dataset.page;
-  if(["dashboard","drivers","fleet","garage","announcements"].includes(active)){
-    route(active);
-  }
-}, 60000);
+route("dashboard");
 </script>
 </body>
 </html>
