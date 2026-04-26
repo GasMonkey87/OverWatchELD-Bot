@@ -2,25 +2,40 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>VTC Portal</title>
+<title>OverWatch ELD Portal</title>
 
 <link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pmtiles@3.2.0/dist/index.js"></script>
 
 <style>
-body{background:#020617;color:white;font-family:Segoe UI;margin:0}
-#map{height:600px;border-radius:12px;margin:20px;border:1px solid #334155}
+body{
+  background:#020617;
+  color:white;
+  font-family:Segoe UI;
+  margin:0;
+}
 
+#map{
+  height:650px;
+  margin:20px;
+  border-radius:12px;
+  border:1px solid #334155;
+}
+
+/* marker */
 .truck-marker{
-  width:14px;height:14px;
+  width:14px;
+  height:14px;
   border-radius:50%;
   background:#38bdf8;
   border:3px solid white;
+  box-shadow:0 0 12px rgba(56,189,248,.8);
 }
 
 .marker-label{
   position:absolute;
-  top:-24px;
+  top:-22px;
   left:50%;
   transform:translateX(-50%);
   background:#020617;
@@ -39,27 +54,77 @@ body{background:#020617;color:white;font-family:Segoe UI;margin:0}
 
 <script>
 
-const API = location.origin;
 const guildId = new URLSearchParams(location.search).get("guildId");
+const API = location.origin;
 
-let map;
-let markers = [];
+/* ============================
+   PMTiles MAP SETUP
+============================ */
 
-function makeMarker(type,label){
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol("pmtiles", protocol.tile);
+
+const map = new maplibregl.Map({
+  container:"map",
+  style:{
+    version:8,
+    glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+    sources:{
+      ats:{
+        type:"vector",
+        url:"pmtiles://" + location.origin + "/map-assets/ats.pmtiles"
+      }
+    },
+    layers:[
+      {
+        id:"bg",
+        type:"background",
+        paint:{ "background-color":"#020617" }
+      },
+      {
+        id:"roads",
+        type:"line",
+        source:"ats",
+        "source-layer":"default",
+        paint:{
+          "line-color":"#38bdf8",
+          "line-width":[
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            3,0.5,
+            6,1.5,
+            10,3
+          ]
+        }
+      }
+    ]
+  },
+  center:[-98,39],
+  zoom:4
+});
+
+map.addControl(new maplibregl.NavigationControl());
+
+/* ============================
+   MARKER FIX (NO DRIFT)
+============================ */
+
+function createMarker(label){
   const wrap = document.createElement("div");
 
-  // 🔥 FIX: lock anchor center
-  wrap.style.position = "relative";
-  wrap.style.width = "20px";
-  wrap.style.height = "20px";
-  wrap.style.transform = "translate(-50%,-50%)";
+  // critical fix
+  wrap.style.position="relative";
+  wrap.style.width="20px";
+  wrap.style.height="20px";
+  wrap.style.transform="translate(-50%,-50%)";
 
   const dot = document.createElement("div");
-  dot.className = type;
+  dot.className="truck-marker";
 
   const text = document.createElement("div");
-  text.className = "marker-label";
-  text.textContent = label;
+  text.className="marker-label";
+  text.innerText = label;
 
   wrap.appendChild(dot);
   wrap.appendChild(text);
@@ -67,57 +132,55 @@ function makeMarker(type,label){
   return wrap;
 }
 
+/* ============================
+   TELEMETRY
+============================ */
+
+let markers = [];
+
 function getLngLat(u){
   const lng = u.longitude ?? u.lng ?? u.lon;
   const lat = u.latitude ?? u.lat;
 
   if(lng == null || lat == null) return null;
+
   return [lng,lat];
 }
 
 async function loadTelemetry(){
-  const res = await fetch(`${API}/api/telemetry?guildId=${guildId}`);
-  const json = await res.json();
+  try{
+    const res = await fetch(`${API}/api/telemetry?guildId=${guildId}`);
+    const json = await res.json();
 
-  markers.forEach(m=>m.remove());
-  markers=[];
+    markers.forEach(m=>m.remove());
+    markers=[];
 
-  (json.data||[]).forEach(u=>{
-    const ll = getLngLat(u);
-    if(!ll) return;
+    (json.data || []).forEach(u=>{
+      const ll = getLngLat(u);
+      if(!ll) return;
 
-    const marker = new maplibregl.Marker({
-      element: makeMarker("truck-marker", u.driver || "Driver"),
-      anchor: "center"
-    })
-    .setLngLat(ll)
-    .addTo(map);
+      const marker = new maplibregl.Marker({
+        element: createMarker(u.driver || "Driver"),
+        anchor:"center"
+      })
+      .setLngLat(ll)
+      .addTo(map);
 
-    markers.push(marker);
-  });
+      markers.push(marker);
+    });
+
+  }catch{}
 }
 
-function init(){
-  map = new maplibregl.Map({
-    container:"map",
-    style:{
-      version:8,
-      sources:{},
-      layers:[{
-        id:"bg",
-        type:"background",
-        paint:{ "background-color":"#020617" }
-      }]
-    },
-    center:[-98,39],
-    zoom:4
-  });
+setInterval(loadTelemetry, 3000);
 
-  setInterval(loadTelemetry,3000);
-}
+/* ============================
+   START
+============================ */
 
-init();
+loadTelemetry();
 
 </script>
+
 </body>
 </html>
