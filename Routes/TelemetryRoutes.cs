@@ -111,15 +111,15 @@ public static class TelemetryRoutes
 
 public static class AtsCoordinateConverter
 {
-    private const double AtsMinX = -180000.0;
-private const double AtsMaxX = 180000.0;
-private const double AtsMinY = -140000.0;
-private const double AtsMaxY = 140000.0;
+private const double AtsMinX = -142000.0;
+private const double AtsMaxX =  165000.0;
+private const double AtsMinY = -142000.0;
+private const double AtsMaxY =  135000.0;
 
-private const double LngMin = -125.0;
-private const double LngMax = -66.5;
-private const double LatMin = 24.0;
-private const double LatMax = 49.5;
+private const double LngMin = -124.8;
+private const double LngMax =  -67.0;
+private const double LatMin =   24.5;
+private const double LatMax =   49.2;
 
     public static (double Longitude, double Latitude) ToLngLat(double x, double y)
 {
@@ -135,7 +135,7 @@ private const double LatMax = 49.5;
     var lng = LngMin + (nx * (LngMax - LngMin));
 
     // Flip Y axis (ATS is inverted)
-    var lat = LatMax - (ny * (LatMax - LatMin));
+    var lat = LatMin + (ny * (LatMax - LatMin));
 
     return (lng, lat);
 }
