@@ -271,7 +271,11 @@ public static partial class Program
             var url = oauth.BuildAuthorizeUrl(state);
             return Results.Redirect(url);
         });
-
+        app.MapGet("/download/latest", () =>
+{
+    var url = "https://github.com/GasMonkey87/OverWatchELD-Bot/releases/download/V2.0.7/OverWatchELD-Setup.exe";
+    return Results.Redirect(url);
+});
         app.MapGet("/auth/discord/callback", async (
             HttpContext http,
             DiscordOAuthService oauth,
