@@ -6,32 +6,27 @@ namespace OverWatchELD.VtcBot.Routes;
 
 public static class TelemetryRoutes
 {
-    private static readonly Dictionary<string, List<TelemetryUnit>> Units = new();
     private static readonly Dictionary<string, List<TelemetryUnit>> Units = new(StringComparer.OrdinalIgnoreCase);
-private static readonly object LockObj = new();
+    private static readonly object LockObj = new();
 
-public static WebApplication MapTelemetryRoutes(this WebApplication app)
-{
-        app.MapGet("/api/telemetry", ([FromQuery] string guildId) =>
+    public static WebApplication MapTelemetryRoutes(this WebApplication app)
+    {
         app.MapGet("/api/telemetry", ([FromQuery] string? guildId) =>
-{
+        {
             LoadFromDisk();
 
-if (string.IsNullOrWhiteSpace(guildId))
-                return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
+            if (string.IsNullOrWhiteSpace(guildId))
                 return Results.Ok(new { ok = true, data = Array.Empty<TelemetryUnit>(), count = 0, warning = "MissingGuildId" });
 
             guildId = guildId.Trim();
 
-lock (LockObj)
-{
-if (!Units.TryGetValue(guildId, out var units))
-units = new List<TelemetryUnit>();
+            lock (LockObj)
+            {
+                if (!Units.TryGetValue(guildId, out var units))
+                    units = new List<TelemetryUnit>();
 
-                units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalSeconds > 30);
                 units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 10);
 
-                return Results.Ok(new { ok = true, data = units });
                 return Results.Ok(new
                 {
                     ok = true,
@@ -39,12 +34,11 @@ units = new List<TelemetryUnit>();
                     count = units.Count,
                     data = units.OrderByDescending(x => x.UpdatedUtc).ToList()
                 });
-}
-});
+            }
+        });
 
-        app.MapPost("/api/telemetry", ([FromBody] TelemetryUnit unit) =>
         app.MapPost("/api/telemetry", async (HttpRequest req) =>
-{
+        {
             TelemetryUnit? unit;
 
             try
@@ -67,16 +61,11 @@ units = new List<TelemetryUnit>();
             if (!string.IsNullOrWhiteSpace(queryGuildId))
                 unit.GuildId = queryGuildId.Trim();
 
-if (string.IsNullOrWhiteSpace(unit.GuildId))
-return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
+            if (string.IsNullOrWhiteSpace(unit.GuildId))
+                return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
 
-if (string.IsNullOrWhiteSpace(unit.DriverDiscordUserId))
-{
-                unit.DriverDiscordUserId =
-                    unit.Driver ??
-                    unit.DriverName ??
-                    unit.Truck ??
-                    Guid.NewGuid().ToString("N");
+            if (string.IsNullOrWhiteSpace(unit.DriverDiscordUserId))
+            {
                 unit.DriverDiscordUserId = FirstNonBlank(
                     unit.DriverDiscordUserId,
                     unit.DiscordUserId,
@@ -87,33 +76,31 @@ if (string.IsNullOrWhiteSpace(unit.DriverDiscordUserId))
                     unit.TruckName,
                     Guid.NewGuid().ToString("N")
                 )!;
-}
+            }
 
-            NormalizeCoordinates(unit);
             unit.GuildId = unit.GuildId.Trim();
             unit.DriverDiscordUserId = unit.DriverDiscordUserId.Trim();
-unit.UpdatedUtc = DateTimeOffset.UtcNow;
+            unit.UpdatedUtc = DateTimeOffset.UtcNow;
 
             NormalizeCoordinates(unit);
 
-lock (LockObj)
-{
-if (!Units.TryGetValue(unit.GuildId, out var list))
-@@ -50,21 +92,81 @@ public static WebApplication MapTelemetryRoutes(this WebApplication app)
-Units[unit.GuildId] = list;
-}
+            lock (LockObj)
+            {
+                if (!Units.TryGetValue(unit.GuildId, out var list))
+                {
+                    list = new List<TelemetryUnit>();
+                    Units[unit.GuildId] = list;
+                }
 
-                list.RemoveAll(x => x.DriverDiscordUserId == unit.DriverDiscordUserId);
                 list.RemoveAll(x =>
                     string.Equals(x.DriverDiscordUserId, unit.DriverDiscordUserId, StringComparison.OrdinalIgnoreCase));
 
-list.Add(unit);
+                list.Add(unit);
                 list.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 10);
 
                 SaveToDiskUnsafe();
-}
+            }
 
-            return Results.Ok(new { ok = true, data = unit });
             return Results.Ok(new
             {
                 ok = true,
@@ -125,12 +112,10 @@ list.Add(unit);
                 conversionMode = unit.ConversionMode,
                 data = unit
             });
-});
+        });
 
-        app.MapDelete("/api/telemetry", ([FromQuery] string guildId) =>
         app.MapPost("/api/telemetry/live", async (HttpRequest req) =>
-{
-            if (string.IsNullOrWhiteSpace(guildId))
+        {
             TelemetryUnit? unit;
 
             try
@@ -148,7 +133,7 @@ list.Add(unit);
                 unit.GuildId = queryGuildId.Trim();
 
             if (string.IsNullOrWhiteSpace(unit.GuildId))
-return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
+                return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
 
             if (string.IsNullOrWhiteSpace(unit.DriverDiscordUserId))
                 unit.DriverDiscordUserId = FirstNonBlank(unit.Driver, unit.DriverName, unit.Truck, Guid.NewGuid().ToString("N"))!;
@@ -156,9 +141,8 @@ return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
             unit.UpdatedUtc = DateTimeOffset.UtcNow;
             NormalizeCoordinates(unit);
 
-lock (LockObj)
-{
-                Units.Remove(guildId);
+            lock (LockObj)
+            {
                 if (!Units.TryGetValue(unit.GuildId, out var list))
                 {
                     list = new List<TelemetryUnit>();
@@ -183,12 +167,13 @@ lock (LockObj)
                     Units.Remove(guildId.Trim());
 
                 SaveToDiskUnsafe();
-}
+            }
 
-return Results.Ok(new { ok = true });
-@@ -73,59 +175,293 @@ public static WebApplication MapTelemetryRoutes(this WebApplication app)
-return app;
-}
+            return Results.Ok(new { ok = true });
+        });
+
+        return app;
+    }
 
     private static async Task<TelemetryUnit> ReadTelemetryUnitAsync(HttpRequest req)
     {
@@ -240,40 +225,35 @@ return app;
         return unit;
     }
 
-private static void NormalizeCoordinates(TelemetryUnit unit)
-{
-        if (unit.Longitude.HasValue && unit.Latitude.HasValue)
+    private static void NormalizeCoordinates(TelemetryUnit unit)
+    {
         if (IsValidLngLat(unit.Longitude, unit.Latitude))
         {
             unit.Lng = unit.Longitude;
             unit.Lon = unit.Longitude;
             unit.Lat = unit.Latitude;
             unit.ConversionMode ??= "GPS";
-return;
+            return;
         }
 
-        if (unit.Lng.HasValue && unit.Lat.HasValue)
         if (IsValidLngLat(unit.Lng, unit.Lat))
-{
-unit.Longitude = unit.Lng;
-unit.Latitude = unit.Lat;
+        {
+            unit.Longitude = unit.Lng;
+            unit.Latitude = unit.Lat;
             unit.Lon = unit.Lng;
             unit.ConversionMode = "LNG_LAT";
-return;
-}
+            return;
+        }
 
-        if (unit.Lon.HasValue && unit.Lat.HasValue)
         if (IsValidLngLat(unit.Lon, unit.Lat))
-{
-unit.Longitude = unit.Lon;
-unit.Latitude = unit.Lat;
+        {
+            unit.Longitude = unit.Lon;
+            unit.Latitude = unit.Lat;
             unit.Lng = unit.Lon;
             unit.ConversionMode = "LON_LAT";
-return;
-}
+            return;
+        }
 
-        var gameX = unit.MapX != 0 ? unit.MapX : unit.X;
-        var gameY = unit.MapY != 0 ? unit.MapY : unit.Y;
         var gameX = FirstNonZero(unit.MarkerX, unit.WorldX, unit.MapX, unit.X);
         var gameY = FirstNonZero(unit.MarkerY, unit.WorldZ, unit.MapY, unit.Y);
 
@@ -283,15 +263,15 @@ return;
             return;
         }
 
-var converted = AtsCoordinateConverter.ToLngLat(gameX, gameY);
+        var converted = AtsCoordinateConverter.ToLngLat(gameX, gameY);
 
-unit.Longitude = converted.Longitude;
-unit.Latitude = converted.Latitude;
-unit.Lng = converted.Longitude;
+        unit.Longitude = converted.Longitude;
+        unit.Latitude = converted.Latitude;
+        unit.Lng = converted.Longitude;
         unit.Lon = converted.Longitude;
-unit.Lat = converted.Latitude;
-unit.ConversionMode = "ATS_XY_TO_LNGLAT";
-}
+        unit.Lat = converted.Latitude;
+        unit.ConversionMode = "ATS_XY_TO_LNGLAT";
+    }
 
     private static bool IsValidLngLat(double? lng, double? lat)
     {
@@ -463,56 +443,71 @@ unit.ConversionMode = "ATS_XY_TO_LNGLAT";
 
 public static class AtsCoordinateConverter
 {
-private const double AtsMinX = -124000.0;
-    private const double AtsMaxX =  124000.0;
+    private const double AtsMinX = -124000.0;
     private const double AtsMaxX = 124000.0;
 
-private const double AtsMinY = -109500.0;
-    private const double AtsMaxY =  170500.0;
+    private const double AtsMinY = -109500.0;
     private const double AtsMaxY = 170500.0;
 
-private const double LngMin = -125.1;
-    private const double LngMax =  -66.8;
+    private const double LngMin = -125.1;
     private const double LngMax = -66.8;
 
-    private const double LatMin =   24.0;
-    private const double LatMax =   49.5;
     private const double LatMin = 24.0;
     private const double LatMax = 49.5;
 
-public static (double Longitude, double Latitude) ToLngLat(double x, double y)
-{
-var nx = Clamp((x - AtsMinX) / (AtsMaxX - AtsMinX), 0, 1);
-var ny = Clamp((y - AtsMinY) / (AtsMaxY - AtsMinY), 0, 1);
+    public static (double Longitude, double Latitude) ToLngLat(double x, double y)
+    {
+        var nx = Clamp((x - AtsMinX) / (AtsMaxX - AtsMinX), 0, 1);
+        var ny = Clamp((y - AtsMinY) / (AtsMaxY - AtsMinY), 0, 1);
 
-        var lng = LngMin + (nx * (LngMax - LngMin));
-        var lat = LatMax - (ny * (LatMax - LatMin));
         var lng = LngMin + nx * (LngMax - LngMin);
         var lat = LatMax - ny * (LatMax - LatMin);
 
-return (lng, lat);
+        return (lng, lat);
+    }
+
+    private static double Clamp(double value, double min, double max)
+        => value < min ? min : value > max ? max : value;
 }
-@@ -139,15 +475,23 @@ public sealed class TelemetryUnit
-public string GuildId { get; set; } = "";
-public string DriverDiscordUserId { get; set; } = "";
+
+public sealed class TelemetryUnit
+{
+    public string GuildId { get; set; } = "";
+    public string DriverDiscordUserId { get; set; } = "";
 
     public string? DiscordUserId { get; set; }
     public string? UserId { get; set; }
 
-public string? Driver { get; set; }
-public string? DriverName { get; set; }
-public string? Truck { get; set; }
+    public string? Driver { get; set; }
+    public string? DriverName { get; set; }
+    public string? Truck { get; set; }
     public string? TruckName { get; set; }
-public string? TruckNumber { get; set; }
+    public string? TruckNumber { get; set; }
 
-public double X { get; set; }
-public double Y { get; set; }
-public double MapX { get; set; }
-public double MapY { get; set; }
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double MapX { get; set; }
+    public double MapY { get; set; }
     public double WorldX { get; set; }
     public double WorldZ { get; set; }
     public double MarkerX { get; set; }
     public double MarkerY { get; set; }
 
-public double? Longitude { get; set; }
-public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public double? Latitude { get; set; }
+    public double? Lng { get; set; }
+    public double? Lat { get; set; }
+    public double? Lon { get; set; }
+
+    public string? City { get; set; }
+    public string? State { get; set; }
+    public string? Status { get; set; }
+    public string? ConversionMode { get; set; }
+
+    public string? SourceCity { get; set; }
+    public string? SourceCompany { get; set; }
+    public string? DestinationCity { get; set; }
+    public string? DestinationCompany { get; set; }
+
+    public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
+}
