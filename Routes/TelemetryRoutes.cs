@@ -14,7 +14,8 @@ public static class TelemetryRoutes
         app.MapGet("/api/telemetry", ([FromQuery] string? guildId) =>
         {
             LoadFromDisk();
-
+        units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 3);
+SaveToDiskUnsafe();
             if (string.IsNullOrWhiteSpace(guildId))
                 return Results.Ok(new { ok = true, data = Array.Empty<TelemetryUnit>(), count = 0, warning = "MissingGuildId" });
 
@@ -25,7 +26,7 @@ public static class TelemetryRoutes
                 if (!Units.TryGetValue(guildId, out var units))
                     units = new List<TelemetryUnit>();
 
-                units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 10);
+                units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 3);
 
                 return Results.Ok(new
                 {
