@@ -111,34 +111,34 @@ public static class TelemetryRoutes
 
 public static class AtsCoordinateConverter
 {
-private const double AtsMinX = -142000.0;
-private const double AtsMaxX =  165000.0;
-private const double AtsMinY = -142000.0;
-private const double AtsMaxY =  135000.0;
+    // Calibrated from ATS Fort Collins:
+    // x = -38954.49, z/y = -11578.0088
+    // expected approx: lng -105.08, lat 40.58
 
-private const double LngMin = -124.8;
-private const double LngMax =  -67.0;
-private const double LatMin =   24.5;
-private const double LatMax =   49.2;
+    private const double AtsMinX = -124000.0;
+    private const double AtsMaxX =  124000.0;
+
+    private const double AtsMinY = -109500.0;
+    private const double AtsMaxY =  170500.0;
+
+    private const double LngMin = -125.1;
+    private const double LngMax =  -66.8;
+
+    private const double LatMin =   24.0;
+    private const double LatMax =   49.5;
 
     public static (double Longitude, double Latitude) ToLngLat(double x, double y)
-{
-    // Normalize ATS world coords
-    var nx = (x - AtsMinX) / (AtsMaxX - AtsMinX);
-    var ny = (y - AtsMinY) / (AtsMaxY - AtsMinY);
+    {
+        var nx = Clamp((x - AtsMinX) / (AtsMaxX - AtsMinX), 0, 1);
+        var ny = Clamp((y - AtsMinY) / (AtsMaxY - AtsMinY), 0, 1);
 
-    // Clamp
-    nx = Math.Clamp(nx, 0, 1);
-    ny = Math.Clamp(ny, 0, 1);
+        var lng = LngMin + (nx * (LngMax - LngMin));
 
-    // Convert to real world
-    var lng = LngMin + (nx * (LngMax - LngMin));
+        // ATS Z/Y axis is inverted compared to latitude
+        var lat = LatMax - (ny * (LatMax - LatMin));
 
-    // Flip Y axis (ATS is inverted)
-    var lat = LatMin + (ny * (LatMax - LatMin));
-
-    return (lng, lat);
-}
+        return (lng, lat);
+    }
 
     private static double Clamp(double value, double min, double max)
         => value < min ? min : value > max ? max : value;
