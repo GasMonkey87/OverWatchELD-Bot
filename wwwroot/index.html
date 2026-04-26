@@ -1,150 +1,533 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>OverWatch ELD</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OverWatch ELD | Professional VTC Fleet Management</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #121b2e;
+      --accent: #4da3ff;
+      --text: #f3f7fc;
+      --muted: #a8b7cc;
+      --line: rgba(255,255,255,0.09);
+      --success: #5dd39e;
+      --shadow: 0 20px 60px rgba(0,0,0,.35);
+    }
 
-<style>
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: #0b1220;
-  color: #e5e7eb;
-  text-align: center;
-}
+    * { box-sizing: border-box; }
 
-header {
-  padding: 40px 20px;
-  background: linear-gradient(135deg, #111827, #1e3a8a);
-}
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      background:
+        linear-gradient(rgba(6,12,22,.86), rgba(6,12,22,.92)),
+        url('https://www.driverfirst.com/wp-content/uploads/2025/01/freightliner-classic.png') center/cover fixed;
+      color: var(--text);
+      line-height: 1.6;
+    }
 
-h1 { margin: 0; font-size: 40px; }
+    a { color: inherit; text-decoration: none; }
 
-.subtitle { color: #cbd5e1; margin-top: 10px; }
+    .container {
+      width: min(1200px, calc(100% - 32px));
+      margin: 0 auto;
+    }
 
-.section {
-  padding: 50px 20px;
-}
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(14px);
+      background: rgba(9, 15, 28, 0.86);
+      border-bottom: 1px solid var(--line);
+    }
 
-.btn {
-  display: inline-block;
-  padding: 14px 20px;
-  border-radius: 10px;
-  margin: 10px;
-  font-weight: bold;
-  text-decoration: none;
-  cursor: pointer;
-}
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
 
-.btn-primary { background: #2563eb; color: white; }
-.btn-secondary { background: #334155; color: white; }
-</style>
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      font-weight: 800;
+    }
+
+    .brand-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--accent), #1f5ca8);
+      display: grid;
+      place-items: center;
+      font-size: 22px;
+      box-shadow: 0 8px 20px rgba(77,163,255,.35);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 22px;
+      color: var(--muted);
+      font-weight: 600;
+      flex-wrap: wrap;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 20px;
+      border-radius: 14px;
+      font-weight: 700;
+      transition: .2s ease;
+      border: 1px solid transparent;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 15px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #2d73c9);
+      color: #fff;
+      box-shadow: 0 12px 24px rgba(77,163,255,.25);
+    }
+
+    .btn-primary:hover,
+    .btn-secondary:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: rgba(255,255,255,.06);
+      border-color: var(--line);
+      color: var(--text);
+    }
+
+    .hero {
+      padding: 90px 0 60px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 34px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      padding: 8px 14px;
+      background: rgba(77,163,255,.12);
+      border: 1px solid rgba(125,195,255,.2);
+      border-radius: 999px;
+      color: #9fd0ff;
+      font-weight: 700;
+      margin-bottom: 18px;
+      font-size: 14px;
+    }
+
+    h1 {
+      font-size: clamp(2.4rem, 5vw, 4.5rem);
+      line-height: 1.03;
+      margin: 0 0 18px;
+      letter-spacing: -1.5px;
+    }
+
+    .hero p {
+      color: var(--muted);
+      font-size: 1.08rem;
+      max-width: 760px;
+      margin: 0 0 26px;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .hero-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .stat,
+    .feature,
+    .hero-card,
+    .cta {
+      background: linear-gradient(180deg, rgba(18,27,46,.94), rgba(11,18,32,.94));
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+
+    .stat {
+      border-radius: 18px;
+      padding: 18px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 1.4rem;
+      margin-bottom: 4px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: .95rem;
+    }
+
+    .hero-card {
+      border-radius: 26px;
+      overflow: hidden;
+    }
+
+    .hero-card img {
+      width: 100%;
+      height: 300px;
+      object-fit: cover;
+      display: block;
+    }
+
+    .hero-card-content {
+      padding: 24px;
+    }
+
+    .hero-card h3 {
+      margin: 0 0 10px;
+      font-size: 1.4rem;
+    }
+
+    .mini-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .mini-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: #dfe9f8;
+      font-weight: 600;
+    }
+
+    .mini-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 16px rgba(93,211,158,.6);
+    }
+
+    section {
+      padding: 40px 0;
+    }
+
+    .section-title {
+      font-size: clamp(1.8rem, 3vw, 2.8rem);
+      margin: 0 0 10px;
+    }
+
+    .section-copy {
+      color: var(--muted);
+      max-width: 850px;
+      margin-bottom: 30px;
+    }
+
+    .features {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+
+    .feature {
+      border-radius: 22px;
+      padding: 22px;
+    }
+
+    .feature-icon {
+      width: 54px;
+      height: 54px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      background: rgba(77,163,255,.14);
+      color: #9fd0ff;
+      font-size: 24px;
+      margin-bottom: 16px;
+    }
+
+    .feature h3 {
+      margin: 0 0 10px;
+      font-size: 1.18rem;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+    }
+
+    .cta {
+      border-radius: 28px;
+      padding: 34px;
+      margin: 20px 0 70px;
+      background: linear-gradient(135deg, rgba(77,163,255,.22), rgba(12,20,35,.96));
+    }
+
+    .cta h2 {
+      margin-top: 0;
+      font-size: clamp(1.8rem, 3vw, 2.7rem);
+    }
+
+    .cta p {
+      color: var(--muted);
+      max-width: 850px;
+    }
+
+    footer {
+      padding: 24px 0 36px;
+      color: var(--muted);
+      border-top: 1px solid var(--line);
+      background: rgba(5,10,18,.65);
+    }
+
+    @media (max-width: 980px) {
+      .hero-grid,
+      .features,
+      .hero-stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 </head>
 
 <body>
+  <header class="topbar">
+    <div class="container nav">
+      <div class="brand">
+        <div class="brand-badge">🚛</div>
+        <div>
+          <div style="font-size:1.05rem;">OverWatch ELD</div>
+          <div style="font-size:.82rem; color: var(--muted); font-weight:600;">
+            Professional VTC Fleet Management
+          </div>
+        </div>
+      </div>
 
-<header>
-  <h1>OverWatch ELD</h1>
-  <div class="subtitle">The ELD you can count on.</div>
-</header>
+      <nav class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="https://discord.gg/rk2WVne8hs" target="_blank" rel="noopener">Discord</a>
+      </nav>
 
-<div class="section">
-  <h2>Professional VTC Fleet Management</h2>
-  <p>Run your fleet like a real operation with dispatch, telemetry, logs, and Discord integration.</p>
-
-  <a class="btn btn-primary" href="/downloads.html">Download Now</a>
-
-  <a class="btn btn-secondary"
-     href="https://discord.gg/rk2WVne8hs"
-     target="_blank">
-     Join the Community
-  </a>
-
-  <button class="btn btn-secondary" onclick="openIssueModal()">
-    Report an Issue
-  </button>
-</div>
-
-<!-- 🔥 ISSUE MODAL -->
-<div id="issueModal" style="
-display:none;
-position:fixed;
-inset:0;
-background:rgba(0,0,0,.75);
-z-index:9999;
-align-items:center;
-justify-content:center;
-padding:20px;
-">
-  <div style="
-  background:#111827;
-  border-radius:16px;
-  padding:20px;
-  width:100%;
-  max-width:500px;
-  ">
-
-    <h2>Report an Issue</h2>
-
-    <input id="email" placeholder="Your Email"
-      style="width:100%; margin-bottom:10px; padding:10px;" />
-
-    <input id="subject" placeholder="Subject"
-      style="width:100%; margin-bottom:10px; padding:10px;" />
-
-    <textarea id="message" placeholder="Describe the issue"
-      style="width:100%; height:120px; margin-bottom:10px; padding:10px;"></textarea>
-
-    <div style="display:flex; gap:10px; justify-content:center;">
-      <button class="btn btn-primary" onclick="sendIssue()">Send</button>
-      <button class="btn btn-secondary" onclick="closeIssueModal()">Cancel</button>
+      <div>
+        <a class="btn btn-secondary" href="/login">Driver Login</a>
+        <a class="btn btn-primary" href="/downloads.html">Download Now</a>
+      </div>
     </div>
+  </header>
 
-    <div id="status" style="margin-top:10px;"></div>
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <div class="eyebrow">Built for serious VTC operations</div>
+          <h1>Run your fleet like a real operation with OverWatch ELD.</h1>
+          <p>
+            OverWatch ELD brings dispatch, telemetry, driver logs, inspections, Discord communication,
+            live fleet visibility, BOL tools, and companion access into one clean platform for professional
+            virtual trucking companies.
+          </p>
 
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="/downloads.html">View Downloads</a>
+            <a class="btn btn-secondary" href="#features">Explore Features</a>
+            <button class="btn btn-secondary" type="button" onclick="openIssueModal()">Report an Issue</button>
+          </div>
+
+          <div class="hero-stats">
+            <div class="stat">
+              <strong>Live HOS</strong>
+              <span>Real-time duty clocks and log tracking.</span>
+            </div>
+            <div class="stat">
+              <strong>Discord Sync</strong>
+              <span>Connect announcements, dispatch, and VTC tools.</span>
+            </div>
+            <div class="stat">
+              <strong>ATS Ready</strong>
+              <span>Built around live telemetry and load tracking.</span>
+            </div>
+          </div>
+        </div>
+
+        <aside class="hero-card">
+          <img src="https://images.unsplash.com/photo-1519003722824-194d4455a60c?auto=format&fit=crop&w=1200&q=80" alt="Truck on highway">
+          <div class="hero-card-content">
+            <h3>Everything your VTC needs</h3>
+            <p style="color:var(--muted);">
+              Manage drivers, dispatch, fleet activity, and communication from one polished web-connected system.
+            </p>
+            <div class="mini-list">
+              <div class="mini-item"><span class="mini-dot"></span> Fleet dashboards</div>
+              <div class="mini-item"><span class="mini-dot"></span> Driver logs and inspections</div>
+              <div class="mini-item"><span class="mini-dot"></span> BOL generation</div>
+              <div class="mini-item"><span class="mini-dot"></span> Companion mobile access</div>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="container">
+        <h2 class="section-title">Core features</h2>
+        <p class="section-copy">
+          Built for VTC owners, dispatchers, and drivers who want a cleaner, more organized fleet experience.
+        </p>
+
+        <div class="features">
+          <article class="feature">
+            <div class="feature-icon">⏱️</div>
+            <h3>Live ELD & HOS Clocks</h3>
+            <p>Track duty status, driving time, shifts, and compliance-style logs with live updates.</p>
+          </article>
+
+          <article class="feature">
+            <div class="feature-icon">📡</div>
+            <h3>Telemetry Automation</h3>
+            <p>Use ATS data to help track trips, loads, driver status, and fleet activity.</p>
+          </article>
+
+          <article class="feature">
+            <div class="feature-icon">💬</div>
+            <h3>Discord Integration</h3>
+            <p>Connect your VTC to Discord for announcements, dispatch, pairing, and messaging.</p>
+          </article>
+
+          <article class="feature">
+            <div class="feature-icon">📄</div>
+            <h3>BOL & Records</h3>
+            <p>Create better records for trips, inspections, loads, and fleet operations.</p>
+          </article>
+
+          <article class="feature">
+            <div class="feature-icon">🗺️</div>
+            <h3>Live Fleet Visibility</h3>
+            <p>Monitor trucks, activity, and driver status from a professional dashboard.</p>
+          </article>
+
+          <article class="feature">
+            <div class="feature-icon">📱</div>
+            <h3>Companion Dashboard</h3>
+            <p>Drivers can access key ELD tools from phones or tablets on the local network.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="download">
+      <div class="container">
+        <div class="cta">
+          <h2>Upgrade your VTC with OverWatch ELD</h2>
+          <p>
+            Download the latest version, join the Gas Monkey Creations Discord, or report an issue directly from the site.
+          </p>
+
+          <div class="hero-actions" style="margin-bottom:0; margin-top:18px;">
+            <a class="btn btn-primary" href="/downloads.html">Download Now</a>
+            <a class="btn btn-secondary" href="https://discord.gg/rk2WVne8hs" target="_blank" rel="noopener">
+              Join the Community
+            </a>
+            <button class="btn btn-secondary" type="button" onclick="openIssueModal()">
+              Report an Issue
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <strong style="color:#fff;">OverWatch ELD</strong> — Professional fleet tools for serious VTC operations.
+    </div>
+  </footer>
+
+  <div id="issueModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:9999; align-items:center; justify-content:center; padding:20px;">
+    <div style="background:#111827; border:1px solid #334155; border-radius:18px; padding:24px; width:min(520px,100%); color:white;">
+      <h2 style="margin-top:0;">Report an Issue</h2>
+
+      <input id="issueEmail" type="email" placeholder="Your email"
+        style="width:100%; margin-bottom:12px; padding:12px; border-radius:10px; border:1px solid #334155; background:#0b1220; color:white;">
+
+      <input id="issueSubject" type="text" placeholder="Issue subject"
+        style="width:100%; margin-bottom:12px; padding:12px; border-radius:10px; border:1px solid #334155; background:#0b1220; color:white;">
+
+      <textarea id="issueMessage" placeholder="Describe the issue"
+        style="width:100%; min-height:150px; margin-bottom:12px; padding:12px; border-radius:10px; border:1px solid #334155; background:#0b1220; color:white;"></textarea>
+
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary" type="button" onclick="sendIssueReport()">Send Report</button>
+        <button class="btn btn-secondary" type="button" onclick="closeIssueModal()">Cancel</button>
+      </div>
+
+      <div id="issueStatus" style="margin-top:12px; color:#94a3b8;"></div>
+    </div>
   </div>
-</div>
 
-<script>
-function openIssueModal() {
-  document.getElementById("issueModal").style.display = "flex";
-}
+  <script>
+    function openIssueModal() {
+      document.getElementById("issueModal").style.display = "flex";
+    }
 
-function closeIssueModal() {
-  document.getElementById("issueModal").style.display = "none";
-}
+    function closeIssueModal() {
+      document.getElementById("issueModal").style.display = "none";
+    }
 
-async function sendIssue() {
-  const body = {
-    email: document.getElementById("email").value,
-    subject: document.getElementById("subject").value,
-    message: document.getElementById("message").value
-  };
+    async function sendIssueReport() {
+      const status = document.getElementById("issueStatus");
 
-  const status = document.getElementById("status");
+      const body = {
+        email: document.getElementById("issueEmail").value,
+        subject: document.getElementById("issueSubject").value,
+        message: document.getElementById("issueMessage").value
+      };
 
-  if (!body.email || !body.subject || !body.message) {
-    status.innerText = "Fill all fields";
-    return;
-  }
+      if (!body.email || !body.subject || !body.message) {
+        status.textContent = "Please fill out all fields.";
+        return;
+      }
 
-  status.innerText = "Sending...";
+      status.textContent = "Sending...";
 
-  const res = await fetch("/api/report-issue", {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(body)
-  });
+      const res = await fetch("/api/report-issue", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
 
-  if (res.ok) {
-    status.innerText = "Sent successfully!";
-    setTimeout(closeIssueModal, 1000);
-  } else {
-    status.innerText = "Failed to send";
-  }
-}
-</script>
-
+      if (res.ok) {
+        status.textContent = "Issue report sent. Thank you!";
+        setTimeout(closeIssueModal, 1200);
+      } else {
+        status.textContent = "Failed to send report.";
+      }
+    }
+  </script>
 </body>
 </html>
