@@ -643,18 +643,31 @@ function renderFleetDashboard(units){
   }
 
   fleetDashboard.innerHTML = units.map(u=>{
+    const speed = u.speedMph || u.SpeedMph || u.speed || u.Speed || "-";
+    const fuel = u.fuelPct || u.FuelPct || "-";
+    const damage = u.damagePct || u.DamagePct || "-";
+    const status = unitStatus(u);
+
     return `
       <div class="fleet-card">
         <h3>${esc(unitName(u))}</h3>
         <div class="muted">${esc(truckName(u))}</div>
 
-        <div class="status-pill ${unitStatus(u)}">${esc(u.status || "Live")}</div>
+        <div class="status-pill ${status}">
+          ${esc(u.status || u.Status || "Live")}
+        </div>
 
         <hr style="border:0;border-top:1px solid #334155;margin:10px 0">
 
-        const speed = u.speedMph || u.SpeedMph || u.speed || u.Speed || "-";
-const fuel = u.fuelPct || u.FuelPct || "-";
-const damage = u.damagePct || u.DamagePct || "-";
+        <div>📍 ${esc(u.city || u.City || "-")}</div>
+        <div>⚡ Speed: ${esc(speed)} mph</div>
+        <div>⛽ Fuel: ${esc(fuel)}%</div>
+        <div>🛠 Damage: ${esc(damage)}%</div>
+
+        <div style="margin-top:6px">
+          📦 ${esc(u.sourceCity || u.SourceCity || "-")}
+          → ${esc(u.destinationCity || u.DestinationCity || "-")}
+        </div>
       </div>
     `;
   }).join("");
