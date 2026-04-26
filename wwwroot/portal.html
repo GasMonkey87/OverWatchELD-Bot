@@ -67,6 +67,35 @@ main{max-width:1250px;margin:auto;padding:22px}
 .actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 button{background:#1f2937;color:white;border:1px solid #334155;border-radius:10px;padding:8px 11px;cursor:pointer}
 button.active{background:#075985;border-color:#38bdf8}
+  .driver-popup{
+  min-width:220px;
+}
+
+.driver-popup-title{
+  font-size:16px;
+  font-weight:800;
+  color:#f8fafc;
+  margin-bottom:6px;
+}
+
+.driver-popup-row{
+  margin:4px 0;
+  color:#cbd5e1;
+}
+
+.driver-popup-badge{
+  display:inline-block;
+  padding:3px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:800;
+  margin-bottom:8px;
+}
+
+.driver-popup-badge.driving{background:#14532d;color:#86efac}
+.driver-popup-badge.stopped{background:#78350f;color:#fcd34d}
+.driver-popup-badge.offline{background:#334155;color:#cbd5e1}
+.driver-popup-badge.unknown{background:#075985;color:#bae6fd}
 </style>
 </head>
 
@@ -432,14 +461,23 @@ async function loadTelemetry(){
     const marker = new maplibregl.Marker({element:createMarker(name,"truck-marker",u),anchor:"center"})
       .setLngLat(ll)
       .setPopup(new maplibregl.Popup().setHTML(`
-        <b>${esc(name)}</b><br>
-        🚚 ${esc(u.truck || u.Truck || u.truckName || u.TruckName || "")}<br>
-        📍 ${esc(u.city || u.City || "")}${u.state || u.State ? ", " + esc(u.state || u.State) : ""}<br>
-        🟢 Status: ${esc(u.status || u.Status || "Live")}<br>
-        📦 Pickup: ${esc(u.sourceCompany || u.SourceCompany || "")} ${esc(u.sourceCity || u.SourceCity || "")}<br>
-        🏁 Drop: ${esc(u.destinationCompany || u.DestinationCompany || "")} ${esc(u.destinationCity || u.DestinationCity || "")}<br>
-        🕒 Updated: ${esc(u.updatedUtc || u.UpdatedUtc || "")}
-      `))
+  <div class="driver-popup">
+    <div class="driver-popup-title">${esc(name)}</div>
+    <div class="driver-popup-badge ${statusClass(u)}">${esc(u.status || u.Status || "Live")}</div>
+
+    <div class="driver-popup-row">🚚 <b>Truck:</b> ${esc(u.truck || u.Truck || u.truckName || u.TruckName || "")}</div>
+    <div class="driver-popup-row">📍 <b>Location:</b> ${esc(u.city || u.City || "")}${u.state || u.State ? ", " + esc(u.state || u.State) : ""}</div>
+
+    <hr style="border:0;border-top:1px solid #334155;margin:8px 0">
+
+    <div class="driver-popup-row">📦 <b>Pickup:</b> ${esc(u.sourceCompany || u.SourceCompany || "-")} — ${esc(u.sourceCity || u.SourceCity || "-")}</div>
+    <div class="driver-popup-row">🏁 <b>Drop:</b> ${esc(u.destinationCompany || u.DestinationCompany || "-")} — ${esc(u.destinationCity || u.DestinationCity || "-")}</div>
+
+    <hr style="border:0;border-top:1px solid #334155;margin:8px 0">
+
+    <div class="driver-popup-row">🕒 <b>Updated:</b> ${esc(u.updatedUtc || u.UpdatedUtc || "")}</div>
+  </div>
+`))
       .addTo(map);
 
     markers.push(marker);
