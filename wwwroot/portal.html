@@ -13,38 +13,67 @@ body{margin:0;background:#020617;color:white;font-family:Segoe UI,Arial,sans-ser
 header{padding:18px 24px;background:#111827;border-bottom:1px solid #334155}
 main{max-width:1250px;margin:auto;padding:22px}
 .card{background:#0f172a;border:1px solid #334155;border-radius:16px;padding:18px;margin-bottom:18px}
-#map{height:620px;border-radius:14px;border:1px solid #334155;overflow:hidden;background:#020617}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.stat{font-size:30px;font-weight:800}
 .muted{color:#94a3b8}
-.truck-marker{
-  width:18px;height:18px;border-radius:50%;
-  background:#38bdf8;border:3px solid white;
-  box-shadow:0 0 14px rgba(56,189,248,.95);
-}
-.marker-label{
-  position:absolute;top:-24px;left:50%;
-  transform:translateX(-50%);
-  background:#020617;border:1px solid #334155;
-  padding:3px 7px;border-radius:7px;
-  font-size:11px;white-space:nowrap;color:white;
-}
-.marker-wrap{
-  position:relative;
-  width:20px;
-  height:20px;
-}
+#map{height:620px;border-radius:14px;border:1px solid #334155;overflow:hidden;background:#020617}
+.truck-marker{width:18px;height:18px;border-radius:50%;background:#38bdf8;border:3px solid white;box-shadow:0 0 14px rgba(56,189,248,.95)}
+.marker-label{position:absolute;top:-24px;left:50%;transform:translateX(-50%);background:#020617;border:1px solid #334155;padding:3px 7px;border-radius:7px;font-size:11px;white-space:nowrap;color:white}
+.marker-wrap{position:relative;width:20px;height:20px}
+.state-label{color:#7dd3fc;font-weight:800;font-size:13px;text-shadow:0 2px 6px #000;opacity:.8;pointer-events:none}
+.city-label{color:#f8fafc;font-weight:700;font-size:11px;text-shadow:0 2px 5px #000;opacity:.9;pointer-events:none}
+.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #334155}
+.table{width:100%;border-collapse:collapse}
+.table td,.table th{padding:9px;border-bottom:1px solid #334155;text-align:left}
 </style>
 </head>
 
 <body>
 <header>
-  <h2 style="margin:0">VTC Portal</h2>
+  <h2 id="siteTitle" style="margin:0">VTC Portal</h2>
+  <div id="welcomeText" class="muted"></div>
 </header>
 
 <main>
+  <section class="grid">
+    <div class="card"><h3>Drivers</h3><div class="stat" id="driverCount">0</div><div class="muted">Company roster</div></div>
+    <div class="card"><h3>Fleet</h3><div class="stat" id="fleetCount">0</div><div class="muted">Company trucks</div></div>
+    <div class="card"><h3>Garages</h3><div class="stat" id="garageCount">0</div><div class="muted">Owned locations</div></div>
+    <div class="card"><h3>Live Units</h3><div class="stat" id="liveCount">0</div><div class="muted">Telemetry trucks</div></div>
+  </section>
+
   <section class="card">
     <h2>Live ATS Map</h2>
     <div id="map"></div>
     <p id="mapStatus" class="muted">Loading ATS map...</p>
+  </section>
+
+  <section class="card">
+    <h2>Company Info</h2>
+    <p id="companyInfo" class="muted"></p>
+  </section>
+
+  <section class="card">
+    <h2>Featured Driver</h2>
+    <div id="featuredDriver" class="muted">No featured driver selected.</div>
+  </section>
+
+  <section class="card">
+    <h2>Driver Roster</h2>
+    <div id="driverList" class="muted">Loading drivers...</div>
+  </section>
+
+  <section class="card">
+    <h2>Fleet</h2>
+    <table class="table">
+      <thead><tr><th>Truck</th><th>Driver</th><th>Plate</th><th>Location</th><th>Status</th></tr></thead>
+      <tbody id="fleetTable"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Garages</h2>
+    <div id="garageList" class="grid"></div>
   </section>
 </main>
 
@@ -54,23 +83,53 @@ import { PMTiles, Protocol } from "https://cdn.jsdelivr.net/npm/pmtiles@3.2.0/+e
 const API = location.origin;
 const qs = new URLSearchParams(location.search);
 const guildId = qs.get("guildId") || localStorage.getItem("oweld.guildId") || "";
-
 const PMTILES_URL = `${location.origin}/map-assets/ats.pmtiles`;
 
 let map;
 let markers = [];
+let cityMarkers = [];
+let stateMarkers = [];
+
+const STATES = [
+  ["California",[-119.5,37.2]],["Nevada",[-116.8,39.4]],["Arizona",[-111.7,34.2]],
+  ["Utah",[-111.6,39.3]],["New Mexico",[-106.1,34.4]],["Colorado",[-105.5,39.0]],
+  ["Texas",[-99.3,31.0]],["Oklahoma",[-97.5,35.5]],["Kansas",[-98.2,38.5]],
+  ["Nebraska",[-99.7,41.5]],["Wyoming",[-107.6,43.0]],["Idaho",[-114.5,44.2]],
+  ["Oregon",[-120.6,43.9]],["Washington",[-120.5,47.4]],["Montana",[-110.5,46.9]]
+];
+
+const CITIES = [
+  ["Seattle",[-122.3321,47.6062]],["Portland",[-122.6765,45.5231]],["Boise",[-116.2023,43.6150]],
+  ["Spokane",[-117.4260,47.6588]],["Reno",[-119.8138,39.5296]],["Las Vegas",[-115.1398,36.1699]],
+  ["San Francisco",[-122.4194,37.7749]],["Los Angeles",[-118.2437,34.0522]],["San Diego",[-117.1611,32.7157]],
+  ["Phoenix",[-112.0740,33.4484]],["Tucson",[-110.9747,32.2226]],["Salt Lake City",[-111.8910,40.7608]],
+  ["Denver",[-104.9903,39.7392]],["Albuquerque",[-106.6504,35.0844]],["El Paso",[-106.4850,31.7619]],
+  ["Dallas",[-96.7970,32.7767]],["Fort Worth",[-97.3308,32.7555]],["Austin",[-97.7431,30.2672]],
+  ["San Antonio",[-98.4936,29.4241]],["Houston",[-95.3698,29.7604]],["Oklahoma City",[-97.5164,35.4676]],
+  ["Tulsa",[-95.9928,36.1540]],["Kansas City",[-94.5786,39.0997]],["Wichita",[-97.3301,37.6872]],
+  ["Omaha",[-95.9345,41.2565]],["Cheyenne",[-104.8202,41.1400]],["Billings",[-108.5007,45.7833]]
+];
 
 function esc(v){
-  return String(v ?? "").replace(/[&<>"']/g, s => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
-  }[s]));
+  return String(v ?? "").replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[s]));
+}
+
+async function api(path){
+  const res = await fetch(`${API}${path}`);
+  let json = null;
+  try{json = await res.json();}catch{}
+  if(!res.ok || json?.ok === false) throw new Error(json?.error || `HTTP ${res.status}`);
+  return json || {};
+}
+
+async function safe(path,fallback){
+  try{return await api(path)}catch{return fallback}
 }
 
 async function detectSourceLayer(){
   const p = new PMTiles(PMTILES_URL);
   const metadata = await p.getMetadata();
-  const layers = metadata?.vector_layers || [];
-  return layers[0]?.id || "default";
+  return metadata?.vector_layers?.[0]?.id || "default";
 }
 
 async function initMap(){
@@ -78,59 +137,21 @@ async function initMap(){
   maplibregl.addProtocol("pmtiles", protocol.tile);
 
   const sourceLayer = await detectSourceLayer();
-  console.log("Using PMTiles source layer:", sourceLayer);
 
   map = new maplibregl.Map({
     container:"map",
     style:{
       version:8,
       glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-      sources:{
-        ats:{
-          type:"vector",
-          url:`pmtiles://${PMTILES_URL}`
-        }
-      },
+      sources:{ats:{type:"vector",url:`pmtiles://${PMTILES_URL}`}},
       layers:[
-        {
-          id:"background",
-          type:"background",
-          paint:{"background-color":"#081018"}
-        },
-        {
-          id:"ats-fill",
-          type:"fill",
-          source:"ats",
-          "source-layer":sourceLayer,
-          paint:{
-            "fill-color":"#102033",
-            "fill-opacity":0.45
-          }
-        },
-        {
-          id:"ats-roads-casing",
-          type:"line",
-          source:"ats",
-          "source-layer":sourceLayer,
-          filter:["has","roadType"],
-          paint:{
-            "line-color":"#10243a",
-            "line-width":["interpolate",["linear"],["zoom"],3,1.5,6,3,9,5,12,8],
-            "line-opacity":0.95
-          }
-        },
-        {
-          id:"ats-roads",
-          type:"line",
-          source:"ats",
-          "source-layer":sourceLayer,
-          filter:["has","roadType"],
-          paint:{
-            "line-color":["match",["get","roadType"],"freeway","#4fc3ff","highway","#38bdf8","local","#1d75a8","#2b88bd"],
-            "line-width":["interpolate",["linear"],["zoom"],3,0.8,6,1.7,9,3,12,5],
-            "line-opacity":0.96
-          }
-        }
+        {id:"background",type:"background",paint:{"background-color":"#081018"}},
+        {id:"ats-fill",type:"fill",source:"ats","source-layer":sourceLayer,paint:{"fill-color":"#102033","fill-opacity":0.45}},
+        {id:"ats-roads-casing",type:"line",source:"ats","source-layer":sourceLayer,filter:["has","roadType"],paint:{
+          "line-color":"#10243a","line-width":["interpolate",["linear"],["zoom"],3,1.5,6,3,9,5,12,8],"line-opacity":0.95}},
+        {id:"ats-roads",type:"line",source:"ats","source-layer":sourceLayer,filter:["has","roadType"],paint:{
+          "line-color":["match",["get","roadType"],"freeway","#4fc3ff","highway","#38bdf8","local","#1d75a8","#2b88bd"],
+          "line-width":["interpolate",["linear"],["zoom"],3,0.8,6,1.7,9,3,12,5],"line-opacity":0.96}}
       ]
     },
     center:[-98.5795,39.8283],
@@ -141,13 +162,30 @@ async function initMap(){
 
   map.on("load",()=>{
     mapStatus.textContent = "ATS map loaded. Waiting for telemetry.";
+    addMapLabels();
     loadTelemetry();
   });
+}
 
-  map.on("error",e=>{
-    console.warn("Map error:", e?.error || e);
-    mapStatus.textContent = "Map error. Check /map-assets/ats.pmtiles route.";
-  });
+function addMapLabels(){
+  stateMarkers.forEach(m=>m.remove());
+  cityMarkers.forEach(m=>m.remove());
+  stateMarkers = [];
+  cityMarkers = [];
+
+  for(const [name,coords] of STATES){
+    const el = document.createElement("div");
+    el.className = "state-label";
+    el.textContent = name;
+    stateMarkers.push(new maplibregl.Marker({element:el,anchor:"center"}).setLngLat(coords).addTo(map));
+  }
+
+  for(const [name,coords] of CITIES){
+    const el = document.createElement("div");
+    el.className = "city-label";
+    el.textContent = name;
+    cityMarkers.push(new maplibregl.Marker({element:el,anchor:"center"}).setLngLat(coords).addTo(map));
+  }
 }
 
 function createMarker(label){
@@ -169,10 +207,8 @@ function createMarker(label){
 function getLngLat(u){
   const lng = Number(u.longitude ?? u.Longitude ?? u.lng ?? u.Lng ?? u.lon ?? u.Lon);
   const lat = Number(u.latitude ?? u.Latitude ?? u.lat ?? u.Lat);
-
   if(!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
-  if(Math.abs(lng) > 180 || Math.abs(lat) > 90) return null;
-
+  if(Math.abs(lng)>180 || Math.abs(lat)>90) return null;
   return [lng,lat];
 }
 
@@ -182,51 +218,105 @@ async function loadTelemetry(){
     return;
   }
 
-  try{
-    const res = await fetch(`${API}/api/telemetry?guildId=${encodeURIComponent(guildId)}`);
-    const json = await res.json();
-    const units = json.data || json.Data || [];
+  const json = await safe(`/api/telemetry?guildId=${encodeURIComponent(guildId)}`, {});
+  const units = json.data || json.Data || [];
 
-    markers.forEach(m=>m.remove());
-    markers = [];
+  markers.forEach(m=>m.remove());
+  markers = [];
+  liveCount.textContent = units.length;
 
-    units.forEach(u=>{
-      const ll = getLngLat(u);
-      if(!ll) return;
+  units.forEach(u=>{
+    const ll = getLngLat(u);
+    if(!ll) return;
 
-      const name =
-        u.driver || u.Driver ||
-        u.driverName || u.DriverName ||
-        u.truck || u.Truck ||
-        "Driver";
+    const name = u.driver || u.Driver || u.driverName || u.DriverName || u.truck || u.Truck || "Driver";
 
-      const marker = new maplibregl.Marker({
-        element:createMarker(name),
-        anchor:"center"
-      })
+    const marker = new maplibregl.Marker({element:createMarker(name),anchor:"center"})
       .setLngLat(ll)
       .setPopup(new maplibregl.Popup().setHTML(`
         <b>${esc(name)}</b><br>
         ${esc(u.truck || u.Truck || "")}<br>
+        ${esc(u.city || u.City || "")}${u.state || u.State ? ", " + esc(u.state || u.State) : ""}<br>
         ${esc(u.status || u.Status || "")}
       `))
       .addTo(map);
 
-      markers.push(marker);
-    });
+    markers.push(marker);
+  });
 
-    mapStatus.textContent =
-      markers.length > 0
-        ? `Showing ${markers.length} live unit${markers.length === 1 ? "" : "s"}.`
-        : "Telemetry loaded, but no valid marker coordinates found.";
-  }catch(e){
-    console.warn(e);
-    mapStatus.textContent = "Telemetry failed to load.";
-  }
+  mapStatus.textContent = markers.length
+    ? `Showing ${markers.length} live unit. Current telemetry: ${esc(units[0]?.city || units[0]?.City || "")} ${esc(units[0]?.state || units[0]?.State || "")}`
+    : "Telemetry loaded, but no valid marker coordinates found.";
+}
+
+function lowerPortalData(d){
+  return {
+    siteTitle:d.siteTitle || d.SiteTitle || "",
+    welcomeText:d.welcomeText || d.WelcomeText || "",
+    companyInfo:d.companyInfo || d.CompanyInfo || "",
+    selectedFeaturedDriver:d.selectedFeaturedDriver || d.SelectedFeaturedDriver || "",
+    drivers:d.drivers || d.Drivers || [],
+    trucks:d.trucks || d.Trucks || [],
+    garages:d.garages || d.Garages || []
+  };
+}
+
+function normalizeDriver(d){
+  return {
+    id:d.id || d.Id || d.discordUserId || d.DiscordUserId || "",
+    name:d.name || d.Name || d.driverName || d.displayName || d.discordUsername || "Driver",
+    role:d.role || d.Role || "Driver",
+    status:d.status || d.Status || "Member",
+    discordUserId:d.discordUserId || d.DiscordUserId || "",
+    assignedTruck:d.assignedTruck || d.AssignedTruck || "",
+    totalMiles:d.totalMiles || d.TotalMiles || d.mileage || d.Mileage || "0",
+    bio:d.bio || d.Bio || ""
+  };
+}
+
+async function loadRosterDrivers(){
+  const r = await safe(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`, {});
+  return (r.data || r.drivers || r.roster || []).map(normalizeDriver);
+}
+
+async function loadPortal(){
+  const json = await safe(`/api/vtc/portal/data?guildId=${encodeURIComponent(guildId)}`, {});
+  const portal = lowerPortalData(json.data || {});
+  const roster = await loadRosterDrivers();
+  const portalDrivers = portal.drivers.map(normalizeDriver);
+  const drivers = portalDrivers.length ? portalDrivers : roster;
+
+  siteTitle.textContent = portal.siteTitle || "VTC Portal";
+  welcomeText.textContent = portal.welcomeText || "";
+  companyInfo.textContent = portal.companyInfo || "Company information has not been added yet.";
+
+  driverCount.textContent = drivers.length;
+  fleetCount.textContent = portal.trucks.length;
+  garageCount.textContent = portal.garages.length;
+
+  const featured = drivers.find(d=>d.id===portal.selectedFeaturedDriver || d.discordUserId===portal.selectedFeaturedDriver) || drivers[0];
+
+  featuredDriver.innerHTML = featured
+    ? `<h3>${esc(featured.name)}</h3><p class="muted">${esc(featured.role)} · ${esc(featured.status)}</p><p>${esc(featured.bio || "A valued member of the company.")}</p>`
+    : `<div class="muted">No featured driver selected.</div>`;
+
+  driverList.innerHTML = drivers.length ? drivers.map(d=>`
+    <div class="row"><div><b>${esc(d.name)}</b><div class="muted">${esc(d.role)} · ${esc(d.status)}</div></div><div>${esc(d.totalMiles)} mi</div></div>
+  `).join("") : `<div class="muted">No drivers found.</div>`;
+
+  fleetTable.innerHTML = portal.trucks.length ? portal.trucks.map(t=>`
+    <tr><td>${esc(t.truckNumber || t.name || "Truck")}</td><td>${esc(t.driver || "Unassigned")}</td><td>${esc(t.plate || "")}</td><td>${esc(t.location || "")}</td><td>${esc(t.status || "Available")}</td></tr>
+  `).join("") : `<tr><td colspan="5" class="muted">No fleet records yet.</td></tr>`;
+
+  garageList.innerHTML = portal.garages.length ? portal.garages.map(g=>`
+    <div class="card"><h3>${esc(g.city || "Garage")}${g.state ? ", " + esc(g.state) : ""}</h3><p class="muted">${esc(g.country || "")}</p><p><b>Slots:</b> ${esc(g.slots || "0")}</p></div>
+  `).join("") : `<div class="muted">No garages added yet.</div>`;
 }
 
 await initMap();
+await loadPortal();
 setInterval(loadTelemetry,3000);
+setInterval(loadPortal,30000);
 </script>
 </body>
 </html>
