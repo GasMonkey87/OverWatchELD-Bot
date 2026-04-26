@@ -17,7 +17,11 @@ main{max-width:1250px;margin:auto;padding:22px}
 .stat{font-size:30px;font-weight:800}
 .muted{color:#94a3b8}
 #map{height:660px;border-radius:14px;border:1px solid #334155;overflow:hidden;background:#020617}
-.truck-marker{width:18px;height:18px;border-radius:50%;background:#38bdf8;border:3px solid white;box-shadow:0 0 14px rgba(56,189,248,.95)}
+.truck-marker{width:18px;height:18px;border-radius:50%;border:3px solid white;background:#38bdf8;box-shadow:0 0 14px rgba(56,189,248,.95)}
+.truck-marker.driving{background:#22c55e;box-shadow:0 0 16px rgba(34,197,94,.95)}
+.truck-marker.stopped{background:#f59e0b;box-shadow:0 0 16px rgba(245,158,11,.95)}
+.truck-marker.offline{background:#64748b;box-shadow:0 0 12px rgba(100,116,139,.8)}
+.truck-marker.unknown{background:#38bdf8;box-shadow:0 0 14px rgba(56,189,248,.95)}
 .pickup-marker{width:18px;height:18px;border-radius:6px;background:#22c55e;border:2px solid white;box-shadow:0 0 14px rgba(34,197,94,.9)}
 .drop-marker{width:18px;height:18px;border-radius:6px;background:#f59e0b;border:2px solid white;box-shadow:0 0 14px rgba(245,158,11,.9)}
 .marker-label{position:absolute;top:-24px;left:50%;transform:translateX(-50%);background:#020617;border:1px solid #334155;padding:3px 7px;border-radius:7px;font-size:11px;white-space:nowrap;color:white}
@@ -25,6 +29,13 @@ main{max-width:1250px;margin:auto;padding:22px}
 .state-label{color:#7dd3fc;font-weight:800;font-size:13px;text-shadow:0 2px 6px #000;opacity:.8;pointer-events:none}
 .city-label{color:#f8fafc;font-weight:700;font-size:11px;text-shadow:0 2px 5px #000;opacity:.92;pointer-events:none}
 .company-label{color:#bbf7d0;font-weight:800;font-size:11px;text-shadow:0 2px 5px #000;opacity:.95;pointer-events:none}
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;color:#cbd5e1;font-size:12px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend-dot{width:10px;height:10px;border-radius:50%;display:inline-block;border:1px solid white}
+.legend-green{background:#22c55e}
+.legend-yellow{background:#f59e0b}
+.legend-gray{background:#64748b}
+.legend-blue{background:#38bdf8}
 .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #334155}
 .table{width:100%;border-collapse:collapse}
 .table td,.table th{padding:9px;border-bottom:1px solid #334155;text-align:left}
@@ -55,6 +66,12 @@ button.active{background:#075985;border-color:#38bdf8}
       <button id="btnCities" class="active" onclick="toggleCities()">Cities: ON</button>
       <button id="btnCompanies" class="active" onclick="toggleCompanies()">Companies: ON</button>
       <button onclick="recenterMap()">Recenter</button>
+    </div>
+    <div class="legend">
+      <span><i class="legend-dot legend-green"></i>Driving</span>
+      <span><i class="legend-dot legend-yellow"></i>Stopped</span>
+      <span><i class="legend-dot legend-gray"></i>Offline/Stale</span>
+      <span><i class="legend-dot legend-blue"></i>Unknown</span>
     </div>
     <div id="map"></div>
     <p id="mapStatus" class="muted">Loading ATS map...</p>
@@ -233,12 +250,30 @@ function updateLabelVisibility(){
   companyMarkers.forEach(m=>m.getElement().style.display = showCompanies && z >= 7 ? "block" : "none");
 }
 
-function createMarker(label, cls="truck-marker"){
+function statusClass(unit){
+  const status = String(unit?.status || unit?.Status || "").toLowerCase();
+  const engineOn = unit?.engineOn ?? unit?.EngineOn;
+
+  const updatedRaw = unit?.updatedUtc || unit?.UpdatedUtc || unit?.seenUtc || unit?.SeenUtc;
+  if(updatedRaw){
+    const ageMs = Date.now() - new Date(updatedRaw).getTime();
+    if(Number.isFinite(ageMs) && ageMs > 10 * 60 * 1000) return "offline";
+  }
+
+  if(status.includes("driv") || engineOn === true) return "driving";
+  if(status.includes("stop") || status.includes("off") || engineOn === false) return "stopped";
+  return "unknown";
+}
+
+function createMarker(label, cls="truck-marker", unit=null){
   const wrap = document.createElement("div");
   wrap.className = "marker-wrap";
 
   const dot = document.createElement("div");
   dot.className = cls;
+
+  if(cls === "truck-marker")
+    dot.classList.add(statusClass(unit));
 
   const text = document.createElement("div");
   text.className = "marker-label";
@@ -369,13 +404,16 @@ async function loadTelemetry(){
 
     const name = u.driver || u.Driver || u.driverName || u.DriverName || u.truck || u.Truck || u.truckName || u.TruckName || "Driver";
 
-    const marker = new maplibregl.Marker({element:createMarker(name),anchor:"center"})
+    const marker = new maplibregl.Marker({element:createMarker(name,"truck-marker",u),anchor:"center"})
       .setLngLat(ll)
       .setPopup(new maplibregl.Popup().setHTML(`
         <b>${esc(name)}</b><br>
-        ${esc(u.truck || u.Truck || u.truckName || u.TruckName || "")}<br>
-        ${esc(u.city || u.City || "")}${u.state || u.State ? ", " + esc(u.state || u.State) : ""}<br>
-        ${esc(u.status || u.Status || "")}
+        🚚 ${esc(u.truck || u.Truck || u.truckName || u.TruckName || "")}<br>
+        📍 ${esc(u.city || u.City || "")}${u.state || u.State ? ", " + esc(u.state || u.State) : ""}<br>
+        🟢 Status: ${esc(u.status || u.Status || "Live")}<br>
+        📦 Pickup: ${esc(u.sourceCompany || u.SourceCompany || "")} ${esc(u.sourceCity || u.SourceCity || "")}<br>
+        🏁 Drop: ${esc(u.destinationCompany || u.DestinationCompany || "")} ${esc(u.destinationCity || u.DestinationCity || "")}<br>
+        🕒 Updated: ${esc(u.updatedUtc || u.UpdatedUtc || "")}
       `))
       .addTo(map);
 
@@ -392,7 +430,7 @@ async function loadTelemetry(){
   }
 
   mapStatus.textContent = markers.length
-    ? `Showing ${markers.length} live unit. Current telemetry: ${esc(units[0]?.city || units[0]?.City || "")} ${esc(units[0]?.state || units[0]?.State || "")}`
+    ? `Showing ${markers.length} live unit${markers.length === 1 ? "" : "s"}. Current telemetry: ${esc(units[0]?.city || units[0]?.City || "")} ${esc(units[0]?.state || units[0]?.State || "")}`
     : `Telemetry loaded, but no valid marker coordinates found. Raw units: ${units.length}`;
 }
 
