@@ -233,6 +233,65 @@ public static partial class Program
             guildCount = _client?.Guilds.Count ?? 0
         }));
 
+        app.MapPost("/api/report-issue", async (HttpContext ctx) =>
+{
+    var req = await ctx.Request.ReadFromJsonAsync<IssueReportRequest>();
+
+    if (req == null ||
+        string.IsNullOrWhiteSpace(req.Email) ||
+        string.IsNullOrWhiteSpace(req.Subject) ||
+        string.IsNullOrWhiteSpace(req.Message))
+    {
+        return Results.BadRequest(new { ok = false, error = "MissingFields" });
+    }
+
+    var smtpUser = Environment.GetEnvironmentVariable("SMTP_USER");
+    var smtpPass = Environment.GetEnvironmentVariable("SMTP_PASS");
+
+    if (string.IsNullOrWhiteSpace(smtpUser) || string.IsNullOrWhiteSpace(smtpPass))
+    {
+        return Results.Problem("SMTP is not configured.");
+    }
+
+    using var smtp = new System.Net.Mail.SmtpClient("smtp.gmail.com", 587)
+    {
+        EnableSsl = true,
+        Credentials = new System.Net.NetworkCredential(smtpUser, smtpPass)
+    };
+
+    var mail = new System.Net.Mail.MailMessage
+    {
+        From = new System.Net.Mail.MailAddress(smtpUser, "OverWatch ELD Website"),
+        Subject = $"OverWatch ELD Issue: {req.Subject}",
+        Body =
+$@"New issue report from OverWatch ELD website.
+
+Sender Email:
+{req.Email}
+
+Subject:
+{req.Subject}
+
+Message:
+{req.Message}",
+        IsBodyHtml = false
+    };
+
+    mail.To.Add("GasMonkeyCreations@gmail.com");
+    mail.ReplyToList.Add(req.Email);
+
+    await smtp.SendMailAsync(mail);
+
+    return Results.Ok(new { ok = true });
+});
+
+public sealed class IssueReportRequest
+{
+    public string? Email { get; set; }
+    public string? Subject { get; set; }
+    public string? Message { get; set; }
+}
+        
         app.MapGet("/build", () => Results.Ok(new
         {
             ok = true,
