@@ -1,186 +1,232 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-<meta charset="utf-8">
-<title>OverWatch ELD Portal</title>
+<meta charset="utf-8" />
+<title>OverWatch ELD - VTC Portal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
 
-<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pmtiles@3.2.0/dist/index.js"></script>
 
 <style>
-body{
-  background:#020617;
-  color:white;
-  font-family:Segoe UI;
-  margin:0;
-}
-
-#map{
-  height:650px;
-  margin:20px;
-  border-radius:12px;
-  border:1px solid #334155;
-}
-
-/* marker */
+body{margin:0;background:#020617;color:white;font-family:Segoe UI,Arial,sans-serif}
+header{padding:18px 24px;background:#111827;border-bottom:1px solid #334155}
+main{max-width:1250px;margin:auto;padding:22px}
+.card{background:#0f172a;border:1px solid #334155;border-radius:16px;padding:18px;margin-bottom:18px}
+#map{height:620px;border-radius:14px;border:1px solid #334155;overflow:hidden;background:#020617}
+.muted{color:#94a3b8}
 .truck-marker{
-  width:14px;
-  height:14px;
-  border-radius:50%;
-  background:#38bdf8;
-  border:3px solid white;
-  box-shadow:0 0 12px rgba(56,189,248,.8);
+  width:18px;height:18px;border-radius:50%;
+  background:#38bdf8;border:3px solid white;
+  box-shadow:0 0 14px rgba(56,189,248,.95);
 }
-
 .marker-label{
-  position:absolute;
-  top:-22px;
-  left:50%;
+  position:absolute;top:-24px;left:50%;
   transform:translateX(-50%);
-  background:#020617;
-  border:1px solid #334155;
-  padding:2px 6px;
-  font-size:11px;
-  border-radius:6px;
-  white-space:nowrap;
+  background:#020617;border:1px solid #334155;
+  padding:3px 7px;border-radius:7px;
+  font-size:11px;white-space:nowrap;color:white;
+}
+.marker-wrap{
+  position:relative;
+  width:20px;
+  height:20px;
 }
 </style>
 </head>
 
 <body>
+<header>
+  <h2 style="margin:0">VTC Portal</h2>
+</header>
 
-<div id="map"></div>
+<main>
+  <section class="card">
+    <h2>Live ATS Map</h2>
+    <div id="map"></div>
+    <p id="mapStatus" class="muted">Loading ATS map...</p>
+  </section>
+</main>
 
-<script>
+<script type="module">
+import { PMTiles, Protocol } from "https://cdn.jsdelivr.net/npm/pmtiles@3.2.0/+esm";
 
-const guildId = new URLSearchParams(location.search).get("guildId");
 const API = location.origin;
+const qs = new URLSearchParams(location.search);
+const guildId = qs.get("guildId") || localStorage.getItem("oweld.guildId") || "";
 
-/* ============================
-   PMTiles MAP SETUP
-============================ */
+const PMTILES_URL = `${location.origin}/map-assets/ats.pmtiles`;
 
-const protocol = new pmtiles.Protocol();
-maplibregl.addProtocol("pmtiles", protocol.tile);
+let map;
+let markers = [];
 
-const map = new maplibregl.Map({
-  container:"map",
-  style:{
-    version:8,
-    glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-    sources:{
-      ats:{
-        type:"vector",
-        url:"pmtiles://" + location.origin + "/map-assets/ats.pmtiles"
-      }
-    },
-    layers:[
-      {
-        id:"bg",
-        type:"background",
-        paint:{ "background-color":"#020617" }
-      },
-      {
-        id:"roads",
-        type:"line",
-        source:"ats",
-        "source-layer":"default",
-        paint:{
-          "line-color":"#38bdf8",
-          "line-width":[
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            3,0.5,
-            6,1.5,
-            10,3
-          ]
+function esc(v){
+  return String(v ?? "").replace(/[&<>"']/g, s => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
+  }[s]));
+}
+
+async function detectSourceLayer(){
+  const p = new PMTiles(PMTILES_URL);
+  const metadata = await p.getMetadata();
+  const layers = metadata?.vector_layers || [];
+  return layers[0]?.id || "default";
+}
+
+async function initMap(){
+  const protocol = new Protocol();
+  maplibregl.addProtocol("pmtiles", protocol.tile);
+
+  const sourceLayer = await detectSourceLayer();
+  console.log("Using PMTiles source layer:", sourceLayer);
+
+  map = new maplibregl.Map({
+    container:"map",
+    style:{
+      version:8,
+      glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+      sources:{
+        ats:{
+          type:"vector",
+          url:`pmtiles://${PMTILES_URL}`
         }
-      }
-    ]
-  },
-  center:[-98,39],
-  zoom:4
-});
+      },
+      layers:[
+        {
+          id:"background",
+          type:"background",
+          paint:{"background-color":"#081018"}
+        },
+        {
+          id:"ats-fill",
+          type:"fill",
+          source:"ats",
+          "source-layer":sourceLayer,
+          paint:{
+            "fill-color":"#102033",
+            "fill-opacity":0.45
+          }
+        },
+        {
+          id:"ats-roads-casing",
+          type:"line",
+          source:"ats",
+          "source-layer":sourceLayer,
+          filter:["has","roadType"],
+          paint:{
+            "line-color":"#10243a",
+            "line-width":["interpolate",["linear"],["zoom"],3,1.5,6,3,9,5,12,8],
+            "line-opacity":0.95
+          }
+        },
+        {
+          id:"ats-roads",
+          type:"line",
+          source:"ats",
+          "source-layer":sourceLayer,
+          filter:["has","roadType"],
+          paint:{
+            "line-color":["match",["get","roadType"],"freeway","#4fc3ff","highway","#38bdf8","local","#1d75a8","#2b88bd"],
+            "line-width":["interpolate",["linear"],["zoom"],3,0.8,6,1.7,9,3,12,5],
+            "line-opacity":0.96
+          }
+        }
+      ]
+    },
+    center:[-98.5795,39.8283],
+    zoom:4.8
+  });
 
-map.addControl(new maplibregl.NavigationControl());
+  map.addControl(new maplibregl.NavigationControl(),"top-right");
 
-/* ============================
-   MARKER FIX (NO DRIFT)
-============================ */
+  map.on("load",()=>{
+    mapStatus.textContent = "ATS map loaded. Waiting for telemetry.";
+    loadTelemetry();
+  });
+
+  map.on("error",e=>{
+    console.warn("Map error:", e?.error || e);
+    mapStatus.textContent = "Map error. Check /map-assets/ats.pmtiles route.";
+  });
+}
 
 function createMarker(label){
   const wrap = document.createElement("div");
-
-  // critical fix
-  wrap.style.position="relative";
-  wrap.style.width="20px";
-  wrap.style.height="20px";
-  wrap.style.transform="translate(-50%,-50%)";
+  wrap.className = "marker-wrap";
 
   const dot = document.createElement("div");
-  dot.className="truck-marker";
+  dot.className = "truck-marker";
 
   const text = document.createElement("div");
-  text.className="marker-label";
-  text.innerText = label;
+  text.className = "marker-label";
+  text.textContent = label;
 
   wrap.appendChild(dot);
   wrap.appendChild(text);
-
   return wrap;
 }
 
-/* ============================
-   TELEMETRY
-============================ */
-
-let markers = [];
-
 function getLngLat(u){
-  const lng = u.longitude ?? u.lng ?? u.lon;
-  const lat = u.latitude ?? u.lat;
+  const lng = Number(u.longitude ?? u.Longitude ?? u.lng ?? u.Lng ?? u.lon ?? u.Lon);
+  const lat = Number(u.latitude ?? u.Latitude ?? u.lat ?? u.Lat);
 
-  if(lng == null || lat == null) return null;
+  if(!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+  if(Math.abs(lng) > 180 || Math.abs(lat) > 90) return null;
 
   return [lng,lat];
 }
 
 async function loadTelemetry(){
+  if(!guildId){
+    mapStatus.textContent = "Missing guildId. Use portal.html?guildId=YOUR_SERVER_ID";
+    return;
+  }
+
   try{
-    const res = await fetch(`${API}/api/telemetry?guildId=${guildId}`);
+    const res = await fetch(`${API}/api/telemetry?guildId=${encodeURIComponent(guildId)}`);
     const json = await res.json();
+    const units = json.data || json.Data || [];
 
     markers.forEach(m=>m.remove());
-    markers=[];
+    markers = [];
 
-    (json.data || []).forEach(u=>{
+    units.forEach(u=>{
       const ll = getLngLat(u);
       if(!ll) return;
 
+      const name =
+        u.driver || u.Driver ||
+        u.driverName || u.DriverName ||
+        u.truck || u.Truck ||
+        "Driver";
+
       const marker = new maplibregl.Marker({
-        element: createMarker(u.driver || "Driver"),
+        element:createMarker(name),
         anchor:"center"
       })
       .setLngLat(ll)
+      .setPopup(new maplibregl.Popup().setHTML(`
+        <b>${esc(name)}</b><br>
+        ${esc(u.truck || u.Truck || "")}<br>
+        ${esc(u.status || u.Status || "")}
+      `))
       .addTo(map);
 
       markers.push(marker);
     });
 
-  }catch{}
+    mapStatus.textContent =
+      markers.length > 0
+        ? `Showing ${markers.length} live unit${markers.length === 1 ? "" : "s"}.`
+        : "Telemetry loaded, but no valid marker coordinates found.";
+  }catch(e){
+    console.warn(e);
+    mapStatus.textContent = "Telemetry failed to load.";
+  }
 }
 
-setInterval(loadTelemetry, 3000);
-
-/* ============================
-   START
-============================ */
-
-loadTelemetry();
-
+await initMap();
+setInterval(loadTelemetry,3000);
 </script>
-
 </body>
 </html>
