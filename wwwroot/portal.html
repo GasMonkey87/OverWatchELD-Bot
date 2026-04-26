@@ -280,7 +280,10 @@ function getName(unit){
 
 function makeMarker(type,label){
   const wrap = document.createElement("div");
-  wrap.className = "marker-wrap";
+  wrap.style.position = "relative";
+  wrap.style.width = "20px";
+  wrap.style.height = "20px";
+  wrap.style.transform = "translate(-50%,-50%)";
 
   const dot = document.createElement("div");
   dot.className = type;
@@ -310,17 +313,10 @@ async function loadTelemetry(){
     const ll = getLngLat(u);
     if(!ll) return;
 
-    const marker = new maplibregl.Marker(makeMarker("truck-marker", getName(u)))
-      .setLngLat(ll)
-      .setPopup(new maplibregl.Popup().setHTML(`
-        <b>${esc(getName(u))}</b><br>
-        ${esc(u.truck || u.Truck || u.truckNumber || u.TruckNumber || "")}<br>
-        ${esc(u.status || u.Status || "")}
-      `))
-      .addTo(map);
-
-    truckMarkers.push(marker);
-  });
+    new maplibregl.Marker({
+  element: makeMarker("truck-marker", getName(u)),
+  anchor: "center"
+})
 
   renderConvoyLine(units);
 
