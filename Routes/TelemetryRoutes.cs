@@ -1,513 +1,900 @@
+using System;
 using System.Globalization;
+using System.Net.Http;
+using System.Text;
 using System.Text.Json;
-using Microsoft.AspNetCore.Mvc;
+using OverWatchELD.Models;
 
-namespace OverWatchELD.VtcBot.Routes;
-
-public static class TelemetryRoutes
+namespace OverWatchELD.Services
 {
-    private static readonly Dictionary<string, List<TelemetryUnit>> Units = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly object LockObj = new();
-
-    public static WebApplication MapTelemetryRoutes(this WebApplication app)
+    public sealed class TelemetrySnapshot
     {
-        app.MapGet("/api/telemetry", ([FromQuery] string? guildId) =>
+        public bool EngineOn { get; init; }
+        public double SpeedMps { get; init; }
+
+        public string? City { get; init; }
+        public string? State { get; init; }
+        public string? TruckMakeModel { get; init; }
+
+        public string? DriverId { get; init; }
+        public string? DriverName { get; init; }
+        public string? TruckId { get; init; }
+        public string? TruckName { get; init; }
+
+        public double? OdometerMiles { get; init; }
+        public double? FuelGallons { get; init; }
+        public double? FuelCapacityGallons { get; init; }
+        public double? FuelPct { get; init; }
+        public double? DamagePct { get; init; }
+
+        public double? CargoWeightLbs { get; init; }
+        public double? TrailerWeightLbs { get; init; }
+        public double? GrossWeightLbs { get; init; }
+
+        public DateTimeOffset? GameTimeUtc { get; init; }
+        public double? GameTimeScale { get; init; }
+
+        public bool Connected { get; init; }
+        public string Source { get; init; } = "None";
+        public DateTimeOffset SeenUtc { get; init; }
+
+        public string? SourceCity { get; init; }
+        public string? SourceCompany { get; init; }
+        public string? DestinationCity { get; init; }
+        public string? DestinationCompany { get; init; }
+
+        public double? WorldX { get; init; }
+        public double? WorldZ { get; init; }
+        public double? HeadingDeg { get; init; }
+
+        public double? GpsLatitude { get; init; }
+        public double? GpsLongitude { get; init; }
+
+        public double? MarkerX => GpsLongitude ?? WorldX;
+        public double? MarkerY => GpsLatitude ?? WorldZ;
+        public bool HasMarkerCoordinates => MarkerX.HasValue && MarkerY.HasValue;
+    }
+
+    public sealed class TelemetryService
+    {
+        private readonly TelemetryDutyAutoService _autoDuty = new();
+
+        private bool? _lastEngineOn;
+        private DateTimeOffset _lastLiveTelemetryPostUtc = DateTimeOffset.MinValue;
+
+        public bool AutoPostTripOnEngineOff { get; set; } = true;
+
+        private readonly System.Timers.Timer _timer;
+        private readonly HttpClient _http = new HttpClient();
+
+        public event Action<TelemetrySnapshot>? Updated;
+
+        public TelemetrySnapshot? LastSnapshot { get; private set; }
+
+        public string? LastRawJson { get; private set; }
+
+        public int PollMs { get; set; } = 250;
+
+        public string NavCity { get; private set; } = "";
+        public string NavState { get; private set; } = "";
+
+        public string LocationText =>
+            string.IsNullOrWhiteSpace(NavCity) && string.IsNullOrWhiteSpace(NavState)
+                ? ""
+                : $"{NavCity}, {NavState}".Trim().Trim(',');
+
+        public string EndpointUrl { get; set; } = "http://localhost:25555/api/ats/telemetry";
+
+        private volatile bool _polling;
+
+        public TelemetryService()
         {
-            LoadFromDisk();
+            _timer = new System.Timers.Timer(PollMs);
+            _timer.AutoReset = true;
+            _timer.Elapsed += async (_, __) => await PollAsync();
+        }
 
-            if (string.IsNullOrWhiteSpace(guildId))
-                return Results.Ok(new { ok = true, data = Array.Empty<TelemetryUnit>(), count = 0, warning = "MissingGuildId" });
-
-            guildId = guildId.Trim();
-
-            lock (LockObj)
-            {
-                if (!Units.TryGetValue(guildId, out var units))
-                    units = new List<TelemetryUnit>();
-
-                units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 10);
-
-                return Results.Ok(new
-                {
-                    ok = true,
-                    guildId,
-                    count = units.Count,
-                    data = units.OrderByDescending(x => x.UpdatedUtc).ToList()
-                });
-            }
-        });
-
-        app.MapPost("/api/telemetry", async (HttpRequest req) =>
+        public void Start()
         {
-            TelemetryUnit? unit;
+            _timer.Interval = PollMs;
+            _timer.Start();
+        }
+
+        public void Stop()
+        {
+            _timer.Stop();
 
             try
             {
-                unit = await ReadTelemetryUnitAsync(req);
-            }
-            catch (Exception ex)
-            {
-                return Results.BadRequest(new
-                {
-                    ok = false,
-                    error = "BadJson",
-                    hint = "Expected telemetry JSON body.",
-                    detail = ex.Message
-                });
-            }
-
-            var queryGuildId = FirstNonBlank(req.Query["guildId"].ToString(), req.Query["serverId"].ToString());
-
-            if (!string.IsNullOrWhiteSpace(queryGuildId))
-                unit.GuildId = queryGuildId.Trim();
-
-            if (string.IsNullOrWhiteSpace(unit.GuildId))
-                return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
-
-            if (string.IsNullOrWhiteSpace(unit.DriverDiscordUserId))
-            {
-                unit.DriverDiscordUserId = FirstNonBlank(
-                    unit.DriverDiscordUserId,
-                    unit.DiscordUserId,
-                    unit.UserId,
-                    unit.Driver,
-                    unit.DriverName,
-                    unit.Truck,
-                    unit.TruckName,
-                    Guid.NewGuid().ToString("N")
-                )!;
-            }
-
-            unit.GuildId = unit.GuildId.Trim();
-            unit.DriverDiscordUserId = unit.DriverDiscordUserId.Trim();
-            unit.UpdatedUtc = DateTimeOffset.UtcNow;
-
-            NormalizeCoordinates(unit);
-
-            lock (LockObj)
-            {
-                if (!Units.TryGetValue(unit.GuildId, out var list))
-                {
-                    list = new List<TelemetryUnit>();
-                    Units[unit.GuildId] = list;
-                }
-
-                list.RemoveAll(x =>
-                    string.Equals(x.DriverDiscordUserId, unit.DriverDiscordUserId, StringComparison.OrdinalIgnoreCase));
-
-                list.Add(unit);
-                list.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 10);
-
-                SaveToDiskUnsafe();
-            }
-
-            return Results.Ok(new
-            {
-                ok = true,
-                stored = true,
-                guildId = unit.GuildId,
-                driverDiscordUserId = unit.DriverDiscordUserId,
-                longitude = unit.Longitude,
-                latitude = unit.Latitude,
-                conversionMode = unit.ConversionMode,
-                data = unit
-            });
-        });
-
-        app.MapPost("/api/telemetry/live", async (HttpRequest req) =>
-        {
-            TelemetryUnit? unit;
-
-            try
-            {
-                unit = await ReadTelemetryUnitAsync(req);
-            }
-            catch (Exception ex)
-            {
-                return Results.BadRequest(new { ok = false, error = "BadJson", detail = ex.Message });
-            }
-
-            var queryGuildId = FirstNonBlank(req.Query["guildId"].ToString(), req.Query["serverId"].ToString());
-
-            if (!string.IsNullOrWhiteSpace(queryGuildId))
-                unit.GuildId = queryGuildId.Trim();
-
-            if (string.IsNullOrWhiteSpace(unit.GuildId))
-                return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
-
-            if (string.IsNullOrWhiteSpace(unit.DriverDiscordUserId))
-                unit.DriverDiscordUserId = FirstNonBlank(unit.Driver, unit.DriverName, unit.Truck, Guid.NewGuid().ToString("N"))!;
-
-            unit.UpdatedUtc = DateTimeOffset.UtcNow;
-            NormalizeCoordinates(unit);
-
-            lock (LockObj)
-            {
-                if (!Units.TryGetValue(unit.GuildId, out var list))
-                {
-                    list = new List<TelemetryUnit>();
-                    Units[unit.GuildId] = list;
-                }
-
-                list.RemoveAll(x => string.Equals(x.DriverDiscordUserId, unit.DriverDiscordUserId, StringComparison.OrdinalIgnoreCase));
-                list.Add(unit);
-                SaveToDiskUnsafe();
-            }
-
-            return Results.Ok(new { ok = true, data = unit });
-        });
-
-        app.MapDelete("/api/telemetry", ([FromQuery] string? guildId) =>
-        {
-            lock (LockObj)
-            {
-                if (string.IsNullOrWhiteSpace(guildId))
-                    Units.Clear();
-                else
-                    Units.Remove(guildId.Trim());
-
-                SaveToDiskUnsafe();
-            }
-
-            return Results.Ok(new { ok = true });
-        });
-
-        return app;
-    }
-
-    private static async Task<TelemetryUnit> ReadTelemetryUnitAsync(HttpRequest req)
-    {
-        using var doc = await JsonDocument.ParseAsync(req.Body);
-        var root = doc.RootElement;
-
-        if (root.ValueKind == JsonValueKind.Object && TryGetElement(root, out var dataEl, "data") && dataEl.ValueKind == JsonValueKind.Object)
-            root = dataEl;
-
-        var unit = new TelemetryUnit
-        {
-            GuildId = GetString(root, "guildId", "GuildId", "serverId", "ServerId") ?? "",
-            DriverDiscordUserId = GetString(root, "driverDiscordUserId", "DriverDiscordUserId", "discordUserId", "DiscordUserId") ?? "",
-
-            DiscordUserId = GetString(root, "discordUserId", "DiscordUserId"),
-            UserId = GetString(root, "userId", "UserId"),
-
-            Driver = GetString(root, "driver", "Driver", "name", "Name"),
-            DriverName = GetString(root, "driverName", "DriverName", "displayName", "DisplayName"),
-            Truck = GetString(root, "truck", "Truck"),
-            TruckName = GetString(root, "truckName", "TruckName"),
-            TruckNumber = GetString(root, "truckNumber", "TruckNumber"),
-
-            X = GetDouble(root, "x", "X") ?? 0,
-            Y = GetDouble(root, "y", "Y") ?? 0,
-            MapX = GetDouble(root, "mapX", "MapX") ?? 0,
-            MapY = GetDouble(root, "mapY", "MapY") ?? 0,
-            WorldX = GetDouble(root, "worldX", "WorldX") ?? 0,
-            WorldZ = GetDouble(root, "worldZ", "WorldZ") ?? 0,
-            MarkerX = GetDouble(root, "markerX", "MarkerX") ?? 0,
-            MarkerY = GetDouble(root, "markerY", "MarkerY") ?? 0,
-
-            Longitude = GetDouble(root, "longitude", "Longitude", "gpsLongitude", "GpsLongitude"),
-            Latitude = GetDouble(root, "latitude", "Latitude", "gpsLatitude", "GpsLatitude"),
-            Lng = GetDouble(root, "lng", "Lng"),
-            Lat = GetDouble(root, "lat", "Lat"),
-            Lon = GetDouble(root, "lon", "Lon"),
-
-            City = GetString(root, "city", "City"),
-            State = GetString(root, "state", "State"),
-            Status = GetString(root, "status", "Status", "dutyStatus", "DutyStatus"),
-
-            SourceCity = GetString(root, "sourceCity", "SourceCity", "pickupCity", "PickupCity"),
-            SourceCompany = GetString(root, "sourceCompany", "SourceCompany", "pickupCompany", "PickupCompany"),
-            DestinationCity = GetString(root, "destinationCity", "DestinationCity", "dropCity", "DropCity"),
-            DestinationCompany = GetString(root, "destinationCompany", "DestinationCompany", "dropCompany", "DropCompany")
-        };
-
-        return unit;
-    }
-
-    private static void NormalizeCoordinates(TelemetryUnit unit)
-    {
-        if (IsValidLngLat(unit.Longitude, unit.Latitude))
-        {
-            unit.Lng = unit.Longitude;
-            unit.Lon = unit.Longitude;
-            unit.Lat = unit.Latitude;
-            unit.ConversionMode ??= "GPS";
-            return;
-        }
-
-        if (IsValidLngLat(unit.Lng, unit.Lat))
-        {
-            unit.Longitude = unit.Lng;
-            unit.Latitude = unit.Lat;
-            unit.Lon = unit.Lng;
-            unit.ConversionMode = "LNG_LAT";
-            return;
-        }
-
-        if (IsValidLngLat(unit.Lon, unit.Lat))
-        {
-            unit.Longitude = unit.Lon;
-            unit.Latitude = unit.Lat;
-            unit.Lng = unit.Lon;
-            unit.ConversionMode = "LON_LAT";
-            return;
-        }
-
-        var gameX = FirstNonZero(unit.MarkerX, unit.WorldX, unit.MapX, unit.X);
-        var gameY = FirstNonZero(unit.MarkerY, unit.WorldZ, unit.MapY, unit.Y);
-
-        if (gameX == 0 && gameY == 0)
-        {
-            unit.ConversionMode = "NO_COORDINATES";
-            return;
-        }
-
-        var converted = AtsCoordinateConverter.ToLngLat(gameX, gameY);
-
-        unit.Longitude = converted.Longitude;
-        unit.Latitude = converted.Latitude;
-        unit.Lng = converted.Longitude;
-        unit.Lon = converted.Longitude;
-        unit.Lat = converted.Latitude;
-        unit.ConversionMode = "ATS_XY_TO_LNGLAT";
-    }
-
-    private static bool IsValidLngLat(double? lng, double? lat)
-    {
-        return lng.HasValue &&
-               lat.HasValue &&
-               double.IsFinite(lng.Value) &&
-               double.IsFinite(lat.Value) &&
-               Math.Abs(lng.Value) <= 180 &&
-               Math.Abs(lat.Value) <= 90;
-    }
-
-    private static double FirstNonZero(params double[] values)
-    {
-        foreach (var v in values)
-        {
-            if (double.IsFinite(v) && Math.Abs(v) > 0.000001)
-                return v;
-        }
-
-        return 0;
-    }
-
-    private static string? FirstNonBlank(params string?[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-                return value.Trim();
-        }
-
-        return null;
-    }
-
-    private static bool TryGetElement(JsonElement root, out JsonElement element, params string[] path)
-    {
-        element = root;
-
-        foreach (var part in path)
-        {
-            if (element.ValueKind != JsonValueKind.Object)
-                return false;
-
-            if (!element.TryGetProperty(part, out element))
-                return false;
-        }
-
-        return true;
-    }
-
-    private static string? GetString(JsonElement root, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            if (!root.TryGetProperty(name, out var el))
-                continue;
-
-            try
-            {
-                if (el.ValueKind == JsonValueKind.String)
-                {
-                    var s = el.GetString();
-                    return string.IsNullOrWhiteSpace(s) ? null : s.Trim();
-                }
-
-                if (el.ValueKind == JsonValueKind.Number ||
-                    el.ValueKind == JsonValueKind.True ||
-                    el.ValueKind == JsonValueKind.False)
-                {
-                    return el.ToString();
-                }
+                FleetAutoLoggerService.FlushNow();
             }
             catch
             {
             }
         }
 
-        return null;
-    }
-
-    private static double? GetDouble(JsonElement root, params string[] names)
-    {
-        foreach (var name in names)
+        private async System.Threading.Tasks.Task PollAsync()
         {
-            if (!root.TryGetProperty(name, out var el))
-                continue;
+            if (_polling) return;
+            _polling = true;
+
+            try
+            {
+                string BuildUrl(string baseUrl)
+                {
+                    return baseUrl.Contains("?")
+                        ? $"{baseUrl}&t={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
+                        : $"{baseUrl}?t={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+                }
+
+                string? json = null;
+                string usedEndpoint = EndpointUrl;
+
+                try
+                {
+                    using var resp = await _http.GetAsync(BuildUrl(EndpointUrl));
+                    if (resp.IsSuccessStatusCode)
+                        json = await resp.Content.ReadAsStringAsync();
+                }
+                catch
+                {
+                    json = null;
+                }
+
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    var alt = TrySwapAtsEtsEndpoint(EndpointUrl);
+
+                    if (!string.IsNullOrWhiteSpace(alt) &&
+                        !string.Equals(alt, EndpointUrl, StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            using var resp2 = await _http.GetAsync(BuildUrl(alt));
+                            if (resp2.IsSuccessStatusCode)
+                            {
+                                json = await resp2.Content.ReadAsStringAsync();
+                                usedEndpoint = alt;
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+
+                var app0 = System.Windows.Application.Current as OverWatchELD.App;
+                var driverName0 = (app0?.Session?.DriverName ?? "Driver").Trim();
+
+                if (string.IsNullOrWhiteSpace(driverName0))
+                    driverName0 = "Driver";
+
+                var driverId0 = MakeStableIdFromName(driverName0);
+
+                if (string.IsNullOrWhiteSpace(json))
+                {
+                    LastRawJson = null;
+
+                    LastSnapshot = new TelemetrySnapshot
+                    {
+                        Connected = false,
+                        Source = "Funbit:25555",
+                        EngineOn = false,
+                        SpeedMps = 0,
+                        City = null,
+                        State = null,
+                        WorldX = null,
+                        WorldZ = null,
+                        HeadingDeg = null,
+                        GpsLatitude = null,
+                        GpsLongitude = null,
+                        TruckMakeModel = null,
+                        DriverId = driverId0,
+                        DriverName = driverName0,
+                        TruckId = null,
+                        TruckName = null,
+                        GameTimeUtc = null,
+                        GameTimeScale = null,
+                        OdometerMiles = null,
+                        FuelGallons = null,
+                        FuelCapacityGallons = null,
+                        FuelPct = null,
+                        DamagePct = null,
+                        CargoWeightLbs = null,
+                        TrailerWeightLbs = null,
+                        GrossWeightLbs = null,
+                        SourceCity = null,
+                        SourceCompany = null,
+                        DestinationCity = null,
+                        DestinationCompany = null,
+                        SeenUtc = DateTimeOffset.UtcNow
+                    };
+
+                    Updated?.Invoke(LastSnapshot);
+                    return;
+                }
+
+                if (!string.Equals(usedEndpoint, EndpointUrl, StringComparison.OrdinalIgnoreCase))
+                    EndpointUrl = usedEndpoint;
+
+                LastRawJson = json;
+
+                try
+                {
+                    using var probeDoc = JsonDocument.Parse(json);
+
+                    if (!HasUsefulTruckData(probeDoc.RootElement))
+                    {
+                        var alt2 = TrySwapAtsEtsEndpoint(usedEndpoint);
+
+                        if (!string.IsNullOrWhiteSpace(alt2) &&
+                            !string.Equals(alt2, usedEndpoint, StringComparison.OrdinalIgnoreCase))
+                        {
+                            using var resp3 = await _http.GetAsync(BuildUrl(alt2));
+
+                            if (resp3.IsSuccessStatusCode)
+                            {
+                                var json2 = await resp3.Content.ReadAsStringAsync();
+
+                                if (!string.IsNullOrWhiteSpace(json2))
+                                {
+                                    using var probeDoc2 = JsonDocument.Parse(json2);
+
+                                    if (HasUsefulTruckData(probeDoc2.RootElement))
+                                    {
+                                        json = json2;
+                                        usedEndpoint = alt2;
+                                        EndpointUrl = alt2;
+                                        LastRawJson = json2;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                }
+
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                bool connected = TryGetBool(root, "game", "connected") ?? false;
+
+                DateTimeOffset? gameTime = null;
+                var gameTimeStr = TryGetString(root, "game", "time");
+
+                if (!string.IsNullOrWhiteSpace(gameTimeStr) &&
+                    DateTimeOffset.TryParse(gameTimeStr, out var dto))
+                {
+                    gameTime = dto.ToUniversalTime();
+                }
+
+                if (gameTime.HasValue)
+                    EldClock.SetGameTime(gameTime.Value);
+
+                double? timeScale = TryGetDouble(root, "game", "timeScale");
+
+                bool engineOn =
+                    TryGetBool(root, "truck", "engineOn")
+                    ?? TryGetBool(root, "truck", "engine", "on")
+                    ?? TryGetBool(root, "truck", "engine", "enabled")
+                    ?? TryGetBool(root, "truck", "engineRunning")
+                    ?? TryGetBool(root, "truck", "engine", "running")
+                    ?? false;
+
+                try
+                {
+                    if (AutoPostTripOnEngineOff && _lastEngineOn == true && engineOn == false && connected)
+                    {
+                        var day = DateOnly.FromDateTime(DateTime.Now);
+                        var existing = InspectionStore.LoadMostRecent(day);
+                        InspectionLog? existingLog = existing.HasValue ? existing.Value.Log : null;
+
+                        if (existingLog == null || !existingLog.PostTripCompleted)
+                        {
+                            var log = existingLog ?? InspectionLog.CreateDefault(day, loadId: null);
+                            log.PostTripCompleted = true;
+                            log.UpdatedUtc = DateTimeOffset.UtcNow;
+                            log.PostTripSignedAtUtc ??= DateTimeOffset.UtcNow;
+                            log.PostTripDriverSignatureName ??=
+                                (System.Windows.Application.Current as OverWatchELD.App)?.Session?.DriverName;
+
+                            InspectionStore.Save(log);
+                        }
+                    }
+
+                    _lastEngineOn = engineOn;
+                }
+                catch
+                {
+                }
+
+                double rawSpeed =
+                    TryGetDouble(root, "truck", "speed")
+                    ?? TryGetDouble(root, "truck", "speedKmh")
+                    ?? TryGetDouble(root, "truck", "speed_kmh")
+                    ?? TryGetDouble(root, "truck", "speedMps")
+                    ?? TryGetDouble(root, "truck", "speed_mps")
+                    ?? 0.0;
+
+                double speedMps = rawSpeed > 70.0 ? rawSpeed / 3.6 : rawSpeed;
+                double speedMph = speedMps * 2.23694;
+                var gameNow = EldClock.UtcNow;
+
+                try
+                {
+                    var app = System.Windows.Application.Current as OverWatchELD.App;
+                    var duty = app?.DutyMachine as DutyStateMachine;
+
+                    if (duty != null)
+                    {
+                        _autoDuty.OnTelemetryTick(
+                            speedMph: speedMph,
+                            engineOn: engineOn,
+                            parkingBrake: false,
+                            gameNowUtc: gameNow,
+                            duty: duty
+                        );
+                    }
+                }
+                catch
+                {
+                }
+
+                string? curCity =
+                    TryGetString(root, "truck", "navigation", "currentCity")
+                    ?? TryGetString(root, "truck", "navigation", "nearestCity")
+                    ?? TryGetString(root, "navigation", "currentCity")
+                    ?? TryGetString(root, "navigation", "nearestCity")
+                    ?? TryGetString(root, "navigation", "city")
+                    ?? TryGetString(root, "job", "sourceCity")
+                    ?? TryGetString(root, "job", "destinationCity");
+
+                string? curState =
+                    TryGetString(root, "truck", "navigation", "currentState")
+                    ?? TryGetString(root, "navigation", "currentState")
+                    ?? TryGetString(root, "navigation", "state");
+
+                if (!string.IsNullOrWhiteSpace(curCity))
+                    NavCity = curCity.Trim();
+
+                if (!string.IsNullOrWhiteSpace(curState))
+                    NavState = curState.Trim();
+
+                string? sourceCity =
+                    TryGetString(root, "job", "sourceCity")
+                    ?? TryGetString(root, "job", "source", "city");
+
+                string? sourceCompany =
+                    TryGetString(root, "job", "sourceCompany")
+                    ?? TryGetString(root, "job", "source", "company")
+                    ?? TryGetString(root, "job", "sourceCompanyId")
+                    ?? TryGetString(root, "job", "source_company");
+
+                string? destinationCity =
+                    TryGetString(root, "job", "destinationCity")
+                    ?? TryGetString(root, "job", "destination", "city");
+
+                string? destinationCompany =
+                    TryGetString(root, "job", "destinationCompany")
+                    ?? TryGetString(root, "job", "destination", "company")
+                    ?? TryGetString(root, "job", "destinationCompanyId")
+                    ?? TryGetString(root, "job", "destination_company");
+
+                double? worldX =
+                    TryGetDouble(root, "truck", "worldPlacement", "position", "x")
+                    ?? TryGetDouble(root, "truck", "worldPlacement", "x")
+                    ?? TryGetDouble(root, "truck", "placement", "position", "x")
+                    ?? TryGetDouble(root, "truck", "placement", "x")
+                    ?? TryGetDouble(root, "truck", "position", "x")
+                    ?? TryGetDouble(root, "truck", "coordinateX")
+                    ?? TryGetDouble(root, "truck", "coordinate", "x")
+                    ?? TryGetDouble(root, "truck", "coordinates", "x")
+                    ?? TryGetDouble(root, "truck", "x");
+
+                double? worldZ =
+                    TryGetDouble(root, "truck", "worldPlacement", "position", "z")
+                    ?? TryGetDouble(root, "truck", "worldPlacement", "z")
+                    ?? TryGetDouble(root, "truck", "placement", "position", "z")
+                    ?? TryGetDouble(root, "truck", "placement", "z")
+                    ?? TryGetDouble(root, "truck", "position", "z")
+                    ?? TryGetDouble(root, "truck", "coordinateZ")
+                    ?? TryGetDouble(root, "truck", "coordinate", "z")
+                    ?? TryGetDouble(root, "truck", "coordinates", "z")
+                    ?? TryGetDouble(root, "truck", "z");
+
+                double? headingDeg =
+                    TryGetDouble(root, "truck", "worldPlacement", "orientation", "heading")
+                    ?? TryGetDouble(root, "truck", "worldPlacement", "heading")
+                    ?? TryGetDouble(root, "truck", "placement", "orientation", "heading")
+                    ?? TryGetDouble(root, "truck", "placement", "heading")
+                    ?? TryGetDouble(root, "navigation", "gps", "heading")
+                    ?? TryGetDouble(root, "navigation", "heading")
+                    ?? TryGetDouble(root, "truck", "heading");
+
+                double? gpsLat =
+                    TryGetDouble(root, "navigation", "gps", "latitude")
+                    ?? TryGetDouble(root, "navigation", "latitude")
+                    ?? TryGetDouble(root, "gps", "latitude")
+                    ?? TryGetDouble(root, "truck", "gps", "latitude")
+                    ?? TryGetDouble(root, "truck", "latitude")
+                    ?? TryGetDouble(root, "truck", "lat")
+                    ?? TryGetDouble(root, "latitude")
+                    ?? TryGetDouble(root, "lat");
+
+                double? gpsLon =
+                    TryGetDouble(root, "navigation", "gps", "longitude")
+                    ?? TryGetDouble(root, "navigation", "longitude")
+                    ?? TryGetDouble(root, "gps", "longitude")
+                    ?? TryGetDouble(root, "truck", "gps", "longitude")
+                    ?? TryGetDouble(root, "truck", "longitude")
+                    ?? TryGetDouble(root, "truck", "lon")
+                    ?? TryGetDouble(root, "truck", "lng")
+                    ?? TryGetDouble(root, "longitude")
+                    ?? TryGetDouble(root, "lon")
+                    ?? TryGetDouble(root, "lng");
+
+                string? truckMake =
+                    TryGetString(root, "truck", "make")
+                    ?? TryGetString(root, "truck", "brand");
+
+                string? truckModel =
+                    TryGetString(root, "truck", "model")
+                    ?? TryGetString(root, "truck", "name");
+
+                string? truckMakeModel = CombineClean(truckMake, truckModel);
+
+                string? truckId =
+                    TryGetString(root, "truck", "id")
+                    ?? TryGetString(root, "truck", "truckId")
+                    ?? truckModel;
+
+                string? truckName =
+                    TryGetString(root, "truck", "name")
+                    ?? truckMakeModel
+                    ?? truckId;
+
+                double? odometerMiles = ConvertKmToMilesIfNeeded(
+                    TryGetDouble(root, "truck", "odometer")
+                    ?? TryGetDouble(root, "truck", "odometerKm")
+                    ?? TryGetDouble(root, "truck", "odometer_km")
+                    ?? TryGetDouble(root, "truck", "odometerMiles")
+                    ?? TryGetDouble(root, "truck", "odometer_miles")
+                );
+
+                double? fuelGallons = ConvertLitersToGallonsIfNeeded(
+                    TryGetDouble(root, "truck", "fuel")
+                    ?? TryGetDouble(root, "truck", "fuelLiters")
+                    ?? TryGetDouble(root, "truck", "fuel_liters")
+                    ?? TryGetDouble(root, "truck", "fuelGallons")
+                    ?? TryGetDouble(root, "truck", "fuel_gallons")
+                );
+
+                double? fuelCapacityGallons = ConvertLitersToGallonsIfNeeded(
+                    TryGetDouble(root, "truck", "fuelCapacity")
+                    ?? TryGetDouble(root, "truck", "fuelCapacityLiters")
+                    ?? TryGetDouble(root, "truck", "fuel_capacity_liters")
+                    ?? TryGetDouble(root, "truck", "fuelCapacityGallons")
+                    ?? TryGetDouble(root, "truck", "fuel_capacity_gallons")
+                );
+
+                double? fuelPct = null;
+
+                if (fuelGallons.HasValue && fuelCapacityGallons.HasValue && fuelCapacityGallons.Value > 0)
+                    fuelPct = Math.Clamp((fuelGallons.Value / fuelCapacityGallons.Value) * 100.0, 0.0, 100.0);
+
+                double? damagePct =
+                    NormalizeDamagePct(
+                        TryGetDouble(root, "truck", "damage")
+                        ?? TryGetDouble(root, "truck", "wear")
+                        ?? TryGetDouble(root, "truck", "damagePct")
+                        ?? TryGetDouble(root, "truck", "damage_pct")
+                    );
+
+                double? cargoWeightLbs = ConvertKgToLbsIfNeeded(
+                    TryGetDouble(root, "job", "cargoWeight")
+                    ?? TryGetDouble(root, "job", "cargoWeightKg")
+                    ?? TryGetDouble(root, "job", "cargo_weight_kg")
+                    ?? TryGetDouble(root, "job", "cargoWeightLbs")
+                    ?? TryGetDouble(root, "job", "cargo_weight_lbs")
+                );
+
+                double? trailerWeightLbs = ConvertKgToLbsIfNeeded(
+                    TryGetDouble(root, "trailer", "mass")
+                    ?? TryGetDouble(root, "trailer", "weight")
+                    ?? TryGetDouble(root, "trailer", "weightKg")
+                    ?? TryGetDouble(root, "trailer", "weight_kg")
+                    ?? TryGetDouble(root, "trailer", "weightLbs")
+                    ?? TryGetDouble(root, "trailer", "weight_lbs")
+                );
+
+                double? grossWeightLbs = null;
+
+                if (cargoWeightLbs.HasValue || trailerWeightLbs.HasValue)
+                    grossWeightLbs = (cargoWeightLbs ?? 0) + (trailerWeightLbs ?? 0);
+
+                var snapshot = new TelemetrySnapshot
+                {
+                    Connected = connected,
+                    Source = usedEndpoint,
+                    EngineOn = engineOn,
+                    SpeedMps = speedMps,
+
+                    City = string.IsNullOrWhiteSpace(NavCity) ? null : NavCity,
+                    State = string.IsNullOrWhiteSpace(NavState) ? null : NavState,
+
+                    WorldX = worldX,
+                    WorldZ = worldZ,
+                    HeadingDeg = headingDeg,
+                    GpsLatitude = gpsLat,
+                    GpsLongitude = gpsLon,
+
+                    TruckMakeModel = truckMakeModel,
+                    DriverId = driverId0,
+                    DriverName = driverName0,
+                    TruckId = truckId,
+                    TruckName = truckName,
+
+                    GameTimeUtc = gameTime,
+                    GameTimeScale = timeScale,
+
+                    OdometerMiles = odometerMiles,
+                    FuelGallons = fuelGallons,
+                    FuelCapacityGallons = fuelCapacityGallons,
+                    FuelPct = fuelPct,
+                    DamagePct = damagePct,
+
+                    CargoWeightLbs = cargoWeightLbs,
+                    TrailerWeightLbs = trailerWeightLbs,
+                    GrossWeightLbs = grossWeightLbs,
+
+                    SourceCity = CleanOrNull(sourceCity),
+                    SourceCompany = CleanOrNull(sourceCompany),
+                    DestinationCity = CleanOrNull(destinationCity),
+                    DestinationCompany = CleanOrNull(destinationCompany),
+
+                    SeenUtc = DateTimeOffset.UtcNow
+                };
+
+                LastSnapshot = snapshot;
+
+                Updated?.Invoke(snapshot);
+
+                try
+                {
+                    await TryPostLiveTelemetryToBotAsync(snapshot);
+                }
+                catch
+                {
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                _polling = false;
+            }
+        }
+
+        private async System.Threading.Tasks.Task TryPostLiveTelemetryToBotAsync(TelemetrySnapshot snapshot)
+        {
+            if ((DateTimeOffset.UtcNow - _lastLiveTelemetryPostUtc).TotalSeconds < 3)
+                return;
+
+            if (snapshot == null || !snapshot.HasMarkerCoordinates)
+                return;
+
+            var botBaseUrl = GetBotApiBaseUrl();
+            var guildId = GetGuildId();
+
+            if (string.IsNullOrWhiteSpace(botBaseUrl) || string.IsNullOrWhiteSpace(guildId))
+                return;
+
+            _lastLiveTelemetryPostUtc = DateTimeOffset.UtcNow;
+
+            botBaseUrl = botBaseUrl.Trim().TrimEnd('/');
+
+            var driverDiscordUserId = GetDriverDiscordUserId();
+
+            if (string.IsNullOrWhiteSpace(driverDiscordUserId))
+                driverDiscordUserId = snapshot.DriverId ?? snapshot.DriverName ?? "driver";
+
+            var body = new
+            {
+                guildId = guildId,
+                driverDiscordUserId = driverDiscordUserId,
+                driverName = snapshot.DriverName ?? "Driver",
+                truckName = snapshot.TruckName ?? snapshot.TruckMakeModel ?? "Truck",
+
+                markerX = snapshot.MarkerX,
+                markerY = snapshot.MarkerY,
+                worldX = snapshot.WorldX,
+                worldZ = snapshot.WorldZ,
+                longitude = snapshot.GpsLongitude,
+                latitude = snapshot.GpsLatitude,
+
+                city = snapshot.City,
+                state = snapshot.State,
+                status = snapshot.EngineOn ? "Driving" : "Stopped",
+
+                sourceCity = snapshot.SourceCity,
+                sourceCompany = snapshot.SourceCompany,
+                destinationCity = snapshot.DestinationCity,
+                destinationCompany = snapshot.DestinationCompany
+            };
+
+            var json = JsonSerializer.Serialize(body);
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            await _http.PostAsync(
+                $"{botBaseUrl}/api/telemetry?guildId={Uri.EscapeDataString(guildId)}",
+                content
+            );
+        }
+
+        private static string GetBotApiBaseUrl()
+        {
+            var fromSession = GetSessionValue("BotApiBaseUrl", "BotBaseUrl", "ApiBaseUrl");
+
+            if (!string.IsNullOrWhiteSpace(fromSession))
+                return fromSession;
+
+            return "https://overwatcheld-bot-5.up.railway.app";
+        }
+
+        private static string GetGuildId()
+        {
+            return GetSessionValue("GuildId", "DiscordGuildId", "VtcGuildId") ?? "";
+        }
+
+        private static string GetDriverDiscordUserId()
+        {
+            return GetSessionValue("DiscordUserId", "DriverDiscordUserId", "UserId") ?? "";
+        }
+
+        private static string? GetSessionValue(params string[] names)
+        {
+            try
+            {
+                var app = System.Windows.Application.Current as OverWatchELD.App;
+                var session = app?.Session;
+
+                if (session == null)
+                    return null;
+
+                var type = session.GetType();
+
+                foreach (var name in names)
+                {
+                    var prop = type.GetProperty(name);
+
+                    if (prop == null)
+                        continue;
+
+                    var value = prop.GetValue(session)?.ToString();
+
+                    if (!string.IsNullOrWhiteSpace(value))
+                        return value.Trim();
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static string? TrySwapAtsEtsEndpoint(string? endpoint)
+        {
+            if (string.IsNullOrWhiteSpace(endpoint))
+                return null;
+
+            if (endpoint.Contains("/api/ats/telemetry", StringComparison.OrdinalIgnoreCase))
+                return endpoint.Replace("/api/ats/telemetry", "/api/ets2/telemetry", StringComparison.OrdinalIgnoreCase);
+
+            if (endpoint.Contains("/api/ets2/telemetry", StringComparison.OrdinalIgnoreCase))
+                return endpoint.Replace("/api/ets2/telemetry", "/api/ats/telemetry", StringComparison.OrdinalIgnoreCase);
+
+            return null;
+        }
+
+        private static bool HasUsefulTruckData(JsonElement root)
+        {
+            return TryGetString(root, "truck", "make") != null
+                || TryGetString(root, "truck", "model") != null
+                || TryGetDouble(root, "truck", "speed") != null
+                || TryGetDouble(root, "truck", "odometer") != null
+                || TryGetDouble(root, "navigation", "gps", "latitude") != null
+                || TryGetDouble(root, "truck", "worldPlacement", "position", "x") != null
+                || TryGetDouble(root, "truck", "placement", "x") != null;
+        }
+
+        private static string MakeStableIdFromName(string name)
+        {
+            var clean = (name ?? "driver").Trim().ToLowerInvariant();
+
+            if (string.IsNullOrWhiteSpace(clean))
+                clean = "driver";
+
+            var sb = new StringBuilder();
+
+            foreach (var c in clean)
+            {
+                if (char.IsLetterOrDigit(c))
+                    sb.Append(c);
+                else if (c == ' ' || c == '_' || c == '-')
+                    sb.Append('-');
+            }
+
+            var result = sb.ToString().Trim('-');
+
+            return string.IsNullOrWhiteSpace(result)
+                ? "driver"
+                : result;
+        }
+
+        private static string? CombineClean(string? a, string? b)
+        {
+            a = CleanOrNull(a);
+            b = CleanOrNull(b);
+
+            if (a == null && b == null) return null;
+            if (a == null) return b;
+            if (b == null) return a;
+
+            if (b.StartsWith(a, StringComparison.OrdinalIgnoreCase))
+                return b;
+
+            return $"{a} {b}".Trim();
+        }
+
+        private static string? CleanOrNull(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return null;
+
+            value = value.Trim();
+
+            return string.IsNullOrWhiteSpace(value)
+                ? null
+                : value;
+        }
+
+        private static bool? TryGetBool(JsonElement root, params string[] path)
+        {
+            if (!TryGetElement(root, out var el, path))
+                return null;
+
+            try
+            {
+                if (el.ValueKind == JsonValueKind.True) return true;
+                if (el.ValueKind == JsonValueKind.False) return false;
+
+                if (el.ValueKind == JsonValueKind.String)
+                {
+                    var s = el.GetString();
+
+                    if (bool.TryParse(s, out var b))
+                        return b;
+
+                    if (int.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var i))
+                        return i != 0;
+                }
+
+                if (el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var n))
+                    return n != 0;
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static double? TryGetDouble(JsonElement root, params string[] path)
+        {
+            if (!TryGetElement(root, out var el, path))
+                return null;
 
             try
             {
                 if (el.ValueKind == JsonValueKind.Number)
                     return el.GetDouble();
 
-                if (el.ValueKind == JsonValueKind.String &&
-                    double.TryParse(el.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+                if (el.ValueKind == JsonValueKind.String)
                 {
-                    return d;
+                    var s = el.GetString();
+
+                    if (double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var d))
+                        return d;
                 }
             }
             catch
             {
             }
+
+            return null;
         }
 
-        return null;
-    }
-
-    private static string DataDir
-    {
-        get
+        private static string? TryGetString(JsonElement root, params string[] path)
         {
-            var dir = Path.Combine(AppContext.BaseDirectory, "data");
-            Directory.CreateDirectory(dir);
-            return dir;
-        }
-    }
+            if (!TryGetElement(root, out var el, path))
+                return null;
 
-    private static string TelemetryFile => Path.Combine(DataDir, "live_telemetry.json");
-
-    private static void LoadFromDisk()
-    {
-        lock (LockObj)
-        {
             try
             {
-                if (!File.Exists(TelemetryFile))
-                    return;
+                if (el.ValueKind == JsonValueKind.String)
+                    return CleanOrNull(el.GetString());
 
-                var json = File.ReadAllText(TelemetryFile);
+                if (el.ValueKind == JsonValueKind.Number)
+                    return el.ToString();
 
-                var loaded = JsonSerializer.Deserialize<Dictionary<string, List<TelemetryUnit>>>(json,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (el.ValueKind == JsonValueKind.True)
+                    return "true";
 
-                if (loaded == null)
-                    return;
-
-                Units.Clear();
-
-                foreach (var kvp in loaded)
-                {
-                    var fresh = kvp.Value
-                        .Where(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes <= 10)
-                        .ToList();
-
-                    if (fresh.Count > 0)
-                        Units[kvp.Key] = fresh;
-                }
+                if (el.ValueKind == JsonValueKind.False)
+                    return "false";
             }
             catch
             {
             }
-        }
-    }
 
-    private static void SaveToDiskUnsafe()
-    {
-        try
+            return null;
+        }
+
+        private static bool TryGetElement(JsonElement root, out JsonElement element, params string[] path)
         {
-            var json = JsonSerializer.Serialize(Units, new JsonSerializerOptions
+            element = root;
+
+            foreach (var part in path)
             {
-                WriteIndented = true
-            });
+                if (element.ValueKind != JsonValueKind.Object)
+                    return false;
 
-            File.WriteAllText(TelemetryFile, json);
+                if (!element.TryGetProperty(part, out element))
+                    return false;
+            }
+
+            return true;
         }
-        catch
+
+        private static double? ConvertKmToMilesIfNeeded(double? value)
         {
+            if (!value.HasValue)
+                return null;
+
+            return value.Value * 0.621371;
+        }
+
+        private static double? ConvertLitersToGallonsIfNeeded(double? value)
+        {
+            if (!value.HasValue)
+                return null;
+
+            return value.Value * 0.264172;
+        }
+
+        private static double? ConvertKgToLbsIfNeeded(double? value)
+        {
+            if (!value.HasValue)
+                return null;
+
+            return value.Value * 2.20462;
+        }
+
+        private static double? NormalizeDamagePct(double? value)
+        {
+            if (!value.HasValue)
+                return null;
+
+            var v = value.Value;
+
+            if (v <= 1.0)
+                return Math.Clamp(v * 100.0, 0.0, 100.0);
+
+            return Math.Clamp(v, 0.0, 100.0);
         }
     }
-}
-
-public static class AtsCoordinateConverter
-{
-    private const double AtsMinX = -124000.0;
-    private const double AtsMaxX = 124000.0;
-
-    private const double AtsMinY = -109500.0;
-    private const double AtsMaxY = 170500.0;
-
-    private const double LngMin = -125.1;
-    private const double LngMax = -66.8;
-
-    private const double LatMin = 24.0;
-    private const double LatMax = 49.5;
-
-    public static (double Longitude, double Latitude) ToLngLat(double x, double y)
-    {
-        var nx = Clamp((x - AtsMinX) / (AtsMaxX - AtsMinX), 0, 1);
-        var ny = Clamp((y - AtsMinY) / (AtsMaxY - AtsMinY), 0, 1);
-
-        var lng = LngMin + nx * (LngMax - LngMin);
-        var lat = LatMax - ny * (LatMax - LatMin);
-
-        return (lng, lat);
-    }
-
-    private static double Clamp(double value, double min, double max)
-        => value < min ? min : value > max ? max : value;
-}
-
-public sealed class TelemetryUnit
-{
-    public string GuildId { get; set; } = "";
-    public string DriverDiscordUserId { get; set; } = "";
-
-    public string? DiscordUserId { get; set; }
-    public string? UserId { get; set; }
-
-    public string? Driver { get; set; }
-    public string? DriverName { get; set; }
-    public string? Truck { get; set; }
-    public string? TruckName { get; set; }
-    public string? TruckNumber { get; set; }
-
-    public double X { get; set; }
-    public double Y { get; set; }
-    public double MapX { get; set; }
-    public double MapY { get; set; }
-    public double WorldX { get; set; }
-    public double WorldZ { get; set; }
-    public double MarkerX { get; set; }
-    public double MarkerY { get; set; }
-
-    public double? Longitude { get; set; }
-    public double? Latitude { get; set; }
-    public double? Lng { get; set; }
-    public double? Lat { get; set; }
-    public double? Lon { get; set; }
-
-    public string? City { get; set; }
-    public string? State { get; set; }
-    public string? Status { get; set; }
-    public string? ConversionMode { get; set; }
-
-    public string? SourceCity { get; set; }
-    public string? SourceCompany { get; set; }
-    public string? DestinationCity { get; set; }
-    public string? DestinationCompany { get; set; }
-
-    public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
 }
