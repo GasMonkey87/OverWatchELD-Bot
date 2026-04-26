@@ -1,285 +1,54 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
-<meta charset="utf-8" />
-<title>OverWatch ELD - VTC Portal</title>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta charset="utf-8">
+<title>VTC Portal</title>
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet"/>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 
 <style>
-:root{
-  --bg:#020617;
-  --panel:#0f172a;
-  --line:#334155;
-  --text:#f8fafc;
-  --muted:#94a3b8;
-  --blue:#38bdf8;
-  --green:#22c55e;
-  --orange:#f59e0b;
-  --purple:#a855f7;
+body{background:#020617;color:white;font-family:Segoe UI;margin:0}
+#map{height:600px;border-radius:12px;margin:20px;border:1px solid #334155}
+
+.truck-marker{
+  width:14px;height:14px;
+  border-radius:50%;
+  background:#38bdf8;
+  border:3px solid white;
 }
-*{box-sizing:border-box}
-body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text)}
-.hero{padding:28px;background:#111827;border-bottom:1px solid #1f2937}
-.hero h1{margin:0;font-size:28px}
-.hero p{color:var(--muted)}
-.main{max-width:1280px;margin:auto;padding:24px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:18px;margin-bottom:20px}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:16px}
-.stat{font-size:32px;font-weight:800}
-.muted{color:var(--muted)}
-.mapbox{width:100%;height:560px;border-radius:16px;overflow:hidden;background:#020617;border:1px solid var(--line)}
-.actions{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
-button{background:#1f2937;color:white;border:1px solid var(--line);border-radius:10px;padding:9px 12px;cursor:pointer}
-button.active{background:#0c4a6e;border-color:#38bdf8}
-.table{width:100%;border-collapse:collapse}
-.table th,.table td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
-.driver-row{display:flex;justify-content:space-between;gap:12px;padding:12px;border-bottom:1px solid var(--line);cursor:pointer}
-.driver-row:hover{background:#1e293b}
-.marker-wrap{position:relative}
-.truck-marker{width:20px;height:20px;border-radius:50%;background:var(--blue);border:3px solid white;box-shadow:0 0 18px rgba(56,189,248,.95)}
-.garage-marker{width:18px;height:18px;border-radius:6px;background:var(--purple);border:2px solid white;box-shadow:0 0 16px rgba(168,85,247,.85)}
-.dispatch-marker{width:18px;height:18px;border-radius:50%;background:var(--orange);border:2px solid white;box-shadow:0 0 16px rgba(245,158,11,.85)}
-.marker-label{position:absolute;transform:translate(22px,-9px);background:rgba(2,6,23,.92);border:1px solid #334155;border-radius:8px;padding:4px 7px;color:white;font-size:12px;white-space:nowrap;pointer-events:none}
-.feed-item{padding:10px;border-bottom:1px solid var(--line)}
-.footer{text-align:center;color:var(--muted);padding:28px}
+
+.marker-label{
+  position:absolute;
+  top:-24px;
+  left:50%;
+  transform:translateX(-50%);
+  background:#020617;
+  border:1px solid #334155;
+  padding:2px 6px;
+  font-size:11px;
+  border-radius:6px;
+  white-space:nowrap;
+}
 </style>
 </head>
 
 <body>
 
-<header class="hero">
-  <h1 id="siteTitle">VTC Portal</h1>
-  <p id="welcomeText"></p>
-</header>
+<div id="map"></div>
 
-<main class="main">
+<script>
 
-<section class="grid">
-  <div class="card"><h3>Drivers</h3><div class="stat" id="driverCount">0</div><div class="muted">Company roster</div></div>
-  <div class="card"><h3>Fleet</h3><div class="stat" id="fleetCount">0</div><div class="muted">Company trucks</div></div>
-  <div class="card"><h3>Garages</h3><div class="stat" id="garageCount">0</div><div class="muted">Owned locations</div></div>
-  <div class="card"><h3>Live Units</h3><div class="stat" id="liveCount">0</div><div class="muted">Telemetry trucks</div></div>
-</section>
-
-<section class="card">
-  <h2>Live ATS Map</h2>
-  <div class="actions">
-    <button id="btnFollow" onclick="toggleFollow()">Follow Driver: OFF</button>
-    <button id="btnConvoy" onclick="toggleConvoy()">Convoy Mode: ON</button>
-    <button id="btnDispatch" onclick="toggleDispatch()">Dispatch: ON</button>
-    <button id="btnGarages" onclick="toggleGarages()">Garages: ON</button>
-    <button onclick="recenterMap()">Recenter</button>
-  </div>
-  <div id="map" class="mapbox"></div>
-  <p class="muted" id="mapStatus">Loading ATS map...</p>
-</section>
-
-<section class="card">
-  <h2>Dispatch Feed</h2>
-  <div id="dispatchFeed" class="muted">Loading dispatch...</div>
-</section>
-
-<section class="card">
-  <h2>Company Info</h2>
-  <p id="companyInfo" class="muted"></p>
-</section>
-
-<section class="card">
-  <h2>Featured Driver</h2>
-  <div id="featuredDriver" class="muted">No featured driver selected.</div>
-</section>
-
-<section class="card">
-  <h2>Driver Roster</h2>
-  <div id="driverList" class="muted">Loading drivers...</div>
-</section>
-
-<section class="card">
-  <h2>Fleet</h2>
-  <table class="table">
-    <thead>
-      <tr><th>Truck</th><th>Driver</th><th>Plate</th><th>Location</th><th>Status</th></tr>
-    </thead>
-    <tbody id="fleetTable"></tbody>
-  </table>
-</section>
-
-<section class="card">
-  <h2>Garages</h2>
-  <div id="garageList" class="grid"></div>
-</section>
-
-</main>
-
-<footer class="footer">
-  Powered by OverWatch ELD · The ELD you can count on.
-</footer>
-
-<script type="module">
-import { PMTiles, Protocol } from "https://cdn.jsdelivr.net/npm/pmtiles@3.2.0/+esm";
-
-const API = location.origin.includes("localhost")
-  ? "https://overwatcheld-bot-5.up.railway.app"
-  : location.origin;
-
-const qs = new URLSearchParams(location.search);
-const guildId = qs.get("guildId") || localStorage.getItem("oweld.guildId") || "";
-
-const MAP_BASE = location.origin + "/map-assets";
-const PMTILES_URL = `${MAP_BASE}/ats.pmtiles`;
-const SPRITE_URL = `${MAP_BASE}/sprites`;
+const API = location.origin;
+const guildId = new URLSearchParams(location.search).get("guildId");
 
 let map;
-let truckMarkers = [];
-let garageMarkers = [];
-let dispatchMarkers = [];
-let lastUnits = [];
-let lastGarages = [];
-let lastDispatch = [];
-let followDriver = false;
-let convoyMode = true;
-let showDispatch = true;
-let showGarages = true;
-
-window.toggleFollow = function(){
-  followDriver = !followDriver;
-  btnFollow.textContent = `Follow Driver: ${followDriver ? "ON" : "OFF"}`;
-  btnFollow.classList.toggle("active", followDriver);
-};
-
-window.toggleConvoy = function(){
-  convoyMode = !convoyMode;
-  btnConvoy.textContent = `Convoy Mode: ${convoyMode ? "ON" : "OFF"}`;
-  btnConvoy.classList.toggle("active", convoyMode);
-  renderConvoyLine(lastUnits);
-};
-
-window.toggleDispatch = function(){
-  showDispatch = !showDispatch;
-  btnDispatch.textContent = `Dispatch: ${showDispatch ? "ON" : "OFF"}`;
-  btnDispatch.classList.toggle("active", showDispatch);
-  renderDispatchMarkers(lastDispatch);
-};
-
-window.toggleGarages = function(){
-  showGarages = !showGarages;
-  btnGarages.textContent = `Garages: ${showGarages ? "ON" : "OFF"}`;
-  btnGarages.classList.toggle("active", showGarages);
-  renderGarageMarkers(lastGarages);
-};
-
-window.recenterMap = function(){
-  if(map) map.flyTo({center:[-98.5795,39.8283], zoom:4.8});
-};
-
-function esc(v){
-  return String(v ?? "").replace(/[&<>"']/g, s => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
-  }[s]));
-}
-
-async function api(path){
-  const res = await fetch(`${API}${path}`);
-  let json = null;
-  try{ json = await res.json(); }catch{}
-  if(!res.ok || json?.ok === false) throw new Error(json?.error || `HTTP ${res.status}`);
-  return json || {};
-}
-
-async function safe(path, fallback){
-  try{return await api(path)}catch{return fallback}
-}
-
-function normalizeDriver(d){
-  return {
-    id:d.id || d.Id || d.discordUserId || d.DiscordUserId || d.userId || "",
-    name:d.name || d.Name || d.driverName || d.displayName || d.discordUsername || d.DiscordUsername || "Driver",
-    role:d.role || d.Role || d.vtcRole || "Driver",
-    status:d.status || d.Status || "Member",
-    discordUserId:d.discordUserId || d.DiscordUserId || d.userId || "",
-    assignedTruck:d.assignedTruck || d.AssignedTruck || d.truck || "",
-    totalMiles:d.totalMiles || d.TotalMiles || d.milesTotal || d.miles || d.mileage || d.Mileage || "0",
-    bio:d.bio || d.Bio || ""
-  };
-}
-
-function lowerPortalData(d){
-  return {
-    guildId:d.guildId || d.GuildId || guildId,
-    siteTitle:d.siteTitle || d.SiteTitle || "",
-    welcomeText:d.welcomeText || d.WelcomeText || "",
-    companyInfo:d.companyInfo || d.CompanyInfo || "",
-    selectedFeaturedDriver:d.selectedFeaturedDriver || d.SelectedFeaturedDriver || "",
-    drivers:d.drivers || d.Drivers || [],
-    trucks:d.trucks || d.Trucks || [],
-    garages:d.garages || d.Garages || []
-  };
-}
-
-async function detectSourceLayer(pmtilesUrl){
-  try{
-    const p = new PMTiles(pmtilesUrl);
-    const metadata = await p.getMetadata();
-    const vectorLayers = metadata?.vector_layers || [];
-    if(vectorLayers.length > 0 && vectorLayers[0]?.id) return vectorLayers[0].id;
-  }catch(e){console.warn(e)}
-  return "default";
-}
-
-async function initMap(){
-  const protocol = new Protocol();
-  maplibregl.addProtocol("pmtiles", protocol.tile);
-
-  const sourceLayer = await detectSourceLayer(PMTILES_URL);
-
-  map = new maplibregl.Map({
-    container:"map",
-    style:{
-      version:8,
-      glyphs:"https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-      sources:{ats:{type:"vector",url:`pmtiles://${PMTILES_URL}`}},
-      sprite:SPRITE_URL,
-      layers:[
-        {id:"background",type:"background",paint:{"background-color":"#081018"}},
-        {id:"ats-fill",type:"fill",source:"ats","source-layer":sourceLayer,paint:{"fill-color":"#102033","fill-opacity":0.55}},
-        {
-          id:"ats-roads-casing",type:"line",source:"ats","source-layer":sourceLayer,filter:["has","roadType"],
-          paint:{"line-color":"#10243a","line-width":["interpolate",["linear"],["zoom"],3,1.5,6,3,9,5,12,8],"line-opacity":0.95}
-        },
-        {
-          id:"ats-roads",type:"line",source:"ats","source-layer":sourceLayer,filter:["has","roadType"],
-          paint:{"line-color":["match",["get","roadType"],"freeway","#4fc3ff","highway","#38bdf8","local","#1d75a8","#2b88bd"],"line-width":["interpolate",["linear"],["zoom"],3,0.8,6,1.7,9,3,12,5],"line-opacity":0.96}
-        }
-      ]
-    },
-    center:[-98.5795,39.8283],
-    zoom:4.8
-  });
-
-  map.addControl(new maplibregl.NavigationControl(),"top-right");
-
-  map.on("load",()=>{
-    mapStatus.textContent = "ATS map loaded. Waiting for live telemetry.";
-    ensureConvoySource();
-  });
-}
-
-function getLngLat(unit){
-  const lng = Number(unit.longitude ?? unit.Longitude ?? unit.lng ?? unit.Lng ?? unit.lon ?? unit.Lon);
-  const lat = Number(unit.latitude ?? unit.Latitude ?? unit.lat ?? unit.Lat);
-  if(Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lng)<=180 && Math.abs(lat)<=90) return [lng,lat];
-  return null;
-}
-
-function getName(unit){
-  return unit.driver || unit.Driver || unit.driverName || unit.DriverName || unit.truck || unit.Truck || unit.truckNumber || unit.TruckNumber || "Unit";
-}
+let markers = [];
 
 function makeMarker(type,label){
   const wrap = document.createElement("div");
+
+  // 🔥 FIX: lock anchor center
   wrap.style.position = "relative";
   wrap.style.width = "20px";
   wrap.style.height = "20px";
@@ -294,268 +63,61 @@ function makeMarker(type,label){
 
   wrap.appendChild(dot);
   wrap.appendChild(text);
+
   return wrap;
 }
 
+function getLngLat(u){
+  const lng = u.longitude ?? u.lng ?? u.lon;
+  const lat = u.latitude ?? u.lat;
+
+  if(lng == null || lat == null) return null;
+  return [lng,lat];
+}
+
 async function loadTelemetry(){
-  const json = await safe(`/api/telemetry?guildId=${encodeURIComponent(guildId)}`, {});
-  const units = json.data || json.Data || [];
-  lastUnits = units;
+  const res = await fetch(`${API}/api/telemetry?guildId=${guildId}`);
+  const json = await res.json();
 
-  liveCount.textContent = units.length;
+  markers.forEach(m=>m.remove());
+  markers=[];
 
-  truckMarkers.forEach(m=>m.remove());
-  truckMarkers = [];
-
-  if(!map) return;
-
-  units.forEach(u=>{
+  (json.data||[]).forEach(u=>{
     const ll = getLngLat(u);
     if(!ll) return;
 
-    new maplibregl.Marker({
-  element: makeMarker("truck-marker", getName(u)),
-  anchor: "center"
-})
+    const marker = new maplibregl.Marker({
+      element: makeMarker("truck-marker", u.driver || "Driver"),
+      anchor: "center"
+    })
+    .setLngLat(ll)
+    .addTo(map);
 
-  renderConvoyLine(units);
-
-  if(truckMarkers.length > 0){
-    mapStatus.textContent = `Showing ${truckMarkers.length} live unit${truckMarkers.length === 1 ? "" : "s"}.`;
-
-    if(followDriver && truckMarkers[0]){
-      map.flyTo({center:truckMarkers[0].getLngLat(), zoom:7});
-    }
-  }else if(units.length > 0){
-    mapStatus.textContent = "Telemetry received, but no valid longitude/latitude found.";
-  }else{
-    mapStatus.textContent = "No live telemetry units yet.";
-  }
-}
-
-function ensureConvoySource(){
-  if(!map || map.getSource("convoy-line")) return;
-
-  map.addSource("convoy-line",{
-    type:"geojson",
-    data:{type:"FeatureCollection",features:[]}
-  });
-
-  map.addLayer({
-    id:"convoy-line",
-    type:"line",
-    source:"convoy-line",
-    paint:{
-      "line-color":"#22c55e",
-      "line-width":3,
-      "line-dasharray":[2,2]
-    }
+    markers.push(marker);
   });
 }
 
-function renderConvoyLine(units){
-  if(!map || !map.getSource("convoy-line")) return;
-
-  if(!convoyMode){
-    map.getSource("convoy-line").setData({type:"FeatureCollection",features:[]});
-    return;
-  }
-
-  const coords = units.map(getLngLat).filter(Boolean);
-
-  if(coords.length < 2){
-    map.getSource("convoy-line").setData({type:"FeatureCollection",features:[]});
-    return;
-  }
-
-  map.getSource("convoy-line").setData({
-    type:"FeatureCollection",
-    features:[{
-      type:"Feature",
-      geometry:{type:"LineString",coordinates:coords},
-      properties:{}
-    }]
-  });
-}
-
-async function loadDispatch(){
-  const json = await safe(`/api/dispatch/messages?guildId=${encodeURIComponent(guildId)}`, {});
-  const items = json.data || json.messages || json.items || [];
-  lastDispatch = items;
-
-  dispatchFeed.innerHTML = items.length ? items.slice(0,8).map(x=>`
-    <div class="feed-item">
-      <b>${esc(x.title || x.subject || x.driverName || x.driver || "Dispatch")}</b>
-      <div>${esc(x.text || x.message || x.content || x.body || "")}</div>
-      <div class="muted">${esc(x.createdAt || x.createdUtc || x.timestamp || "")}</div>
-    </div>
-  `).join("") : `<div class="muted">No dispatch messages available.</div>`;
-
-  renderDispatchMarkers(items);
-}
-
-function renderDispatchMarkers(items){
-  dispatchMarkers.forEach(m=>m.remove());
-  dispatchMarkers = [];
-
-  if(!showDispatch || !map) return;
-
-  items.forEach(x=>{
-    const ll = getLngLat(x);
-    if(!ll) return;
-
-    const marker = new maplibregl.Marker(makeMarker("dispatch-marker", x.title || x.subject || "Dispatch"))
-      .setLngLat(ll)
-      .setPopup(new maplibregl.Popup().setHTML(`
-        <b>${esc(x.title || x.subject || "Dispatch")}</b><br>
-        ${esc(x.text || x.message || x.content || "")}
-      `))
-      .addTo(map);
-
-    dispatchMarkers.push(marker);
-  });
-}
-
-function renderGarageMarkers(garages){
-  garageMarkers.forEach(m=>m.remove());
-  garageMarkers = [];
-
-  if(!showGarages || !map) return;
-
-  garages.forEach(g=>{
-    const ll = getLngLat(g);
-    if(!ll) return;
-
-    const label = `${g.city || "Garage"}${g.state ? ", " + g.state : ""}`;
-
-    const marker = new maplibregl.Marker(makeMarker("garage-marker", label))
-      .setLngLat(ll)
-      .setPopup(new maplibregl.Popup().setHTML(`
-        <b>${esc(label)}</b><br>
-        Slots: ${esc(g.slots || "0")}<br>
-        Cost: $${esc(g.cost || "0")}
-      `))
-      .addTo(map);
-
-    garageMarkers.push(marker);
-  });
-}
-
-async function loadPortal(){
-  if(!guildId){
-    siteTitle.textContent = "Missing guildId";
-    welcomeText.textContent = "Open portal.html?guildId=YOUR_SERVER_ID";
-    return;
-  }
-
-  const json = await safe(`/api/vtc/portal/data?guildId=${encodeURIComponent(guildId)}`, {});
-  const portal = lowerPortalData(json.data || {});
-  const drivers = await getMergedDrivers(portal);
-  const trucks = portal.trucks || [];
-  const garages = portal.garages || [];
-  lastGarages = garages;
-
-  document.title = `${portal.siteTitle || "VTC Portal"} - OverWatch ELD`;
-  siteTitle.textContent = portal.siteTitle || "VTC Portal";
-  welcomeText.textContent = portal.welcomeText || "";
-  companyInfo.textContent = portal.companyInfo || "Company information has not been added yet.";
-
-  driverCount.textContent = drivers.length;
-  fleetCount.textContent = trucks.length;
-  garageCount.textContent = garages.length;
-
-  const featured = drivers.find(d=>d.discordUserId === portal.selectedFeaturedDriver || d.id === portal.selectedFeaturedDriver) || drivers[0];
-
-  renderFeatured(featured);
-  renderDrivers(drivers);
-  renderFleet(trucks);
-  renderGarages(garages);
-  renderGarageMarkers(garages);
-}
-
-async function loadRosterDrivers(){
-  const r = await safe(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`, {});
-  return (r.data || r.drivers || r.roster || []).map(normalizeDriver);
-}
-
-async function getMergedDrivers(portal){
-  const portalDrivers = (portal.drivers || []).map(normalizeDriver);
-  const rosterDrivers = await loadRosterDrivers();
-  const merged = [];
-
-  rosterDrivers.forEach(r=>{
-    const existing = portalDrivers.find(p=>p.discordUserId && r.discordUserId && p.discordUserId === r.discordUserId);
-    merged.push(existing ? {...r,...existing} : r);
+function init(){
+  map = new maplibregl.Map({
+    container:"map",
+    style:{
+      version:8,
+      sources:{},
+      layers:[{
+        id:"bg",
+        type:"background",
+        paint:{ "background-color":"#020617" }
+      }]
+    },
+    center:[-98,39],
+    zoom:4
   });
 
-  portalDrivers.forEach(p=>{
-    const exists = merged.find(m=>(m.discordUserId && p.discordUserId && m.discordUserId === p.discordUserId) || (m.id && p.id && m.id === p.id));
-    if(!exists) merged.push(p);
-  });
-
-  return merged;
+  setInterval(loadTelemetry,3000);
 }
 
-function renderFeatured(d){
-  if(!d){
-    featuredDriver.innerHTML = `<div class="muted">No featured driver selected.</div>`;
-    return;
-  }
+init();
 
-  featuredDriver.innerHTML = `
-    <h3>${esc(d.name)}</h3>
-    <p class="muted">${esc(d.role)} · ${esc(d.status)}</p>
-    <p>${esc(d.bio || "A valued member of the company.")}</p>
-    <p><b>Miles:</b> ${esc(d.totalMiles)} · <b>Truck:</b> ${esc(d.assignedTruck || "Unassigned")}</p>
-  `;
-}
-
-function renderDrivers(drivers){
-  driverList.innerHTML = drivers.length ? drivers.map(d=>`
-    <div class="driver-row">
-      <div><b>${esc(d.name)}</b><div class="muted">${esc(d.role)} · ${esc(d.status)}</div></div>
-      <div>${esc(d.totalMiles)} mi</div>
-    </div>
-  `).join("") : `<div class="muted">No drivers found.</div>`;
-}
-
-function renderFleet(trucks){
-  fleetTable.innerHTML = trucks.length ? trucks.map(t=>`
-    <tr>
-      <td>${esc(t.truckNumber || t.name || "Truck")}</td>
-      <td>${esc(t.driver || "Unassigned")}</td>
-      <td>${esc(t.plate || "")}</td>
-      <td>${esc(t.location || "")}</td>
-      <td>${esc(t.status || "Available")}</td>
-    </tr>
-  `).join("") : `<tr><td colspan="5" class="muted">No fleet records yet.</td></tr>`;
-}
-
-function renderGarages(garages){
-  garageList.innerHTML = garages.length ? garages.map(g=>`
-    <div class="card">
-      <h3>${esc(g.city || "Garage")}${g.state ? ", " + esc(g.state) : ""}</h3>
-      <div class="muted">${esc(g.country || "")}</div>
-      <p><b>Slots:</b> ${esc(g.slots || "0")}</p>
-      <p><b>Cost:</b> $${esc(g.cost || "0")}</p>
-      <p class="muted">${esc(g.notes || "")}</p>
-    </div>
-  `).join("") : `<div class="muted">No garages added yet.</div>`;
-}
-
-btnConvoy.classList.add("active");
-btnDispatch.classList.add("active");
-btnGarages.classList.add("active");
-
-await initMap();
-await loadPortal();
-await loadTelemetry();
-await loadDispatch();
-
-setInterval(loadTelemetry,5000);
-setInterval(loadDispatch,15000);
-setInterval(loadPortal,30000);
 </script>
-
 </body>
 </html>
