@@ -273,7 +273,7 @@ public static partial class Program
         });
         app.MapGet("/download/latest", () =>
 {
-    var url = "https://github.com/GasMonkey87/OverWatchELD-Bot/releases/download/V2.0.7/OverWatchELD-Setup.exe";
+    var url = "https://github.com/GasMonkey87/OverWatchELD-Bot/releases/download/V2.0.7/OverWatchELD-win-Setup.exe";
     return Results.Redirect(url);
 });
         app.MapGet("/auth/discord/callback", async (
