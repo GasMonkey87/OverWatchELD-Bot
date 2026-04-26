@@ -12,31 +12,37 @@ public static class TelemetryRoutes
     public static WebApplication MapTelemetryRoutes(this WebApplication app)
     {
         app.MapGet("/api/telemetry", ([FromQuery] string? guildId) =>
-        {
-            LoadFromDisk();
+{
+    LoadFromDisk();
+
+    if (string.IsNullOrWhiteSpace(guildId))
+        return Results.Ok(new { ok = true, data = Array.Empty<TelemetryUnit>(), count = 0, warning = "MissingGuildId" });
+
+    guildId = guildId.Trim();
+
+    lock (LockObj)
+    {
+        if (!Units.TryGetValue(guildId, out var units))
+            units = new List<TelemetryUnit>();
+
         units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 3);
-SaveToDiskUnsafe();
-            if (string.IsNullOrWhiteSpace(guildId))
-                return Results.Ok(new { ok = true, data = Array.Empty<TelemetryUnit>(), count = 0, warning = "MissingGuildId" });
 
-            guildId = guildId.Trim();
+        if (units.Count > 0)
+            Units[guildId] = units;
+        else
+            Units.Remove(guildId);
 
-            lock (LockObj)
-            {
-                if (!Units.TryGetValue(guildId, out var units))
-                    units = new List<TelemetryUnit>();
+        SaveToDiskUnsafe();
 
-                units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 3);
-
-                return Results.Ok(new
-                {
-                    ok = true,
-                    guildId,
-                    count = units.Count,
-                    data = units.OrderByDescending(x => x.UpdatedUtc).ToList()
-                });
-            }
+        return Results.Ok(new
+        {
+            ok = true,
+            guildId,
+            count = units.Count,
+            data = units.OrderByDescending(x => x.UpdatedUtc).ToList()
         });
+    }
+});
 
         app.MapPost("/api/telemetry", async (HttpRequest req) =>
         {
