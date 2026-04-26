@@ -212,7 +212,8 @@ let lastLiveLngLat = null;
 let showStates = true;
 let showCities = true;
 let showCompanies = true;
-
+let convoyRouteSourceId = "convoy-route-source";
+let convoyRouteLayerId = "convoy-route-layer";
 const STATES = [
   ["California",[-119.5,37.2]],["Nevada",[-116.8,39.4]],["Arizona",[-111.7,34.2]],["Utah",[-111.6,39.3]],
   ["New Mexico",[-106.1,34.4]],["Colorado",[-105.5,39.0]],["Texas",[-99.3,31.0]],["Oklahoma",[-97.5,35.5]],
@@ -315,7 +316,50 @@ function addMapLabels(){
   for(const [name,coords] of CITIES)
     cityMarkers.push(labelMarker(name,"city-label",coords));
 }
+function renderConvoyRouteLine(units){
+  if(!map || !map.isStyleLoaded()) return;
 
+  const coords = units
+    .map(u => getLngLat(u))
+    .filter(x => Array.isArray(x) && x.length === 2);
+
+  if(coords.length < 2){
+    if(map.getLayer(convoyRouteLayerId)) map.removeLayer(convoyRouteLayerId);
+    if(map.getSource(convoyRouteSourceId)) map.removeSource(convoyRouteSourceId);
+    return;
+  }
+
+  const geojson = {
+    type:"Feature",
+    geometry:{
+      type:"LineString",
+      coordinates:coords
+    },
+    properties:{}
+  };
+
+  if(map.getSource(convoyRouteSourceId)){
+    map.getSource(convoyRouteSourceId).setData(geojson);
+    return;
+  }
+
+  map.addSource(convoyRouteSourceId,{
+    type:"geojson",
+    data:geojson
+  });
+
+  map.addLayer({
+    id:convoyRouteLayerId,
+    type:"line",
+    source:convoyRouteSourceId,
+    paint:{
+      "line-color":"#38bdf8",
+      "line-width":4,
+      "line-opacity":0.8,
+      "line-dasharray":[2,1]
+    }
+  });
+}
 function clearLabelMarkers(){
   stateMarkers.forEach(m=>m.remove());
   cityMarkers.forEach(m=>m.remove());
@@ -515,6 +559,7 @@ async function loadTelemetry(){
   renderPickupDrop(units[0]);
 renderConvoyPanel(units);
 renderFleetDashboard(units);
+  renderConvoyRouteLine(units);
   if(markers.length && lastLiveLngLat){
     const currentCenter = map.getCenter();
     const dist = Math.abs(currentCenter.lng - lastLiveLngLat[0]) + Math.abs(currentCenter.lat - lastLiveLngLat[1]);
@@ -607,10 +652,9 @@ function renderFleetDashboard(units){
 
         <hr style="border:0;border-top:1px solid #334155;margin:10px 0">
 
-        <div>📍 ${esc(u.city || "-")}</div>
-        <div>⚡ Speed: ${esc(u.speedMph || "-")} mph</div>
-        <div>⛽ Fuel: ${esc(u.fuelPct || "-")}%</div>
-        <div>🛠 Damage: ${esc(u.damagePct || "-")}%</div>
+        const speed = u.speedMph || u.SpeedMph || u.speed || u.Speed || "-";
+const fuel = u.fuelPct || u.FuelPct || "-";
+const damage = u.damagePct || u.DamagePct || "-";
       </div>
     `;
   }).join("");
