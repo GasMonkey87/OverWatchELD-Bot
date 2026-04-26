@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OverWatch ELD Downloads</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b1220;
+      color: #e5e7eb;
+    }
+
+    header {
+      padding: 32px 20px;
+      text-align: center;
+      background: linear-gradient(135deg, #111827, #1e3a8a);
+      border-bottom: 1px solid #334155;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 34px;
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      color: #cbd5e1;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: 30px auto;
+      padding: 0 20px;
+    }
+
+    .notice {
+      background: #172554;
+      border: 1px solid #2563eb;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+      color: #dbeafe;
+    }
+
+    .version-card {
+      background: #111827;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      padding: 22px;
+      margin-bottom: 18px;
+      box-shadow: 0 10px 24px rgba(0,0,0,.25);
+    }
+
+    .version-card.latest {
+      border-color: #22c55e;
+    }
+
+    .top-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .version {
+      font-size: 24px;
+      font-weight: bold;
+      color: #ffffff;
+    }
+
+    .badge {
+      background: #22c55e;
+      color: #052e16;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .date {
+      color: #94a3b8;
+      margin-top: 6px;
+    }
+
+    ul {
+      margin-top: 14px;
+      line-height: 1.7;
+    }
+
+    .buttons {
+      margin-top: 18px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    a.button {
+      text-decoration: none;
+      background: #2563eb;
+      color: white;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-weight: bold;
+    }
+
+    a.button.secondary {
+      background: #334155;
+    }
+
+    footer {
+      text-align: center;
+      color: #94a3b8;
+      padding: 30px 20px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>OverWatch ELD Downloads</h1>
+  <div class="subtitle">The ELD you can count on.</div>
+</header>
+
+<main class="container">
+
+  <div class="notice">
+    Download the latest OverWatch ELD installer below. Older versions are listed for rollback or testing.
+  </div>
+
+  <!-- Latest Version -->
+  <section class="version-card latest">
+    <div class="top-row">
+      <div>
+        <div class="version">Version 2.0.5</div>
+        <div class="date">Latest Release</div>
+      </div>
+      <span class="badge">Latest</span>
+    </div>
+
+    <ul>
+      <li>Public release build improvements</li>
+      <li>Updater fixes</li>
+      <li>VTC connection improvements</li>
+      <li>Companion app support updates</li>
+    </ul>
+
+    <div class="buttons">
+      <a class="button" href="/downloads/OverWatchELD_Setup_2.0.5.exe">
+        Download Installer
+      </a>
+      <a class="button secondary" href="/">
+        Back to Home
+      </a>
+    </div>
+  </section>
+
+  <!-- Older Versions -->
+  <section class="version-card">
+    <div class="version">Version 2.0.2</div>
+    <div class="date">Previous Release</div>
+
+    <ul>
+      <li>Guild-based VTC role resolution</li>
+      <li>Settings permission fixes</li>
+      <li>Updater improvements</li>
+    </ul>
+
+    <div class="buttons">
+      <a class="button secondary" href="/downloads/OverWatchELD_Setup_2.0.2.exe">
+        Download 2.0.2
+      </a>
+    </div>
+  </section>
+
+  <section class="version-card">
+    <div class="version">Version 2.0.0</div>
+    <div class="date">Initial 2.x Release</div>
+
+    <ul>
+      <li>Core OverWatch ELD desktop release</li>
+      <li>VTC support</li>
+      <li>Discord bot connection support</li>
+    </ul>
+
+    <div class="buttons">
+      <a class="button secondary" href="/downloads/OverWatchELD_Setup_2.0.0.exe">
+        Download 2.0.0
+      </a>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  © Gas Monkey Creations — OverWatch ELD
+</footer>
+
+</body>
+</html>
