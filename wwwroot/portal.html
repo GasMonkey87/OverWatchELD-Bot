@@ -96,6 +96,26 @@ button.active{background:#075985;border-color:#38bdf8}
 .driver-popup-badge.stopped{background:#78350f;color:#fcd34d}
 .driver-popup-badge.offline{background:#334155;color:#cbd5e1}
 .driver-popup-badge.unknown{background:#075985;color:#bae6fd}
+.fleet-card,.convoy-card{
+  background:#020617;
+  border:1px solid #334155;
+  border-radius:14px;
+  padding:14px;
+}
+
+.status-pill{
+  display:inline-block;
+  padding:3px 8px;
+  border-radius:999px;
+  font-size:11px;
+  font-weight:800;
+}
+
+.status-pill.driving{background:#14532d;color:#86efac}
+.status-pill.stopped{background:#78350f;color:#fcd34d}
+.status-pill.offline{background:#334155;color:#cbd5e1}
+.status-pill.unknown{background:#075985;color:#bae6fd}
+  
 </style>
 </head>
 
@@ -130,7 +150,15 @@ button.active{background:#075985;border-color:#38bdf8}
     <div id="map"></div>
     <p id="mapStatus" class="muted">Loading ATS map...</p>
   </section>
+<section class="card">
+  <h2>Convoy Mode</h2>
+  <div id="convoyPanel" class="grid"></div>
+</section>
 
+<section class="card">
+  <h2>Live Fleet Dashboard</h2>
+  <div id="fleetDashboard" class="grid"></div>
+</section>
   <section class="card">
     <h2>Current Load</h2>
     <div id="loadInfo" class="muted">Waiting for load telemetry...</div>
@@ -485,7 +513,8 @@ async function loadTelemetry(){
   });
 
   renderPickupDrop(units[0]);
-
+renderConvoyPanel(units);
+renderFleetDashboard(units);
   if(markers.length && lastLiveLngLat){
     const currentCenter = map.getCenter();
     const dist = Math.abs(currentCenter.lng - lastLiveLngLat[0]) + Math.abs(currentCenter.lat - lastLiveLngLat[1]);
@@ -521,7 +550,71 @@ function normalizeDriver(d){
     bio:d.bio || d.Bio || ""
   };
 }
+function unitName(u){
+  return u.driver || u.Driver || u.driverName || u.DriverName || "Driver";
+}
 
+function truckName(u){
+  return u.truck || u.Truck || u.truckName || u.TruckName || "Truck";
+}
+
+function unitStatus(u){
+  return statusClass(u);
+}
+
+function renderConvoyPanel(units){
+  if(!units.length){
+    convoyPanel.innerHTML = `<div class="muted">No live convoy units.</div>`;
+    return;
+  }
+
+  const leader = units[0];
+
+  convoyPanel.innerHTML = `
+    <div class="convoy-card">
+      <h3>Convoy Leader</h3>
+      <div><b>${esc(unitName(leader))}</b></div>
+      <div class="muted">${esc(truckName(leader))}</div>
+      <div class="status-pill ${unitStatus(leader)}">${esc(leader.status || "Live")}</div>
+    </div>
+
+    <div class="convoy-card">
+      <h3>Total Units</h3>
+      <div class="stat">${units.length}</div>
+      <div class="muted">Drivers in convoy</div>
+    </div>
+
+    <div class="convoy-card">
+      <h3>Route</h3>
+      <div>${esc(leader.sourceCity || "-")} → ${esc(leader.destinationCity || "-")}</div>
+    </div>
+  `;
+}
+
+function renderFleetDashboard(units){
+  if(!units.length){
+    fleetDashboard.innerHTML = `<div class="muted">No live fleet telemetry.</div>`;
+    return;
+  }
+
+  fleetDashboard.innerHTML = units.map(u=>{
+    return `
+      <div class="fleet-card">
+        <h3>${esc(unitName(u))}</h3>
+        <div class="muted">${esc(truckName(u))}</div>
+
+        <div class="status-pill ${unitStatus(u)}">${esc(u.status || "Live")}</div>
+
+        <hr style="border:0;border-top:1px solid #334155;margin:10px 0">
+
+        <div>📍 ${esc(u.city || "-")}</div>
+        <div>⚡ Speed: ${esc(u.speedMph || "-")} mph</div>
+        <div>⛽ Fuel: ${esc(u.fuelPct || "-")}%</div>
+        <div>🛠 Damage: ${esc(u.damagePct || "-")}%</div>
+      </div>
+    `;
+  }).join("");
+}
 async function loadRosterDrivers(){
   const r = await safe(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`, {});
   return (r.data || r.drivers || r.roster || []).map(normalizeDriver);
