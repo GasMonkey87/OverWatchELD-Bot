@@ -139,6 +139,7 @@ button.active{background:#075985;border-color:#38bdf8}
       <button id="btnStates" class="active" onclick="toggleStates()">States: ON</button>
       <button id="btnCities" class="active" onclick="toggleCities()">Cities: ON</button>
       <button id="btnCompanies" class="active" onclick="toggleCompanies()">Companies: ON</button>
+      <button id="btnConvoy" class="active" onclick="toggleConvoyMode()">Convoy: ON</button>
       <button onclick="recenterMap()">Recenter</button>
     </div>
     <div class="legend">
@@ -208,7 +209,7 @@ let stateMarkers = [];
 let companyMarkers = [];
 let pickupDropMarkers = [];
 let lastLiveLngLat = null;
-
+let convoyModeEnabled = true;
 let showStates = true;
 let showCities = true;
 let showCompanies = true;
@@ -557,14 +558,18 @@ async function loadTelemetry(){
   });
 
   renderPickupDrop(units[0]);
-renderConvoyPanel(units);
+
 renderFleetDashboard(units);
-  renderConvoyRouteLine(units);
+ ;
   if(markers.length && lastLiveLngLat){
     const currentCenter = map.getCenter();
     const dist = Math.abs(currentCenter.lng - lastLiveLngLat[0]) + Math.abs(currentCenter.lat - lastLiveLngLat[1]);
     if(dist > 5) map.flyTo({center:lastLiveLngLat, zoom:7});
   }
+  if(convoyModeEnabled){
+  renderConvoyPanel(units);
+  renderConvoyRouteLine(units);
+}
 
   mapStatus.textContent = markers.length
     ? `Showing ${markers.length} live unit${markers.length === 1 ? "" : "s"}. Current telemetry: ${esc(units[0]?.city || units[0]?.City || "")} ${esc(units[0]?.state || units[0]?.State || "")}`
@@ -718,6 +723,22 @@ window.toggleStates = function(){
   updateLabelVisibility();
 };
 
+window.toggleConvoyMode = function(){
+  convoyModeEnabled = !convoyModeEnabled;
+
+  btnConvoy.textContent = `Convoy: ${convoyModeEnabled ? "ON" : "OFF"}`;
+  btnConvoy.classList.toggle("active", convoyModeEnabled);
+
+  const convoySection = document.getElementById("convoyPanel")?.closest(".card");
+  if(convoySection)
+    convoySection.style.display = convoyModeEnabled ? "block" : "none";
+
+  if(!convoyModeEnabled){
+    if(map?.getLayer(convoyRouteLayerId)) map.removeLayer(convoyRouteLayerId);
+    if(map?.getSource(convoyRouteSourceId)) map.removeSource(convoyRouteSourceId);
+  }
+};
+  
 window.toggleCities = function(){
   showCities = !showCities;
   btnCities.textContent = `Cities: ${showCities ? "ON" : "OFF"}`;
