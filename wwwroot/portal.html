@@ -108,6 +108,7 @@ let cityMarkers = [];
 let stateMarkers = [];
 let companyMarkers = [];
 let pickupDropMarkers = [];
+let lastLiveLngLat = null;
 
 let showStates = true;
 let showCities = true;
@@ -248,12 +249,42 @@ function createMarker(label, cls="truck-marker"){
   return wrap;
 }
 
+function firstNumber(obj, keys){
+  for(const key of keys){
+    const v = obj?.[key];
+    if(v === null || v === undefined || v === "") continue;
+    const n = Number(v);
+    if(Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
 function getLngLat(u){
-  const lng = Number(u.longitude ?? u.Longitude ?? u.lng ?? u.Lng ?? u.lon ?? u.Lon);
-  const lat = Number(u.latitude ?? u.Latitude ?? u.lat ?? u.Lat);
-  if(!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
-  if(Math.abs(lng)>180 || Math.abs(lat)>90) return null;
-  return [lng,lat];
+  if(!u) return null;
+
+  const gpsLon = firstNumber(u, ["longitude","Longitude","lng","Lng","lon","Lon","gpsLongitude","GpsLongitude"]);
+  const gpsLat = firstNumber(u, ["latitude","Latitude","lat","Lat","gpsLatitude","GpsLatitude"]);
+
+  if(Number.isFinite(gpsLon) && Number.isFinite(gpsLat) && Math.abs(gpsLon) <= 180 && Math.abs(gpsLat) <= 90)
+    return [gpsLon, gpsLat];
+
+  const markerX = firstNumber(u, ["markerX","MarkerX","worldX","WorldX","x","X"]);
+  const markerY = firstNumber(u, ["markerY","MarkerY","worldZ","WorldZ","z","Z"]);
+
+  if(Number.isFinite(markerX) && Number.isFinite(markerY)){
+    let lng = markerX;
+    let lat = markerY;
+
+    if(Math.abs(lng) > 180 || Math.abs(lat) > 90){
+      lng = markerX / 10000;
+      lat = markerY / 10000;
+    }
+
+    if(Number.isFinite(lng) && Number.isFinite(lat) && Math.abs(lng) <= 180 && Math.abs(lat) <= 90)
+      return [lng, lat];
+  }
+
+  return null;
 }
 
 function cityCoords(name){
@@ -307,6 +338,18 @@ function renderPickupDrop(unit){
     : `No active pickup/delivery telemetry yet.`;
 }
 
+function normalizeTelemetryResponse(json){
+  if(Array.isArray(json)) return json;
+  if(Array.isArray(json?.data)) return json.data;
+  if(Array.isArray(json?.Data)) return json.Data;
+  if(Array.isArray(json?.units)) return json.units;
+  if(Array.isArray(json?.Units)) return json.Units;
+  if(json?.data && typeof json.data === "object") return [json.data];
+  if(json?.Data && typeof json.Data === "object") return [json.Data];
+  if(json && typeof json === "object" && Object.keys(json).length) return [json];
+  return [];
+}
+
 async function loadTelemetry(){
   if(!guildId){
     mapStatus.textContent = "Missing guildId. Use portal.html?guildId=YOUR_SERVER_ID";
@@ -314,7 +357,7 @@ async function loadTelemetry(){
   }
 
   const json = await safe(`/api/telemetry?guildId=${encodeURIComponent(guildId)}`, {});
-  const units = json.data || json.Data || [];
+  const units = normalizeTelemetryResponse(json);
 
   markers.forEach(m=>m.remove());
   markers = [];
@@ -324,26 +367,33 @@ async function loadTelemetry(){
     const ll = getLngLat(u);
     if(!ll) return;
 
-    const name = u.driver || u.Driver || u.driverName || u.DriverName || u.truck || u.Truck || "Driver";
+    const name = u.driver || u.Driver || u.driverName || u.DriverName || u.truck || u.Truck || u.truckName || u.TruckName || "Driver";
 
     const marker = new maplibregl.Marker({element:createMarker(name),anchor:"center"})
       .setLngLat(ll)
       .setPopup(new maplibregl.Popup().setHTML(`
         <b>${esc(name)}</b><br>
-        ${esc(u.truck || u.Truck || "")}<br>
+        ${esc(u.truck || u.Truck || u.truckName || u.TruckName || "")}<br>
         ${esc(u.city || u.City || "")}${u.state || u.State ? ", " + esc(u.state || u.State) : ""}<br>
         ${esc(u.status || u.Status || "")}
       `))
       .addTo(map);
 
     markers.push(marker);
+    lastLiveLngLat = ll;
   });
 
   renderPickupDrop(units[0]);
 
+  if(markers.length && lastLiveLngLat){
+    const currentCenter = map.getCenter();
+    const dist = Math.abs(currentCenter.lng - lastLiveLngLat[0]) + Math.abs(currentCenter.lat - lastLiveLngLat[1]);
+    if(dist > 5) map.flyTo({center:lastLiveLngLat, zoom:7});
+  }
+
   mapStatus.textContent = markers.length
     ? `Showing ${markers.length} live unit. Current telemetry: ${esc(units[0]?.city || units[0]?.City || "")} ${esc(units[0]?.state || units[0]?.State || "")}`
-    : "Telemetry loaded, but no valid marker coordinates found.";
+    : `Telemetry loaded, but no valid marker coordinates found. Raw units: ${units.length}`;
 }
 
 function lowerPortalData(d){
@@ -432,7 +482,8 @@ window.toggleCompanies = function(){
 };
 
 window.recenterMap = function(){
-  if(markers[0]) map.flyTo({center:markers[0].getLngLat(), zoom:8});
+  if(lastLiveLngLat) map.flyTo({center:lastLiveLngLat, zoom:8});
+  else if(markers[0]) map.flyTo({center:markers[0].getLngLat(), zoom:8});
   else map.flyTo({center:[-105.0844,40.5853], zoom:6.4});
 };
 
