@@ -21,11 +21,7 @@ public static class TelemetryRoutes
 
                 units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalSeconds > 30);
 
-                return Results.Ok(new
-                {
-                    ok = true,
-                    data = units
-                });
+                return Results.Ok(new { ok = true, data = units });
             }
         });
 
@@ -111,10 +107,6 @@ public static class TelemetryRoutes
 
 public static class AtsCoordinateConverter
 {
-    // Calibrated from ATS Fort Collins:
-    // x = -38954.49, z/y = -11578.0088
-    // expected approx: lng -105.08, lat 40.58
-
     private const double AtsMinX = -124000.0;
     private const double AtsMaxX =  124000.0;
 
@@ -133,8 +125,6 @@ public static class AtsCoordinateConverter
         var ny = Clamp((y - AtsMinY) / (AtsMaxY - AtsMinY), 0, 1);
 
         var lng = LngMin + (nx * (LngMax - LngMin));
-
-        // ATS Z/Y axis is inverted compared to latitude
         var lat = LatMax - (ny * (LatMax - LatMin));
 
         return (lng, lat);
@@ -169,6 +159,11 @@ public sealed class TelemetryUnit
     public string? State { get; set; }
     public string? Status { get; set; }
     public string? ConversionMode { get; set; }
+
+    public string? SourceCity { get; set; }
+    public string? SourceCompany { get; set; }
+    public string? DestinationCity { get; set; }
+    public string? DestinationCompany { get; set; }
 
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
 }
