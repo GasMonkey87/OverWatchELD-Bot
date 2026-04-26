@@ -16,15 +16,21 @@ main{max-width:1250px;margin:auto;padding:22px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
 .stat{font-size:30px;font-weight:800}
 .muted{color:#94a3b8}
-#map{height:620px;border-radius:14px;border:1px solid #334155;overflow:hidden;background:#020617}
+#map{height:660px;border-radius:14px;border:1px solid #334155;overflow:hidden;background:#020617}
 .truck-marker{width:18px;height:18px;border-radius:50%;background:#38bdf8;border:3px solid white;box-shadow:0 0 14px rgba(56,189,248,.95)}
+.pickup-marker{width:18px;height:18px;border-radius:6px;background:#22c55e;border:2px solid white;box-shadow:0 0 14px rgba(34,197,94,.9)}
+.drop-marker{width:18px;height:18px;border-radius:6px;background:#f59e0b;border:2px solid white;box-shadow:0 0 14px rgba(245,158,11,.9)}
 .marker-label{position:absolute;top:-24px;left:50%;transform:translateX(-50%);background:#020617;border:1px solid #334155;padding:3px 7px;border-radius:7px;font-size:11px;white-space:nowrap;color:white}
 .marker-wrap{position:relative;width:20px;height:20px}
 .state-label{color:#7dd3fc;font-weight:800;font-size:13px;text-shadow:0 2px 6px #000;opacity:.8;pointer-events:none}
-.city-label{color:#f8fafc;font-weight:700;font-size:11px;text-shadow:0 2px 5px #000;opacity:.9;pointer-events:none}
+.city-label{color:#f8fafc;font-weight:700;font-size:11px;text-shadow:0 2px 5px #000;opacity:.92;pointer-events:none}
+.company-label{color:#bbf7d0;font-weight:800;font-size:11px;text-shadow:0 2px 5px #000;opacity:.95;pointer-events:none}
 .row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #334155}
 .table{width:100%;border-collapse:collapse}
 .table td,.table th{padding:9px;border-bottom:1px solid #334155;text-align:left}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+button{background:#1f2937;color:white;border:1px solid #334155;border-radius:10px;padding:8px 11px;cursor:pointer}
+button.active{background:#075985;border-color:#38bdf8}
 </style>
 </head>
 
@@ -44,8 +50,19 @@ main{max-width:1250px;margin:auto;padding:22px}
 
   <section class="card">
     <h2>Live ATS Map</h2>
+    <div class="actions">
+      <button id="btnStates" class="active" onclick="toggleStates()">States: ON</button>
+      <button id="btnCities" class="active" onclick="toggleCities()">Cities: ON</button>
+      <button id="btnCompanies" class="active" onclick="toggleCompanies()">Companies: ON</button>
+      <button onclick="recenterMap()">Recenter</button>
+    </div>
     <div id="map"></div>
     <p id="mapStatus" class="muted">Loading ATS map...</p>
+  </section>
+
+  <section class="card">
+    <h2>Current Load</h2>
+    <div id="loadInfo" class="muted">Waiting for load telemetry...</div>
   </section>
 
   <section class="card">
@@ -89,26 +106,38 @@ let map;
 let markers = [];
 let cityMarkers = [];
 let stateMarkers = [];
+let companyMarkers = [];
+let pickupDropMarkers = [];
+
+let showStates = true;
+let showCities = true;
+let showCompanies = true;
 
 const STATES = [
-  ["California",[-119.5,37.2]],["Nevada",[-116.8,39.4]],["Arizona",[-111.7,34.2]],
-  ["Utah",[-111.6,39.3]],["New Mexico",[-106.1,34.4]],["Colorado",[-105.5,39.0]],
-  ["Texas",[-99.3,31.0]],["Oklahoma",[-97.5,35.5]],["Kansas",[-98.2,38.5]],
-  ["Nebraska",[-99.7,41.5]],["Wyoming",[-107.6,43.0]],["Idaho",[-114.5,44.2]],
+  ["California",[-119.5,37.2]],["Nevada",[-116.8,39.4]],["Arizona",[-111.7,34.2]],["Utah",[-111.6,39.3]],
+  ["New Mexico",[-106.1,34.4]],["Colorado",[-105.5,39.0]],["Texas",[-99.3,31.0]],["Oklahoma",[-97.5,35.5]],
+  ["Kansas",[-98.2,38.5]],["Nebraska",[-99.7,41.5]],["Wyoming",[-107.6,43.0]],["Idaho",[-114.5,44.2]],
   ["Oregon",[-120.6,43.9]],["Washington",[-120.5,47.4]],["Montana",[-110.5,46.9]]
 ];
 
 const CITIES = [
+  ["Fort Collins",[-105.0844,40.5853]],["Denver",[-104.9903,39.7392]],["Colorado Springs",[-104.8214,38.8339]],
+  ["Pueblo",[-104.6091,38.2544]],["Grand Junction",[-108.5506,39.0639]],["Sterling",[-103.2077,40.6255]],
   ["Seattle",[-122.3321,47.6062]],["Portland",[-122.6765,45.5231]],["Boise",[-116.2023,43.6150]],
   ["Spokane",[-117.4260,47.6588]],["Reno",[-119.8138,39.5296]],["Las Vegas",[-115.1398,36.1699]],
   ["San Francisco",[-122.4194,37.7749]],["Los Angeles",[-118.2437,34.0522]],["San Diego",[-117.1611,32.7157]],
   ["Phoenix",[-112.0740,33.4484]],["Tucson",[-110.9747,32.2226]],["Salt Lake City",[-111.8910,40.7608]],
-  ["Denver",[-104.9903,39.7392]],["Albuquerque",[-106.6504,35.0844]],["El Paso",[-106.4850,31.7619]],
-  ["Dallas",[-96.7970,32.7767]],["Fort Worth",[-97.3308,32.7555]],["Austin",[-97.7431,30.2672]],
-  ["San Antonio",[-98.4936,29.4241]],["Houston",[-95.3698,29.7604]],["Oklahoma City",[-97.5164,35.4676]],
-  ["Tulsa",[-95.9928,36.1540]],["Kansas City",[-94.5786,39.0997]],["Wichita",[-97.3301,37.6872]],
-  ["Omaha",[-95.9345,41.2565]],["Cheyenne",[-104.8202,41.1400]],["Billings",[-108.5007,45.7833]]
+  ["Albuquerque",[-106.6504,35.0844]],["El Paso",[-106.4850,31.7619]],["Dallas",[-96.7970,32.7767]],
+  ["Fort Worth",[-97.3308,32.7555]],["Austin",[-97.7431,30.2672]],["San Antonio",[-98.4936,29.4241]],
+  ["Houston",[-95.3698,29.7604]],["Oklahoma City",[-97.5164,35.4676]],["Tulsa",[-95.9928,36.1540]],
+  ["Kansas City",[-94.5786,39.0997]],["Wichita",[-97.3301,37.6872]],["Omaha",[-95.9345,41.2565]],
+  ["Cheyenne",[-104.8202,41.1400]],["Billings",[-108.5007,45.7833]],["Price",[-110.8107,39.5994]]
 ];
+
+const COMPANY_CITY_OFFSETS = {
+  "Fort Collins|Farmer's Barn":[-105.1050,40.5750],
+  "Price|Shop Town":[-110.8150,39.6040]
+};
 
 function esc(v){
   return String(v ?? "").replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[s]));
@@ -154,8 +183,8 @@ async function initMap(){
           "line-width":["interpolate",["linear"],["zoom"],3,0.8,6,1.7,9,3,12,5],"line-opacity":0.96}}
       ]
     },
-    center:[-98.5795,39.8283],
-    zoom:4.8
+    center:[-105.0844,40.5853],
+    zoom:6.4
   });
 
   map.addControl(new maplibregl.NavigationControl(),"top-right");
@@ -163,37 +192,52 @@ async function initMap(){
   map.on("load",()=>{
     mapStatus.textContent = "ATS map loaded. Waiting for telemetry.";
     addMapLabels();
+    updateLabelVisibility();
     loadTelemetry();
   });
+
+  map.on("zoom", updateLabelVisibility);
+}
+
+function labelMarker(text, cls, coords){
+  const el = document.createElement("div");
+  el.className = cls;
+  el.textContent = text;
+  return new maplibregl.Marker({element:el,anchor:"center"}).setLngLat(coords).addTo(map);
 }
 
 function addMapLabels(){
-  stateMarkers.forEach(m=>m.remove());
-  cityMarkers.forEach(m=>m.remove());
-  stateMarkers = [];
-  cityMarkers = [];
+  clearLabelMarkers();
 
-  for(const [name,coords] of STATES){
-    const el = document.createElement("div");
-    el.className = "state-label";
-    el.textContent = name;
-    stateMarkers.push(new maplibregl.Marker({element:el,anchor:"center"}).setLngLat(coords).addTo(map));
-  }
+  for(const [name,coords] of STATES)
+    stateMarkers.push(labelMarker(name,"state-label",coords));
 
-  for(const [name,coords] of CITIES){
-    const el = document.createElement("div");
-    el.className = "city-label";
-    el.textContent = name;
-    cityMarkers.push(new maplibregl.Marker({element:el,anchor:"center"}).setLngLat(coords).addTo(map));
-  }
+  for(const [name,coords] of CITIES)
+    cityMarkers.push(labelMarker(name,"city-label",coords));
 }
 
-function createMarker(label){
+function clearLabelMarkers(){
+  stateMarkers.forEach(m=>m.remove());
+  cityMarkers.forEach(m=>m.remove());
+  companyMarkers.forEach(m=>m.remove());
+  stateMarkers=[]; cityMarkers=[]; companyMarkers=[];
+}
+
+function updateLabelVisibility(){
+  if(!map) return;
+  const z = map.getZoom();
+
+  stateMarkers.forEach(m=>m.getElement().style.display = showStates && z >= 4 ? "block" : "none");
+  cityMarkers.forEach(m=>m.getElement().style.display = showCities && z >= 5.5 ? "block" : "none");
+  companyMarkers.forEach(m=>m.getElement().style.display = showCompanies && z >= 7 ? "block" : "none");
+}
+
+function createMarker(label, cls="truck-marker"){
   const wrap = document.createElement("div");
   wrap.className = "marker-wrap";
 
   const dot = document.createElement("div");
-  dot.className = "truck-marker";
+  dot.className = cls;
 
   const text = document.createElement("div");
   text.className = "marker-label";
@@ -210,6 +254,57 @@ function getLngLat(u){
   if(!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
   if(Math.abs(lng)>180 || Math.abs(lat)>90) return null;
   return [lng,lat];
+}
+
+function cityCoords(name){
+  const item = CITIES.find(x=>String(x[0]).toLowerCase() === String(name || "").toLowerCase());
+  return item ? item[1] : null;
+}
+
+function companyCoords(city, company){
+  const key = `${city}|${company}`;
+  return COMPANY_CITY_OFFSETS[key] || cityCoords(city);
+}
+
+function renderPickupDrop(unit){
+  pickupDropMarkers.forEach(m=>m.remove());
+  pickupDropMarkers = [];
+
+  companyMarkers.forEach(m=>m.remove());
+  companyMarkers = [];
+
+  const sourceCity = unit?.sourceCity || unit?.SourceCity;
+  const sourceCompany = unit?.sourceCompany || unit?.SourceCompany;
+  const destCity = unit?.destinationCity || unit?.DestinationCity;
+  const destCompany = unit?.destinationCompany || unit?.DestinationCompany;
+
+  if(sourceCity && sourceCompany){
+    const coords = companyCoords(sourceCity, sourceCompany);
+    if(coords){
+      pickupDropMarkers.push(new maplibregl.Marker({element:createMarker(sourceCompany,"pickup-marker"),anchor:"center"})
+        .setLngLat(coords)
+        .setPopup(new maplibregl.Popup().setHTML(`<b>Pickup</b><br>${esc(sourceCompany)}<br>${esc(sourceCity)}`))
+        .addTo(map));
+      companyMarkers.push(labelMarker(sourceCompany,"company-label",coords));
+    }
+  }
+
+  if(destCity && destCompany){
+    const coords = companyCoords(destCity, destCompany);
+    if(coords){
+      pickupDropMarkers.push(new maplibregl.Marker({element:createMarker(destCompany,"drop-marker"),anchor:"center"})
+        .setLngLat(coords)
+        .setPopup(new maplibregl.Popup().setHTML(`<b>Delivery</b><br>${esc(destCompany)}<br>${esc(destCity)}`))
+        .addTo(map));
+      companyMarkers.push(labelMarker(destCompany,"company-label",coords));
+    }
+  }
+
+  updateLabelVisibility();
+
+  loadInfo.innerHTML = sourceCity || destCity
+    ? `<b>Pickup:</b> ${esc(sourceCompany || "")} - ${esc(sourceCity || "")}<br><b>Delivery:</b> ${esc(destCompany || "")} - ${esc(destCity || "")}`
+    : `No active pickup/delivery telemetry yet.`;
 }
 
 async function loadTelemetry(){
@@ -243,6 +338,8 @@ async function loadTelemetry(){
 
     markers.push(marker);
   });
+
+  renderPickupDrop(units[0]);
 
   mapStatus.textContent = markers.length
     ? `Showing ${markers.length} live unit. Current telemetry: ${esc(units[0]?.city || units[0]?.City || "")} ${esc(units[0]?.state || units[0]?.State || "")}`
@@ -312,6 +409,32 @@ async function loadPortal(){
     <div class="card"><h3>${esc(g.city || "Garage")}${g.state ? ", " + esc(g.state) : ""}</h3><p class="muted">${esc(g.country || "")}</p><p><b>Slots:</b> ${esc(g.slots || "0")}</p></div>
   `).join("") : `<div class="muted">No garages added yet.</div>`;
 }
+
+window.toggleStates = function(){
+  showStates = !showStates;
+  btnStates.textContent = `States: ${showStates ? "ON" : "OFF"}`;
+  btnStates.classList.toggle("active", showStates);
+  updateLabelVisibility();
+};
+
+window.toggleCities = function(){
+  showCities = !showCities;
+  btnCities.textContent = `Cities: ${showCities ? "ON" : "OFF"}`;
+  btnCities.classList.toggle("active", showCities);
+  updateLabelVisibility();
+};
+
+window.toggleCompanies = function(){
+  showCompanies = !showCompanies;
+  btnCompanies.textContent = `Companies: ${showCompanies ? "ON" : "OFF"}`;
+  btnCompanies.classList.toggle("active", showCompanies);
+  updateLabelVisibility();
+};
+
+window.recenterMap = function(){
+  if(markers[0]) map.flyTo({center:markers[0].getLngLat(), zoom:8});
+  else map.flyTo({center:[-105.0844,40.5853], zoom:6.4});
+};
 
 await initMap();
 await loadPortal();
