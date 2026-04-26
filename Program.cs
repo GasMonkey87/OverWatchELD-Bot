@@ -198,7 +198,7 @@ public static partial class Program
         builder.Services.AddHttpClient<DiscordOAuthService>();
         builder.Services.AddSingleton<PortalDataStore>();
         builder.Services.AddHttpClient();
-        
+
         var portStr = Environment.GetEnvironmentVariable("PORT") ?? "8080";
         if (!int.TryParse(portStr, out var port))
             port = 8080;
@@ -224,7 +224,9 @@ public static partial class Program
                 FileProvider = new PhysicalFileProvider(wwwroot)
             });
         }
+
         app.MapTelemetryRoutes();
+
         app.MapGet("/health", () => Results.Ok(new
         {
             ok = true,
@@ -234,36 +236,36 @@ public static partial class Program
         }));
 
         app.MapPost("/api/report-issue", async (HttpContext ctx) =>
-{
-    var req = await ctx.Request.ReadFromJsonAsync<IssueReportRequest>();
+        {
+            var req = await ctx.Request.ReadFromJsonAsync<IssueReportRequest>();
 
-    if (req == null ||
-        string.IsNullOrWhiteSpace(req.Email) ||
-        string.IsNullOrWhiteSpace(req.Subject) ||
-        string.IsNullOrWhiteSpace(req.Message))
-    {
-        return Results.BadRequest(new { ok = false, error = "MissingFields" });
-    }
+            if (req == null ||
+                string.IsNullOrWhiteSpace(req.Email) ||
+                string.IsNullOrWhiteSpace(req.Subject) ||
+                string.IsNullOrWhiteSpace(req.Message))
+            {
+                return Results.BadRequest(new { ok = false, error = "MissingFields" });
+            }
 
-    var smtpUser = Environment.GetEnvironmentVariable("SMTP_USER");
-    var smtpPass = Environment.GetEnvironmentVariable("SMTP_PASS");
+            var smtpUser = Environment.GetEnvironmentVariable("SMTP_USER");
+            var smtpPass = Environment.GetEnvironmentVariable("SMTP_PASS");
 
-    if (string.IsNullOrWhiteSpace(smtpUser) || string.IsNullOrWhiteSpace(smtpPass))
-    {
-        return Results.Problem("SMTP is not configured.");
-    }
+            if (string.IsNullOrWhiteSpace(smtpUser) || string.IsNullOrWhiteSpace(smtpPass))
+            {
+                return Results.Problem("SMTP is not configured.");
+            }
 
-    using var smtp = new System.Net.Mail.SmtpClient("smtp.gmail.com", 587)
-    {
-        EnableSsl = true,
-        Credentials = new System.Net.NetworkCredential(smtpUser, smtpPass)
-    };
+            using var smtp = new System.Net.Mail.SmtpClient("smtp.gmail.com", 587)
+            {
+                EnableSsl = true,
+                Credentials = new System.Net.NetworkCredential(smtpUser, smtpPass)
+            };
 
-    var mail = new System.Net.Mail.MailMessage
-    {
-        From = new System.Net.Mail.MailAddress(smtpUser, "OverWatch ELD Website"),
-        Subject = $"OverWatch ELD Issue: {req.Subject}",
-        Body =
+            var mail = new System.Net.Mail.MailMessage
+            {
+                From = new System.Net.Mail.MailAddress(smtpUser, "OverWatch ELD Website"),
+                Subject = $"OverWatch ELD Issue: {req.Subject}",
+                Body =
 $@"New issue report from OverWatch ELD website.
 
 Sender Email:
@@ -274,24 +276,17 @@ Subject:
 
 Message:
 {req.Message}",
-        IsBodyHtml = false
-    };
+                IsBodyHtml = false
+            };
 
-    mail.To.Add("GasMonkeyCreations@gmail.com");
-    mail.ReplyToList.Add(req.Email);
+            mail.To.Add("GasMonkeyCreations@gmail.com");
+            mail.ReplyToList.Add(req.Email);
 
-    await smtp.SendMailAsync(mail);
+            await smtp.SendMailAsync(mail);
 
-    return Results.Ok(new { ok = true });
-});
+            return Results.Ok(new { ok = true });
+        });
 
-public sealed class IssueReportRequest
-{
-    public string? Email { get; set; }
-    public string? Subject { get; set; }
-    public string? Message { get; set; }
-}
-        
         app.MapGet("/build", () => Results.Ok(new
         {
             ok = true,
@@ -299,7 +294,9 @@ public sealed class IssueReportRequest
             utc = DateTimeOffset.UtcNow,
             discordReady = services.DiscordReady
         }));
+
         app.MapMapAssetRoutes();
+
         app.MapGet("/api/status", () => Results.Ok(new
         {
             ok = true,
@@ -330,11 +327,13 @@ public sealed class IssueReportRequest
             var url = oauth.BuildAuthorizeUrl(state);
             return Results.Redirect(url);
         });
+
         app.MapGet("/download/latest", () =>
-{
-    var url = "https://github.com/GasMonkey87/OverWatchELD-Bot/releases/download/V2.0.7/OverWatchELD-win-Setup.exe";
-    return Results.Redirect(url);
-});
+        {
+            var url = "https://github.com/GasMonkey87/OverWatchELD-Bot/releases/download/V2.0.7/OverWatchELD-win-Setup.exe";
+            return Results.Redirect(url);
+        });
+
         app.MapGet("/auth/discord/callback", async (
             HttpContext http,
             DiscordOAuthService oauth,
@@ -616,8 +615,15 @@ public sealed class IssueReportRequest
 
         RegisterProgramRoutes(app, services, dataDir);
         app.MapPortalDataRoutes();
+
         Console.WriteLine($"Bot running on :{port}");
         await app.RunAsync();
     }
 }
 
+public sealed class IssueReportRequest
+{
+    public string? Email { get; set; }
+    public string? Subject { get; set; }
+    public string? Message { get; set; }
+}
