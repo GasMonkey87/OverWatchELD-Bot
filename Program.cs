@@ -579,7 +579,21 @@ Message:
                 fallbackPosted = result.FallbackPosted
             });
         });
+        app.MapGet("/api/onboarding/status", () =>
+{
+    var botClientId = Environment.GetEnvironmentVariable("DISCORD_CLIENT_ID") ?? "YOUR_CLIENT_ID";
 
+    return Results.Ok(new
+    {
+        ok = true,
+        discordReady = services.DiscordReady,
+        guildCount = _client?.Guilds.Count ?? 0,
+        latestVersion = "2.0.7",
+        downloadUrl = "/download/latest",
+        setupUrl = "/setup.html",
+        botInviteUrl = $"https://discord.com/oauth2/authorize?client_id=1469496462294520081&scope=bot%20applications.commands&permissions=8"
+    });
+});
         app.MapMethods("/api/loads/complete", new[] { "POST", "GET" }, async (HttpRequest req) =>
         {
             var dto = await ReadLoadDtoAsync(req, loadApiLogPath, "complete");
