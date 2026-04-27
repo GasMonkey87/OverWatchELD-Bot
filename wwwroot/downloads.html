@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OverWatch ELD Downloads</title>
+
   <style>
     body { margin:0; font-family:Arial,sans-serif; background:#0b1220; color:#e5e7eb; }
     header { padding:32px 20px; text-align:center; background:linear-gradient(135deg,#111827,#1e3a8a); border-bottom:1px solid #334155; }
@@ -15,8 +16,8 @@
     .title { font-size:24px; font-weight:bold; color:#fff; }
     .muted { color:#94a3b8; margin-top:6px; }
     .buttons { margin-top:18px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
-    a.button, button.button { border:0; text-decoration:none; background:#2563eb; color:white; padding:14px 18px; border-radius:10px; font-weight:bold; font-size:16px; cursor:pointer; }
-    a.button:hover, button.button:hover { background:#1d4ed8; transform:translateY(-1px); }
+    a.button { text-decoration:none; background:#2563eb; color:white; padding:14px 18px; border-radius:10px; font-weight:bold; font-size:16px; cursor:pointer; }
+    a.button:hover { background:#1d4ed8; transform:translateY(-1px); }
     .secondary { background:#334155 !important; }
     .success { background:#22c55e !important; color:#052e16 !important; }
     ul { margin-top:16px; text-align:left; display:inline-block; line-height:1.7; }
@@ -26,6 +27,7 @@
 </head>
 
 <body>
+
 <header>
   <h1>OverWatch ELD Downloads</h1>
   <div class="subtitle">The ELD you can count on.</div>
@@ -34,12 +36,13 @@
 
 <main class="container">
 
+  <!-- SMART ONBOARDING -->
   <section class="card">
     <div class="title">Smart Onboarding</div>
     <div class="muted">Follow these steps in order.</div>
 
     <div class="buttons">
-      <a id="botInviteBtn" class="button success" href="#" target="_blank" rel="noopener" onclick="markStep('bot')">
+      <a id="botInviteBtn" class="button success" href="#" target="_blank" onclick="markStep('bot')">
         1. Add Discord Bot
       </a>
 
@@ -57,9 +60,11 @@
       <li id="step-download">⬜ Installer downloaded</li>
       <li id="step-setup">⬜ Setup guide opened</li>
       <li id="step-api">⬜ Bot API checked</li>
+      <li id="step-login">⬜ Discord account connected</li>
     </ul>
   </section>
 
+  <!-- DOWNLOAD -->
   <section class="card green">
     <div class="title">Version <span id="latestVersion">2.0.7</span></div>
     <div class="muted">Current Public Release</div>
@@ -84,68 +89,83 @@
 </footer>
 
 <script>
-  let apiReady = false;
+let apiReady = false;
 
-  function markStep(step) {
-    localStorage.setItem("oweld_" + step, "done");
-    refreshSteps();
-  }
+function markStep(step) {
+  localStorage.setItem("oweld_" + step, "done");
+  refreshSteps();
+}
 
-  function refreshSteps() {
-    const labels = {
-      bot: "Discord bot added to server",
-      download: "Installer downloaded",
-      setup: "Setup guide opened"
-    };
+function refreshSteps() {
+  const labels = {
+    bot: "Discord bot added to server",
+    download: "Installer downloaded",
+    setup: "Setup guide opened"
+  };
 
-    Object.keys(labels).forEach(step => {
-      const el = document.getElementById("step-" + step);
-      const done = localStorage.getItem("oweld_" + step) === "done";
-      el.textContent = done ? "✅ " + labels[step] : "⬜ " + labels[step];
-    });
+  Object.keys(labels).forEach(step => {
+    const el = document.getElementById("step-" + step);
+    const done = localStorage.getItem("oweld_" + step) === "done";
+    el.textContent = done ? "✅ " + labels[step] : "⬜ " + labels[step];
+  });
 
-    document.getElementById("step-api").textContent = apiReady
-      ? "✅ Bot API checked"
-      : "⬜ Bot API checked";
-  }
+  document.getElementById("step-api").textContent =
+    apiReady ? "✅ Bot API checked" : "⬜ Bot API checked";
 
-  async function loadOnboardingStatus() {
-    const pill = document.getElementById("apiStatus");
+  const loginDone = localStorage.getItem("oweld_login") === "done";
+  document.getElementById("step-login").textContent =
+    loginDone ? "✅ Discord account connected" : "⬜ Discord account connected";
+}
 
-    try {
-      const res = await fetch("/api/onboarding/status", { cache: "no-store" });
-      const data = await res.json();
+async function loadOnboardingStatus() {
+  const pill = document.getElementById("apiStatus");
 
-      if (!data.ok) throw new Error("API returned not ok");
+  try {
+    const res = await fetch("/api/onboarding/status");
+    const data = await res.json();
 
-      apiReady = true;
+    apiReady = true;
 
-      document.getElementById("latestVersion").textContent = data.latestVersion || "2.0.7";
-      document.getElementById("downloadBtn").href = data.downloadUrl || "/download/latest";
-      document.getElementById("setupBtn").href = data.setupUrl || "/setup.html";
-      document.getElementById("botInviteBtn").href = data.botInviteUrl || "#";
+    document.getElementById("latestVersion").textContent = data.latestVersion;
+    document.getElementById("downloadBtn").href = data.downloadUrl;
+    document.getElementById("setupBtn").href = data.setupUrl;
+    document.getElementById("botInviteBtn").href = data.botInviteUrl;
 
-      if (data.discordReady) {
-        pill.textContent = "Bot Online • " + data.guildCount + " servers";
-        pill.style.background = "#22c55e";
-        pill.style.color = "#052e16";
-      } else {
-        pill.textContent = "Bot starting...";
-        pill.style.background = "#f59e0b";
-        pill.style.color = "#111827";
-      }
-    } catch {
-      apiReady = false;
-      pill.textContent = "Bot API unavailable";
-      pill.style.background = "#7f1d1d";
-      pill.style.color = "#fee2e2";
+    if (data.discordReady) {
+      pill.textContent = "Bot Online • " + data.guildCount + " servers";
+      pill.style.background = "#22c55e";
+      pill.style.color = "#052e16";
+    } else {
+      pill.textContent = "Bot starting...";
+      pill.style.background = "#f59e0b";
+      pill.style.color = "#111827";
     }
-
-    refreshSteps();
+  } catch {
+    apiReady = false;
+    pill.textContent = "Bot API unavailable";
+    pill.style.background = "#7f1d1d";
+    pill.style.color = "#fee2e2";
   }
 
   refreshSteps();
-  loadOnboardingStatus();
+}
+
+async function checkUser() {
+  try {
+    const res = await fetch("/api/onboarding/me");
+    const data = await res.json();
+
+    if (data.loggedIn) {
+      localStorage.setItem("oweld_login", "done");
+      document.getElementById("step-login").textContent =
+        "✅ Discord connected (" + data.username + ")";
+    }
+  } catch {}
+}
+
+refreshSteps();
+loadOnboardingStatus();
+checkUser();
 </script>
 
 </body>
