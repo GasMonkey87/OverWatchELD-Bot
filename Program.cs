@@ -308,7 +308,24 @@ Message:
             discordReady = services.DiscordReady,
             utc = DateTimeOffset.UtcNow
         }));
+        app.MapGet("/api/onboarding/me", (HttpContext http, WebSessionStore sessions) =>
+{
+    var sessionId = http.Request.Cookies["ow_session"];
 
+    if (string.IsNullOrWhiteSpace(sessionId) ||
+        !sessions.TryGet(sessionId, out var user) ||
+        user == null)
+    {
+        return Results.Ok(new { loggedIn = false });
+    }
+
+    return Results.Ok(new
+    {
+        loggedIn = true,
+        username = user.Username,
+        discordUserId = user.DiscordUserId
+    });
+});
         app.MapGet("/", () => Results.Redirect("/index.html"));
 
         app.MapGet("/login", (HttpContext http, DiscordOAuthService oauth) =>
