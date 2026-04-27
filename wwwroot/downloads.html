@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OverWatch ELD Downloads</title>
+
   <style>
     body {
       margin: 0;
@@ -29,85 +30,42 @@
       color: #cbd5e1;
     }
 
-    .top-actions {
-      margin-top: 18px;
-    }
-
-    .top-actions a {
-      display: inline-block;
-      background: #22c55e;
-      color: #052e16;
-      padding: 12px 18px;
-      border-radius: 10px;
-      font-weight: bold;
-      text-decoration: none;
-      transition: 0.2s;
-    }
-
-    .top-actions a:hover {
-      transform: translateY(-1px);
-      background: #16a34a;
-    }
-
     .container {
       max-width: 1000px;
       margin: 30px auto;
       padding: 0 20px;
     }
 
-    .notice {
-      background: #172554;
-      border: 1px solid #2563eb;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 24px;
-      color: #dbeafe;
-      text-align: center;
-    }
-
-    .version-card {
+    .card {
       background: #111827;
-      border: 1px solid #22c55e;
+      border: 1px solid #334155;
       border-radius: 16px;
       padding: 22px;
-      margin-bottom: 18px;
-      box-shadow: 0 10px 24px rgba(0,0,0,.25);
+      margin-bottom: 20px;
       text-align: center;
+      box-shadow: 0 10px 24px rgba(0,0,0,.25);
     }
 
-    .version {
-      font-size: 26px;
+    .card.green {
+      border-color: #22c55e;
+    }
+
+    .title {
+      font-size: 24px;
       font-weight: bold;
-      color: #ffffff;
+      color: #fff;
     }
 
-    .badge {
-      background: #22c55e;
-      color: #052e16;
-      padding: 6px 10px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: bold;
-      margin-left: 10px;
-    }
-
-    .date {
+    .subtitle2 {
       color: #94a3b8;
       margin-top: 6px;
     }
 
-    ul {
-      margin-top: 14px;
-      line-height: 1.7;
-      text-align: left;
-      display: inline-block;
-    }
-
     .buttons {
-      margin-top: 20px;
+      margin-top: 18px;
       display: flex;
-      justify-content: center;
       gap: 12px;
+      justify-content: center;
       flex-wrap: wrap;
     }
 
@@ -118,7 +76,6 @@
       padding: 14px 18px;
       border-radius: 10px;
       font-weight: bold;
-      font-size: 16px;
       transition: 0.2s;
     }
 
@@ -131,6 +88,13 @@
       background: #334155;
     }
 
+    ul {
+      margin-top: 16px;
+      text-align: left;
+      display: inline-block;
+      line-height: 1.7;
+    }
+
     footer {
       text-align: center;
       color: #94a3b8;
@@ -138,46 +102,66 @@
     }
   </style>
 </head>
+
 <body>
 
 <header>
   <h1>OverWatch ELD Downloads</h1>
   <div class="subtitle">The ELD you can count on.</div>
-
-  <!-- 🔥 NEW BUTTON -->
-  <div class="top-actions">
-    <a href="https://discord.com/oauth2/authorize?client_id=1469496462294520081&scope=bot%20applications.commands&permissions=8"
-       target="_blank"
-       rel="noopener">
-      Add Discord Bot to Server
-    </a>
-  </div>
 </header>
 
 <main class="container">
 
-  <div class="notice">
-    Download the latest version of OverWatch ELD below.
-  </div>
+  <!-- 🔥 SMART ONBOARDING -->
+  <section class="card">
+    <div class="title">Get Started (Recommended)</div>
+    <div class="subtitle2">Follow these steps to set up your ELD correctly</div>
 
-  <!-- ONLY VERSION -->
-  <section class="version-card">
-    <div class="version">
-      Version 2.0.7 <span class="badge">Latest</span>
+    <div class="buttons">
+      <a class="button"
+         href="https://discord.com/oauth2/authorize?client_id=1469496462294520081&scope=bot%20applications.commands&permissions=8"
+         target="_blank"
+         onclick="markStep('bot')">
+        1. Add Discord Bot
+      </a>
+
+      <a class="button"
+         href="/download/latest"
+         onclick="markStep('download')">
+        2. Download Installer
+      </a>
+
+      <a class="button secondary"
+         href="/setup.html"
+         onclick="markStep('setup')">
+        3. Setup Guide
+      </a>
     </div>
-    <div class="date">Current Public Release</div>
+
+    <ul>
+      <li id="step-bot">⬜ Discord bot added to server</li>
+      <li id="step-download">⬜ Installer downloaded</li>
+      <li id="step-setup">⬜ Setup guide opened</li>
+    </ul>
+  </section>
+
+  <!-- 🔥 DOWNLOAD CARD -->
+  <section class="card green">
+    <div class="title">Version 2.0.7</div>
+    <div class="subtitle2">Current Public Release</div>
 
     <ul>
       <li>Latest stability improvements</li>
-      <li>Updater system enhancements</li>
-      <li>VTC + Discord integration fixes</li>
-      <li>Companion app improvements</li>
+      <li>Updater enhancements</li>
+      <li>Discord + VTC fixes</li>
+      <li>Companion improvements</li>
     </ul>
 
     <div class="buttons">
       <a class="button" href="/download/latest">
         Download Installer
       </a>
+
       <a class="button secondary" href="/">
         Back to Home
       </a>
@@ -189,6 +173,34 @@
 <footer>
   © Gas Monkey Creations — OverWatch ELD
 </footer>
+
+<script>
+  function markStep(step) {
+    localStorage.setItem("oweld_" + step, "done");
+    refreshSteps();
+  }
+
+  function refreshSteps() {
+    const steps = ["bot", "download", "setup"];
+
+    steps.forEach(step => {
+      const el = document.getElementById("step-" + step);
+      if (!el) return;
+
+      const done = localStorage.getItem("oweld_" + step) === "done";
+
+      const text = {
+        bot: "Discord bot added to server",
+        download: "Installer downloaded",
+        setup: "Setup guide opened"
+      }[step];
+
+      el.textContent = done ? "✅ " + text : "⬜ " + text;
+    });
+  }
+
+  refreshSteps();
+</script>
 
 </body>
 </html>
