@@ -4,136 +4,50 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OverWatch ELD Downloads</title>
-
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #0b1220;
-      color: #e5e7eb;
-    }
-
-    header {
-      padding: 32px 20px;
-      text-align: center;
-      background: linear-gradient(135deg, #111827, #1e3a8a);
-      border-bottom: 1px solid #334155;
-    }
-
-    h1 {
-      margin: 0;
-      font-size: 34px;
-    }
-
-    .subtitle {
-      margin-top: 10px;
-      color: #cbd5e1;
-    }
-
-    .container {
-      max-width: 1000px;
-      margin: 30px auto;
-      padding: 0 20px;
-    }
-
-    .card {
-      background: #111827;
-      border: 1px solid #334155;
-      border-radius: 16px;
-      padding: 22px;
-      margin-bottom: 20px;
-      text-align: center;
-      box-shadow: 0 10px 24px rgba(0,0,0,.25);
-    }
-
-    .card.green {
-      border-color: #22c55e;
-    }
-
-    .title {
-      font-size: 24px;
-      font-weight: bold;
-      color: #fff;
-    }
-
-    .subtitle2 {
-      color: #94a3b8;
-      margin-top: 6px;
-    }
-
-    .buttons {
-      margin-top: 18px;
-      display: flex;
-      gap: 12px;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    a.button {
-      text-decoration: none;
-      background: #2563eb;
-      color: white;
-      padding: 14px 18px;
-      border-radius: 10px;
-      font-weight: bold;
-      transition: 0.2s;
-    }
-
-    a.button:hover {
-      background: #1d4ed8;
-      transform: translateY(-1px);
-    }
-
-    a.button.secondary {
-      background: #334155;
-    }
-
-    ul {
-      margin-top: 16px;
-      text-align: left;
-      display: inline-block;
-      line-height: 1.7;
-    }
-
-    footer {
-      text-align: center;
-      color: #94a3b8;
-      padding: 30px 20px;
-    }
+    body { margin:0; font-family:Arial,sans-serif; background:#0b1220; color:#e5e7eb; }
+    header { padding:32px 20px; text-align:center; background:linear-gradient(135deg,#111827,#1e3a8a); border-bottom:1px solid #334155; }
+    h1 { margin:0; font-size:34px; }
+    .subtitle { margin-top:10px; color:#cbd5e1; }
+    .container { max-width:1000px; margin:30px auto; padding:0 20px; }
+    .card { background:#111827; border:1px solid #334155; border-radius:16px; padding:22px; margin-bottom:20px; text-align:center; box-shadow:0 10px 24px rgba(0,0,0,.25); }
+    .green { border-color:#22c55e; }
+    .title { font-size:24px; font-weight:bold; color:#fff; }
+    .muted { color:#94a3b8; margin-top:6px; }
+    .buttons { margin-top:18px; display:flex; gap:12px; justify-content:center; flex-wrap:wrap; }
+    a.button, button.button { border:0; text-decoration:none; background:#2563eb; color:white; padding:14px 18px; border-radius:10px; font-weight:bold; font-size:16px; cursor:pointer; }
+    a.button:hover, button.button:hover { background:#1d4ed8; transform:translateY(-1px); }
+    .secondary { background:#334155 !important; }
+    .success { background:#22c55e !important; color:#052e16 !important; }
+    ul { margin-top:16px; text-align:left; display:inline-block; line-height:1.7; }
+    .status-pill { display:inline-block; margin-top:12px; padding:6px 10px; border-radius:999px; font-weight:bold; background:#334155; color:#cbd5e1; }
+    footer { text-align:center; color:#94a3b8; padding:30px 20px; }
   </style>
 </head>
 
 <body>
-
 <header>
   <h1>OverWatch ELD Downloads</h1>
   <div class="subtitle">The ELD you can count on.</div>
+  <div id="apiStatus" class="status-pill">Checking bot status...</div>
 </header>
 
 <main class="container">
 
-  <!-- 🔥 SMART ONBOARDING -->
   <section class="card">
-    <div class="title">Get Started (Recommended)</div>
-    <div class="subtitle2">Follow these steps to set up your ELD correctly</div>
+    <div class="title">Smart Onboarding</div>
+    <div class="muted">Follow these steps in order.</div>
 
     <div class="buttons">
-      <a class="button"
-         href="https://discord.com/oauth2/authorize?client_id=1469496462294520081&scope=bot%20applications.commands&permissions=8"
-         target="_blank"
-         onclick="markStep('bot')">
+      <a id="botInviteBtn" class="button success" href="#" target="_blank" rel="noopener" onclick="markStep('bot')">
         1. Add Discord Bot
       </a>
 
-      <a class="button"
-         href="/download/latest"
-         onclick="markStep('download')">
+      <a id="downloadBtn" class="button" href="/download/latest" onclick="markStep('download')">
         2. Download Installer
       </a>
 
-      <a class="button secondary"
-         href="/setup.html"
-         onclick="markStep('setup')">
+      <a id="setupBtn" class="button secondary" href="/setup.html" onclick="markStep('setup')">
         3. Setup Guide
       </a>
     </div>
@@ -142,13 +56,13 @@
       <li id="step-bot">⬜ Discord bot added to server</li>
       <li id="step-download">⬜ Installer downloaded</li>
       <li id="step-setup">⬜ Setup guide opened</li>
+      <li id="step-api">⬜ Bot API checked</li>
     </ul>
   </section>
 
-  <!-- 🔥 DOWNLOAD CARD -->
   <section class="card green">
-    <div class="title">Version 2.0.7</div>
-    <div class="subtitle2">Current Public Release</div>
+    <div class="title">Version <span id="latestVersion">2.0.7</span></div>
+    <div class="muted">Current Public Release</div>
 
     <ul>
       <li>Latest stability improvements</li>
@@ -158,13 +72,8 @@
     </ul>
 
     <div class="buttons">
-      <a class="button" href="/download/latest">
-        Download Installer
-      </a>
-
-      <a class="button secondary" href="/">
-        Back to Home
-      </a>
+      <a class="button" href="/download/latest" onclick="markStep('download')">Download Installer</a>
+      <a class="button secondary" href="/">Back to Home</a>
     </div>
   </section>
 
@@ -175,31 +84,68 @@
 </footer>
 
 <script>
+  let apiReady = false;
+
   function markStep(step) {
     localStorage.setItem("oweld_" + step, "done");
     refreshSteps();
   }
 
   function refreshSteps() {
-    const steps = ["bot", "download", "setup"];
+    const labels = {
+      bot: "Discord bot added to server",
+      download: "Installer downloaded",
+      setup: "Setup guide opened"
+    };
 
-    steps.forEach(step => {
+    Object.keys(labels).forEach(step => {
       const el = document.getElementById("step-" + step);
-      if (!el) return;
-
       const done = localStorage.getItem("oweld_" + step) === "done";
-
-      const text = {
-        bot: "Discord bot added to server",
-        download: "Installer downloaded",
-        setup: "Setup guide opened"
-      }[step];
-
-      el.textContent = done ? "✅ " + text : "⬜ " + text;
+      el.textContent = done ? "✅ " + labels[step] : "⬜ " + labels[step];
     });
+
+    document.getElementById("step-api").textContent = apiReady
+      ? "✅ Bot API checked"
+      : "⬜ Bot API checked";
+  }
+
+  async function loadOnboardingStatus() {
+    const pill = document.getElementById("apiStatus");
+
+    try {
+      const res = await fetch("/api/onboarding/status", { cache: "no-store" });
+      const data = await res.json();
+
+      if (!data.ok) throw new Error("API returned not ok");
+
+      apiReady = true;
+
+      document.getElementById("latestVersion").textContent = data.latestVersion || "2.0.7";
+      document.getElementById("downloadBtn").href = data.downloadUrl || "/download/latest";
+      document.getElementById("setupBtn").href = data.setupUrl || "/setup.html";
+      document.getElementById("botInviteBtn").href = data.botInviteUrl || "#";
+
+      if (data.discordReady) {
+        pill.textContent = "Bot Online • " + data.guildCount + " servers";
+        pill.style.background = "#22c55e";
+        pill.style.color = "#052e16";
+      } else {
+        pill.textContent = "Bot starting...";
+        pill.style.background = "#f59e0b";
+        pill.style.color = "#111827";
+      }
+    } catch {
+      apiReady = false;
+      pill.textContent = "Bot API unavailable";
+      pill.style.background = "#7f1d1d";
+      pill.style.color = "#fee2e2";
+    }
+
+    refreshSteps();
   }
 
   refreshSteps();
+  loadOnboardingStatus();
 </script>
 
 </body>
