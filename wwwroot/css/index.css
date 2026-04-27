@@ -1,330 +1,185 @@
-:root {
-  --bg: #07111f;
-  --bg2: #0b1729;
-  --panel: rgba(15, 26, 45, 0.94);
-  --panel2: rgba(19, 34, 58, 0.96);
-  --line: rgba(148, 163, 184, 0.18);
-  --text: #edf4ff;
-  --muted: #9fb0ca;
-  --accent: #2f7cf6;
-  --accent2: #2bc46d;
-  --shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
-}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OverWatch ELD</title>
 
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; min-height: 100%; }
-body {
-  font-family: Inter, Segoe UI, Arial, sans-serif;
-  color: var(--text);
-  background:
-    radial-gradient(circle at top right, rgba(47,124,246,.16), transparent 28%),
-    radial-gradient(circle at top left, rgba(43,196,109,.12), transparent 24%),
-    linear-gradient(180deg, var(--bg), var(--bg2) 45%, #0a1525 100%);
-}
-a { color: inherit; text-decoration: none; }
+<style>
 
-.site-shell {
-  max-width: 1440px;
-  margin: 0 auto;
+/* KEEP YOUR EXISTING STYLES (from your file) */
+/* --- PASTE YOUR FULL CSS HERE --- */
+
+/* 🔥 ADD THIS AT THE BOTTOM OF YOUR CSS */
+
+.clock-showcase {
+  margin-top: 24px;
   padding: 24px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(47,124,246,.15), rgba(43,196,109,.08));
 }
 
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.clock-grid {
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
   gap: 18px;
-  flex-wrap: wrap;
-  margin-bottom: 28px;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.brand-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: 16px;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  background: linear-gradient(135deg, var(--accent), var(--accent2));
-  box-shadow: var(--shadow);
-}
-
-.brand-title {
-  font-size: 22px;
-  font-weight: 800;
-}
-
-.brand-subtitle {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.top-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 11px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,.04);
-  color: var(--text);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.btn.primary {
-  background: linear-gradient(135deg, var(--accent), #245fd7);
-  border-color: rgba(47,124,246,.44);
-}
-
-.btn.ghost {
-  background: rgba(255,255,255,.03);
-}
-
-.hero {
-  padding: 18px 0 8px;
-}
-
-.hero-grid {
-  display: grid;
-  grid-template-columns: 1.15fr .85fr;
-  gap: 24px;
-  align-items: center;
-}
-
-.eyebrow {
-  color: #9ec2ff;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  margin-bottom: 10px;
-}
-
-.hero-copy h1 {
-  font-size: clamp(34px, 5vw, 58px);
-  line-height: 1.04;
-  margin: 0 0 14px;
-}
-
-.hero-copy p {
-  color: var(--muted);
-  font-size: 17px;
-  line-height: 1.7;
-  margin: 0 0 18px;
-  max-width: 760px;
-}
-
-.hero-cta {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 22px;
-}
-
-.hero-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.stat {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  padding: 16px;
-  box-shadow: var(--shadow);
-}
-
-.stat-label {
-  color: var(--muted);
-  font-size: 13px;
-  margin-bottom: 8px;
-}
-
-.stat-value {
-  font-size: 28px;
-  font-weight: 800;
-}
-
-.hero-media {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  padding: 12px;
-  min-height: 420px;
-  box-shadow: var(--shadow);
-}
-
-.hero-media img {
-  width: 100%;
-  height: 100%;
-  min-height: 396px;
-  object-fit: cover;
-  border-radius: 18px;
-  display: block;
-  background: #0f1b31;
-}
-
-.content {
-  display: grid;
-  gap: 22px;
-  margin-top: 26px;
-}
-
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 24px;
-  padding: 22px;
-  box-shadow: var(--shadow);
-}
-
-.two-col {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 22px;
-}
-
-.section-title {
-  color: #9ec2ff;
-  font-size: 12px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .08em;
-  margin-bottom: 10px;
-}
-
-.panel h2, .panel h3 {
-  margin: 0 0 12px;
-}
-
-.panel p {
-  color: var(--muted);
-  line-height: 1.7;
-}
-
-.bullet-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
   margin-top: 18px;
 }
 
-.bullet-card {
+.clock-card {
   background: rgba(255,255,255,.03);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 14px;
-}
-
-.info-card,
-.cta-card {
-  background: var(--panel2);
-  border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 20px;
   padding: 18px;
+  text-align: center;
 }
 
-.link-stack {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 14px;
+.clock-ring {
+  width: 90px;
+  height: 90px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  position: relative;
+  animation: pulse 2.5s infinite;
 }
 
-.quick-link {
-  display: block;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(255,255,255,.03);
-  border: 1px solid var(--line);
+.clock-ring::after {
+  content:"";
+  position:absolute;
+  inset:10px;
+  border-radius:50%;
+  background:#0b1729;
 }
 
-.note {
-  color: var(--muted);
-  font-size: 13px;
+.drive { background: conic-gradient(#22c55e 0deg, #22c55e 300deg, rgba(255,255,255,.1) 300deg); }
+.shift { background: conic-gradient(#2f7cf6 0deg, #2f7cf6 260deg, rgba(255,255,255,.1) 260deg); }
+.cycle { background: conic-gradient(#a78bfa 0deg, #a78bfa 320deg, rgba(255,255,255,.1) 320deg); }
+.break { background: conic-gradient(#f59e0b 0deg, #f59e0b 180deg, rgba(255,255,255,.1) 180deg); }
+
+.clock-card strong {
+  display:block;
+  font-size:18px;
 }
 
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: end;
-  gap: 12px;
-  margin-bottom: 16px;
+.clock-card span {
+  color:var(--muted);
+  font-size:13px;
 }
 
-.gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+@keyframes pulse {
+  0% { transform:scale(1); filter:drop-shadow(0 0 0 rgba(47,124,246,0)); }
+  50% { transform:scale(1.05); filter:drop-shadow(0 0 12px rgba(47,124,246,.5)); }
+  100% { transform:scale(1); filter:drop-shadow(0 0 0 rgba(47,124,246,0)); }
 }
 
-.gallery-item {
-  min-height: 220px;
-  border-radius: 18px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,.03);
-  overflow: hidden;
-  display: grid;
-  place-items: center;
-  color: var(--muted);
+@media (max-width:900px) {
+  .clock-grid { grid-template-columns:1fr 1fr; }
 }
 
-.gallery-item img {
-  width: 100%;
-  height: 100%;
-  min-height: 220px;
-  object-fit: cover;
-  display: block;
+@media (max-width:600px) {
+  .clock-grid { grid-template-columns:1fr; }
 }
 
-.testimonial-list {
-  display: grid;
-  gap: 12px;
-}
+</style>
+</head>
 
-.testimonial {
-  padding: 14px 16px;
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  background: rgba(255,255,255,.03);
-}
+<body>
 
-@media (max-width: 1080px) {
-  .hero-grid,
-  .two-col {
-    grid-template-columns: 1fr;
-  }
+<div class="site-shell">
 
-  .gallery-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
+  <!-- HEADER -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">🚛</div>
+      <div>
+        <div class="brand-title">OverWatch ELD</div>
+        <div class="brand-subtitle">The ELD you can count on.</div>
+      </div>
+    </div>
 
-@media (max-width: 720px) {
-  .site-shell {
-    padding: 16px;
-  }
+    <div class="top-actions">
+      <a class="btn ghost" href="/setup.html">Setup Guide</a>
+      <a class="btn primary" href="/downloads.html">Download</a>
+    </div>
+  </div>
 
-  .hero-stats,
-  .bullet-grid,
-  .gallery-grid {
-    grid-template-columns: 1fr;
-  }
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-grid">
 
-  .topbar {
-    align-items: stretch;
-  }
-}
+      <div class="hero-copy">
+        <div class="eyebrow">Professional VTC Fleet Tools</div>
+        <h1>Run your fleet like a real operation.</h1>
+        <p>
+          Real-time HOS clocks, telemetry, dispatch, and Discord integration — all in one platform built for serious VTC operations.
+        </p>
+
+        <div class="hero-cta">
+          <a class="btn primary" href="/downloads.html">Download Now</a>
+          <a class="btn ghost" href="/setup.html">Setup Guide</a>
+        </div>
+
+        <div class="hero-stats">
+          <div class="stat">
+            <div class="stat-label">Telemetry</div>
+            <div class="stat-value">LIVE</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Discord</div>
+            <div class="stat-value">SYNCED</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Fleet</div>
+            <div class="stat-value">CONNECTED</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-media">
+        <img src="/img/overwatch-eld-hero.png">
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 🔥 NEW DUTY CLOCK SHOWCASE -->
+  <div class="clock-showcase">
+    <h2>Live Duty Clocks</h2>
+    <p style="color:var(--muted);">
+      Real-time HOS clocks designed for clarity, precision, and driver awareness.
+    </p>
+
+    <div class="clock-grid">
+
+      <div class="clock-card">
+        <div class="clock-ring drive"></div>
+        <strong>10:42</strong>
+        <span>Drive</span>
+      </div>
+
+      <div class="clock-card">
+        <div class="clock-ring shift"></div>
+        <strong>13:31</strong>
+        <span>Shift</span>
+      </div>
+
+      <div class="clock-card">
+        <div class="clock-ring cycle"></div>
+        <strong>68:45</strong>
+        <span>Cycle</span>
+      </div>
+
+      <div class="clock-card">
+        <div class="clock-ring break"></div>
+        <strong>00:27</strong>
+        <span>Break</span>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
