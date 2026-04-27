@@ -29,6 +29,26 @@
       color: #cbd5e1;
     }
 
+    .top-actions {
+      margin-top: 18px;
+    }
+
+    .top-actions a {
+      display: inline-block;
+      background: #22c55e;
+      color: #052e16;
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-weight: bold;
+      text-decoration: none;
+      transition: 0.2s;
+    }
+
+    .top-actions a:hover {
+      transform: translateY(-1px);
+      background: #16a34a;
+    }
+
     .container {
       max-width: 1000px;
       margin: 30px auto;
@@ -123,6 +143,15 @@
 <header>
   <h1>OverWatch ELD Downloads</h1>
   <div class="subtitle">The ELD you can count on.</div>
+
+  <!-- 🔥 NEW BUTTON -->
+  <div class="top-actions">
+    <a href="https://discord.com/oauth2/authorize?client_id=1469496462294520081&scope=bot%20applications.commands&permissions=8"
+       target="_blank"
+       rel="noopener">
+      Add Discord Bot to Server
+    </a>
+  </div>
 </header>
 
 <main class="container">
