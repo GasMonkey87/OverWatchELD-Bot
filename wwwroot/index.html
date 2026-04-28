@@ -250,6 +250,91 @@ h1 {
   color:var(--muted);
 }
 
+.clock-showcase {
+  background:linear-gradient(135deg, rgba(30,144,255,.22), rgba(8,17,31,.98));
+  border:1px solid var(--line);
+  border-radius:30px;
+  padding:34px;
+  box-shadow:var(--shadow);
+  display:grid;
+  grid-template-columns:.8fr 1.2fr;
+  gap:28px;
+  align-items:center;
+}
+
+.clock-showcase h2 {
+  margin:0 0 10px;
+  font-size:clamp(1.8rem,3vw,2.8rem);
+}
+
+.clock-showcase p {
+  color:var(--muted);
+  margin:0;
+}
+
+.clock-grid {
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:16px;
+}
+
+.clock-card {
+  background:rgba(0,0,0,.24);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:22px;
+  padding:18px;
+  text-align:center;
+}
+
+.clock-ring {
+  width:92px;
+  height:92px;
+  margin:0 auto 12px;
+  border-radius:50%;
+  position:relative;
+  animation:clockPulse 2.4s ease-in-out infinite;
+}
+
+.clock-ring::after {
+  content:"";
+  position:absolute;
+  inset:10px;
+  background:#111827;
+  border-radius:50%;
+}
+
+.clock-ring.drive {
+  background:conic-gradient(#22c55e 0deg, #22c55e 285deg, rgba(255,255,255,.12) 285deg);
+}
+
+.clock-ring.shift {
+  background:conic-gradient(#4da3ff 0deg, #4da3ff 250deg, rgba(255,255,255,.12) 250deg);
+}
+
+.clock-ring.cycle {
+  background:conic-gradient(#a78bfa 0deg, #a78bfa 315deg, rgba(255,255,255,.12) 315deg);
+}
+
+.clock-ring.break {
+  background:conic-gradient(#f59e0b 0deg, #f59e0b 180deg, rgba(255,255,255,.12) 180deg);
+}
+
+.clock-card strong {
+  display:block;
+  font-size:1.35rem;
+}
+
+.clock-card span {
+  color:var(--muted);
+  font-weight:700;
+}
+
+@keyframes clockPulse {
+  0% { filter:drop-shadow(0 0 0 rgba(77,163,255,0)); transform:scale(1); }
+  50% { filter:drop-shadow(0 0 18px rgba(77,163,255,.55)); transform:scale(1.04); }
+  100% { filter:drop-shadow(0 0 0 rgba(77,163,255,0)); transform:scale(1); }
+}
+
 .split {
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -343,7 +428,18 @@ footer {
   .grid,
   .split,
   .steps,
-  .trust-row {
+  .trust-row,
+  .clock-showcase {
+    grid-template-columns:1fr;
+  }
+
+  .clock-grid {
+    grid-template-columns:repeat(2,1fr);
+  }
+}
+
+@media(max-width:600px) {
+  .clock-grid {
     grid-template-columns:1fr;
   }
 }
