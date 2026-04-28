@@ -58,142 +58,155 @@ public static class ManagementRoutes
             return Results.Ok(new { ok = true });
         });
         app.MapPost("/api/vtc/setup/auto-discord", async (HttpContext ctx) =>
-{
-    if (!IsAuthorized(ctx))
-        return Results.Unauthorized();
-
-    var body = await ReadJsonBodyAsync(ctx);
-
-    var guildId = Get(body, "guildId");
-    if (string.IsNullOrWhiteSpace(guildId) || !ulong.TryParse(guildId, out var guildUlong))
-        return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
-
-    var guild = services.Client.GetGuild(guildUlong);
-    if (guild == null)
-        return Results.BadRequest(new { ok = false, error = "BotNotInServer" });
-
-    var categoryName = Get(body, "categoryName") ?? "OverWatch ELD";
-    var dispatchName = Get(body, "dispatchChannelName") ?? "dispatch-center";
-    var announcementsName = Get(body, "announcementsChannelName") ?? "announcements";
-    var bolName = Get(body, "bolChannelName") ?? "bol-documents";
-    var systemLogName = Get(body, "systemLogChannelName") ?? "system-logs";
-
-    async Task<SocketCategoryChannel> EnsureCategoryAsync(string name)
-    {
-        var existing = guild.CategoryChannels.FirstOrDefault(c =>
-            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
-
-        if (existing != null)
-            return existing;
-
-        return await guild.CreateCategoryChannelAsync(name);
-    }
-
-    async Task<SocketTextChannel> EnsureTextChannelAsync(string name, SocketCategoryChannel category)
-    {
-        var existing = guild.TextChannels.FirstOrDefault(c =>
-            string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
-
-        if (existing != null)
-            return existing;
-
-        return await guild.CreateTextChannelAsync(name, props =>
         {
-            props.CategoryId = category.Id;
-        });
-    }
+            if (!IsAuthorized(ctx))
+                return Results.Unauthorized();
 
-    async Task<string> EnsureWebhookAsync(SocketTextChannel channel, string name)
-    {
-        var hooks = await channel.GetWebhooksAsync();
-        var existing = hooks.FirstOrDefault(h =>
-            string.Equals(h.Name, name, StringComparison.OrdinalIgnoreCase));
+            var body = await ReadJsonBodyAsync(ctx);
 
-        if (existing != null)
-            return existing.GetWebhookUrl();
+            var guildId = Get(body, "guildId");
+            if (string.IsNullOrWhiteSpace(guildId) || !ulong.TryParse(guildId, out var guildUlong))
+                return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
 
-        var hook = await channel.CreateWebhookAsync(name);
-        return hook.GetWebhookUrl();
-    }
+            var guild = services.Client.GetGuild(guildUlong);
+            if (guild == null)
+                return Results.BadRequest(new { ok = false, error = "BotNotInServer" });
 
-    var category = await EnsureCategoryAsync(categoryName);
+            var categoryName = Get(body, "categoryName") ?? "OverWatch ELD";
+            var dispatchName = Get(body, "dispatchChannelName") ?? "dispatch-center";
+            var announcementsName = Get(body, "announcementsChannelName") ?? "announcements";
+            var bolName = Get(body, "bolChannelName") ?? "bol-documents";
+            var systemLogName = Get(body, "systemLogChannelName") ?? "system-logs";
 
-    var dispatch = await EnsureTextChannelAsync(dispatchName, category);
-    var announcements = await EnsureTextChannelAsync(announcementsName, category);
-    var bol = await EnsureTextChannelAsync(bolName, category);
-    var systemLogs = await EnsureTextChannelAsync(systemLogName, category);
+            // Create/fetch category. Discord.NET create calls return Rest* types,
+            // so we re-fetch from the socket cache after creation.
+            var category = guild.CategoryChannels.FirstOrDefault(c =>
+                string.Equals(c.Name, categoryName, StringComparison.OrdinalIgnoreCase));
 
-    var dispatchWebhook = await EnsureWebhookAsync(dispatch, "OverWatch Dispatch");
-    var announcementsWebhook = await EnsureWebhookAsync(announcements, "OverWatch Announcements");
-    var bolWebhook = await EnsureWebhookAsync(bol, "OverWatch BOL");
-    var systemLogWebhook = await EnsureWebhookAsync(systemLogs, "OverWatch System Logs");
-
-    var settings = new Dictionary<string, object>
-    {
-        ["guildId"] = guildId,
-        ["discord"] = new Dictionary<string, object>
-        {
-            ["dispatchChannelId"] = dispatch.Id.ToString(),
-            ["dispatchWebhookUrl"] = dispatchWebhook,
-
-            ["announcementsChannelId"] = announcements.Id.ToString(),
-            ["announcementChannelId"] = announcements.Id.ToString(),
-            ["announcementsWebhookUrl"] = announcementsWebhook,
-            ["announcementWebhookUrl"] = announcementsWebhook,
-
-            ["bolChannelId"] = bol.Id.ToString(),
-            ["bolWebhookUrl"] = bolWebhook,
-
-            ["systemLogChannelId"] = systemLogs.Id.ToString(),
-            ["systemLogWebhookUrl"] = systemLogWebhook,
-
-            ["useThreadsPerDriver"] = true
-        }
-    };
-
-    var path = Path.Combine(dataDir, $"settings_{guildId}.json");
-
-    await File.WriteAllTextAsync(
-        path,
-        JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
-
-    return Results.Ok(new
-    {
-        ok = true,
-        category = new
-        {
-            id = category.Id.ToString(),
-            name = category.Name
-        },
-        channels = new
-        {
-            dispatch = new
+            if (category == null)
             {
-                id = dispatch.Id.ToString(),
-                name = dispatch.Name,
-                webhookUrl = dispatchWebhook
-            },
-            announcements = new
-            {
-                id = announcements.Id.ToString(),
-                name = announcements.Name,
-                webhookUrl = announcementsWebhook
-            },
-            bol = new
-            {
-                id = bol.Id.ToString(),
-                name = bol.Name,
-                webhookUrl = bolWebhook
-            },
-            systemLogs = new
-            {
-                id = systemLogs.Id.ToString(),
-                name = systemLogs.Name,
-                webhookUrl = systemLogWebhook
+                var createdCategory = await guild.CreateCategoryChannelAsync(categoryName);
+                category = guild.GetCategoryChannel(createdCategory.Id);
+
+                if (category == null)
+                    return Results.Problem("Category was created but could not be resolved from Discord cache.");
             }
-        }
-    });
-});
+
+            async Task<SocketTextChannel> EnsureTextChannelAsync(string name)
+            {
+                var existing = guild.TextChannels.FirstOrDefault(c =>
+                    string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+
+                if (existing != null)
+                    return existing;
+
+                var created = await guild.CreateTextChannelAsync(name, props =>
+                {
+                    props.CategoryId = category.Id;
+                });
+
+                var resolved = guild.GetTextChannel(created.Id);
+                if (resolved == null)
+                    throw new InvalidOperationException($"Channel '{name}' was created but could not be resolved from Discord cache.");
+
+                return resolved;
+            }
+
+            async Task<string> EnsureWebhookAsync(SocketTextChannel channel, string name)
+            {
+                var hooks = await channel.GetWebhooksAsync();
+                var existing = hooks.FirstOrDefault(h =>
+                    string.Equals(h.Name, name, StringComparison.OrdinalIgnoreCase));
+
+                if (existing != null && !string.IsNullOrWhiteSpace(existing.Token))
+                    return $"https://discord.com/api/webhooks/{existing.Id}/{existing.Token}";
+
+                var hook = await channel.CreateWebhookAsync(name);
+
+                if (string.IsNullOrWhiteSpace(hook.Token))
+                    throw new InvalidOperationException($"Webhook '{name}' was created but Discord did not return a token.");
+
+                return $"https://discord.com/api/webhooks/{hook.Id}/{hook.Token}";
+            }
+
+            var dispatch = await EnsureTextChannelAsync(dispatchName);
+            var announcements = await EnsureTextChannelAsync(announcementsName);
+            var bol = await EnsureTextChannelAsync(bolName);
+            var systemLogs = await EnsureTextChannelAsync(systemLogName);
+
+            var dispatchWebhook = await EnsureWebhookAsync(dispatch, "OverWatch Dispatch");
+            var announcementsWebhook = await EnsureWebhookAsync(announcements, "OverWatch Announcements");
+            var bolWebhook = await EnsureWebhookAsync(bol, "OverWatch BOL");
+            var systemLogWebhook = await EnsureWebhookAsync(systemLogs, "OverWatch System Logs");
+
+            var settings = new Dictionary<string, object>
+            {
+                ["guildId"] = guildId,
+                ["discord"] = new Dictionary<string, object>
+                {
+                    ["dispatchChannelId"] = dispatch.Id.ToString(),
+                    ["dispatchWebhookUrl"] = dispatchWebhook,
+
+                    ["announcementsChannelId"] = announcements.Id.ToString(),
+                    ["announcementChannelId"] = announcements.Id.ToString(),
+                    ["announcementsWebhookUrl"] = announcementsWebhook,
+                    ["announcementWebhookUrl"] = announcementsWebhook,
+
+                    ["bolChannelId"] = bol.Id.ToString(),
+                    ["bolWebhookUrl"] = bolWebhook,
+
+                    ["systemLogChannelId"] = systemLogs.Id.ToString(),
+                    ["systemLogWebhookUrl"] = systemLogWebhook,
+
+                    ["useThreadsPerDriver"] = true
+                }
+            };
+
+            var path = Path.Combine(dataDir, $"settings_{guildId}.json");
+
+            await File.WriteAllTextAsync(
+                path,
+                JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+
+            return Results.Ok(new
+            {
+                ok = true,
+                message = "Discord auto setup complete",
+                category = new
+                {
+                    id = category.Id.ToString(),
+                    name = category.Name
+                },
+                channels = new
+                {
+                    dispatch = new
+                    {
+                        id = dispatch.Id.ToString(),
+                        name = dispatch.Name,
+                        webhookUrl = dispatchWebhook
+                    },
+                    announcements = new
+                    {
+                        id = announcements.Id.ToString(),
+                        name = announcements.Name,
+                        webhookUrl = announcementsWebhook
+                    },
+                    bol = new
+                    {
+                        id = bol.Id.ToString(),
+                        name = bol.Name,
+                        webhookUrl = bolWebhook
+                    },
+                    systemLogs = new
+                    {
+                        id = systemLogs.Id.ToString(),
+                        name = systemLogs.Name,
+                        webhookUrl = systemLogWebhook
+                    }
+                }
+            });
+        });
+
         app.MapGet("/api/announcements", async (HttpRequest req) =>
         {
             var guildId = req.Query["guildId"].ToString();
