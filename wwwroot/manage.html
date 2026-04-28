@@ -34,6 +34,7 @@ button.danger{background:#7f1d1d;color:white;border:1px solid #ef4444;border-rad
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
 .notice{padding:12px;border-radius:12px;background:#172554;border:1px solid #1d4ed8;margin-bottom:14px}
 .error{padding:12px;border-radius:12px;background:#450a0a;border:1px solid #dc2626;margin-bottom:14px}
+.successbox{padding:12px;border-radius:12px;background:#052e16;border:1px solid #22c55e;color:#bbf7d0;margin-top:12px}
 @media(max-width:850px){.sidebar{position:relative;width:100%;height:auto}.layout{display:block}.main{margin-left:0;width:100%}}
 </style>
 </head>
@@ -90,6 +91,7 @@ function jsObj(o){ return esc(JSON.stringify(o)); }
 async function api(path, options={}){
   const res = await fetch(`${API}${path}`, {
     ...options,
+    credentials:"include",
     headers:{ "Content-Type":"application/json", ...(options.headers || {}) }
   });
 
@@ -530,9 +532,86 @@ function loadSettings(){
       <h2>Settings</h2>
       <label>Guild ID</label>
       <input id="guildInput" value="${esc(guildId)}">
-      <div class="actions"><button class="primary" onclick="saveSettings()">Save</button><button class="danger" onclick="clearSettings()">Clear</button></div>
+      <div class="actions">
+        <button class="primary" onclick="saveSettings()">Save</button>
+        <button class="danger" onclick="clearSettings()">Clear</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h2>Discord Auto Setup</h2>
+      <p class="muted">
+        Automatically create the Discord category, channels, and webhooks needed for OverWatch ELD.
+      </p>
+
+      <label>Category Name</label>
+      <input id="autoCategoryName" value="OverWatch ELD">
+
+      <label>Dispatch Channel</label>
+      <input id="autoDispatchChannelName" value="dispatch-center">
+
+      <label>Announcements Channel</label>
+      <input id="autoAnnouncementsChannelName" value="announcements">
+
+      <label>BOL Channel</label>
+      <input id="autoBolChannelName" value="bol-documents">
+
+      <label>System Log Channel</label>
+      <input id="autoSystemLogChannelName" value="system-logs">
+
+      <div class="actions">
+        <button class="primary" onclick="autoSetupDiscord()">
+          Auto Create Discord Channels + Webhooks
+        </button>
+      </div>
+
+      <div id="autoSetupStatus" class="muted" style="margin-top:12px;"></div>
+      <div id="autoSetupResult"></div>
     </div>
   `;
+}
+
+async function autoSetupDiscord(){
+  const status = document.getElementById("autoSetupStatus");
+  const result = document.getElementById("autoSetupResult");
+
+  if(!guildId){
+    status.textContent = "Missing Guild ID. Save your Guild ID first.";
+    return;
+  }
+
+  status.textContent = "Creating Discord category, channels, and webhooks...";
+  result.innerHTML = "";
+
+  try{
+    const json = await api(`/api/vtc/setup/auto-discord`, {
+      method:"POST",
+      body:JSON.stringify({
+        guildId,
+        categoryName:autoCategoryName.value || "OverWatch ELD",
+        dispatchChannelName:autoDispatchChannelName.value || "dispatch-center",
+        announcementsChannelName:autoAnnouncementsChannelName.value || "announcements",
+        bolChannelName:autoBolChannelName.value || "bol-documents",
+        systemLogChannelName:autoSystemLogChannelName.value || "system-logs"
+      })
+    });
+
+    status.textContent = "Discord auto setup complete.";
+
+    const channels = json.channels || {};
+    result.innerHTML = `
+      <div class="successbox">
+        <b>Created / Verified Discord Setup</b><br><br>
+        Dispatch: ${esc(channels.dispatch?.name || channels.dispatch?.id || "created")}<br>
+        Announcements: ${esc(channels.announcements?.name || channels.announcements?.id || "created")}<br>
+        BOL: ${esc(channels.bol?.name || channels.bol?.id || "created")}<br>
+        System Logs: ${esc(channels.systemLogs?.name || channels.systemLogs?.id || "created")}<br>
+      </div>
+    `;
+  }catch(e){
+    status.textContent = "Auto setup failed: " + e.message;
+    result.innerHTML = `<div class="error"><b>Failed:</b> ${esc(e.message)}</div>`;
+  }
 }
 
 function saveSettings(){
