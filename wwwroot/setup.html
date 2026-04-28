@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OverWatch ELD Setup Guide</title>
+
+<style>
+:root{
+  --bg:#06101f;
+  --panel:#101b2d;
+  --accent:#1e90ff;
+  --text:#f8fafc;
+  --muted:#a8b7cc;
+  --line:rgba(255,255,255,.1);
+}
+
+body{
+  margin:0;
+  font-family:Segoe UI, Arial;
+  background:var(--bg);
+  color:var(--text);
+}
+
+.container{
+  width:min(1100px,92%);
+  margin:auto;
+}
+
+header{
+  padding:30px 0;
+  text-align:center;
+  border-bottom:1px solid var(--line);
+}
+
+h1{margin:0;font-size:32px;}
+.subtitle{color:var(--muted);}
+
+.section{
+  margin:30px 0;
+  padding:24px;
+  background:var(--panel);
+  border:1px solid var(--line);
+  border-radius:16px;
+}
+
+.section h2{
+  margin-top:0;
+  color:#fff;
+}
+
+.step{
+  margin:16px 0;
+  padding:14px;
+  border-radius:10px;
+  background:rgba(255,255,255,.04);
+  border:1px solid var(--line);
+}
+
+.code{
+  background:#000;
+  padding:10px;
+  border-radius:8px;
+  font-family:monospace;
+  display:block;
+  margin-top:6px;
+  color:#22c55e;
+}
+
+a.button{
+  display:inline-block;
+  margin-top:10px;
+  padding:10px 16px;
+  background:var(--accent);
+  color:white;
+  border-radius:10px;
+  text-decoration:none;
+}
+
+footer{
+  text-align:center;
+  padding:30px;
+  color:var(--muted);
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>OverWatch ELD Setup Guide</h1>
+  <div class="subtitle">Step-by-step setup from install to full VTC operation</div>
+</header>
+
+<div class="container">
+
+<!-- DOWNLOAD -->
+<div class="section">
+<h2>1. Download & Install</h2>
+
+<div class="step">
+Go to the downloads page and install the latest version.
+<br>
+<a class="button" href="/downloads.html">Download ELD</a>
+</div>
+
+<div class="step">
+Run the installer and open <strong>OverWatch ELD</strong>.
+</div>
+</div>
+
+<!-- DISCORD BOT -->
+<div class="section">
+<h2>2. Add Discord Bot</h2>
+
+<div class="step">
+Invite the bot to your Discord server:
+<br>
+<a class="button" target="_blank"
+href="https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=8&scope=bot%20applications.commands">
+Add Bot
+</a>
+</div>
+
+<div class="step">
+Make sure the bot has permissions:
+<ul>
+<li>Send Messages</li>
+<li>Manage Threads</li>
+<li>Read Channels</li>
+</ul>
+</div>
+
+</div>
+
+<!-- LINK ACCOUNT -->
+<div class="section">
+<h2>3. Link Your Driver Account</h2>
+
+<div class="step">
+In the ELD app, go to <strong>VTC → Link</strong> and copy your code.
+</div>
+
+<div class="step">
+In Discord, type:
+<span class="code">!link YOURCODE</span>
+</div>
+
+<div class="step">
+You will receive confirmation:
+<ul>
+<li>Driver linked</li>
+<li>VTC connected</li>
+</ul>
+</div>
+
+</div>
+
+<!-- LOGIN -->
+<div class="section">
+<h2>4. Login to Web Portal</h2>
+
+<div class="step">
+Go to:
+<span class="code">https://overwatcheld.up.railway.app</span>
+</div>
+
+<div class="step">
+Click <strong>Login with Discord</strong>.
+</div>
+
+<div class="step">
+Select your VTC and complete setup.
+</div>
+
+</div>
+
+<!-- DASHBOARD -->
+<div class="section">
+<h2>5. Main Dashboard</h2>
+
+<div class="step">
+After login you will see:
+<ul>
+<li>Connection status</li>
+<li>Driver dashboard</li>
+<li>Quick actions (Logs, Messages, Documents)</li>
+</ul>
+</div>
+
+</div>
+
+<!-- LOGS -->
+<div class="section">
+<h2>6. Logs System</h2>
+
+<div class="step">
+View and manage:
+<ul>
+<li>Duty status (ON / OFF / DRIVE / SB)</li>
+<li>Daily logs</li>
+<li>Certify logs</li>
+</ul>
+</div>
+
+</div>
+
+<!-- VTC -->
+<div class="section">
+<h2>7. VTC Features</h2>
+
+<div class="step">
+<strong>Live Map</strong>
+<ul>
+<li>Track drivers in real time</li>
+<li>View locations</li>
+</ul>
+</div>
+
+<div class="step">
+<strong>Fleet / Maintenance</strong>
+<ul>
+<li>Truck condition</li>
+<li>Service tracking</li>
+</ul>
+</div>
+
+<div class="step">
+<strong>Performance</strong>
+<ul>
+<li>Miles</li>
+<li>Loads</li>
+<li>Driver stats</li>
+</ul>
+</div>
+
+<div class="step">
+<strong>Roster</strong>
+<ul>
+<li>Driver list</li>
+<li>Roles (Driver, Admin, Owner)</li>
+</ul>
+</div>
+
+</div>
+
+<!-- TELEMETRY -->
+<div class="section">
+<h2>8. Telemetry Setup (ATS)</h2>
+
+<div class="step">
+Install ATS Telemetry SDK plugin.
+</div>
+
+<div class="step">
+Start American Truck Simulator.
+</div>
+
+<div class="step">
+Make sure telemetry is enabled:
+<ul>
+<li>Speed</li>
+<li>Fuel</li>
+<li>Damage</li>
+<li>Location</li>
+</ul>
+</div>
+
+<div class="step">
+Once connected, ELD will show:
+<ul>
+<li>Live driving status</li>
+<li>Truck info</li>
+<li>Load tracking</li>
+</ul>
+</div>
+
+</div>
+
+<!-- COMPANION -->
+<div class="section">
+<h2>9. Companion App</h2>
+
+<div class="step">
+At the bottom of ELD, copy your Companion URL:
+<span class="code">http://YOUR-IP:5234</span>
+</div>
+
+<div class="step">
+Open it on your phone or scan QR code.
+</div>
+
+<div class="step">
+You now have:
+<ul>
+<li>Mobile duty controls</li>
+<li>Live clocks</li>
+<li>Dispatch access</li>
+</ul>
+</div>
+
+</div>
+
+<!-- FINAL -->
+<div class="section">
+<h2>You're Ready</h2>
+
+<div class="step">
+Your system is now fully connected:
+<ul>
+<li>ELD Installed</li>
+<li>Discord Linked</li>
+<li>Telemetry Active</li>
+<li>VTC Connected</li>
+</ul>
+</div>
+
+<a class="button" href="/downloads.html">Go to Downloads</a>
+
+</div>
+
+</div>
+
+<footer>
+© Gas Monkey Creations — OverWatch ELD
+</footer>
+
+</body>
+</html>
