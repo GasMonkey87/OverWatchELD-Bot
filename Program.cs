@@ -227,6 +227,17 @@ public static partial class Program
 
         app.MapTelemetryRoutes();
 
+        app.MapGet("/api/updates/latest", () =>
+{
+    return Results.Json(new
+    {
+        ok = true,
+        version = "2.0.5",
+        url = "https://overwatcheld.up.railway.app/downloads.html",
+        notes = "Latest public release"
+    });
+});
+        
         app.MapGet("/health", () => Results.Ok(new
         {
             ok = true,
