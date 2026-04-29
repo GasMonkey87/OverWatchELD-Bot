@@ -31,53 +31,28 @@
 <header>
   <h1>OverWatch ELD Downloads</h1>
   <div class="subtitle">The ELD you can count on.</div>
-  <div id="apiStatus" class="status-pill">Checking bot status...</div>
 </header>
 
 <main class="container">
 
-  <!-- SMART ONBOARDING -->
-  <section class="card">
-    <div class="title">Smart Onboarding</div>
-    <div class="muted">Follow these steps in order.</div>
-
-    <div class="buttons">
-      <a id="botInviteBtn" class="button success" href="#" target="_blank" onclick="markStep('bot')">
-        1. Add Discord Bot
-      </a>
-
-      <a id="downloadBtn" class="button" href="/download/latest" onclick="markStep('download')">
-        2. Download Installer
-      </a>
-
-      <a id="setupBtn" class="button secondary" href="/setup.html" onclick="markStep('setup')">
-        3. Setup Guide
-      </a>
-    </div>
-
-    <ul>
-      <li id="step-bot">⬜ Discord bot added to server</li>
-      <li id="step-download">⬜ Installer downloaded</li>
-      <li id="step-setup">⬜ Setup guide opened</li>
-      <li id="step-api">⬜ Bot API checked</li>
-      <li id="step-login">⬜ Discord account connected</li>
-    </ul>
-  </section>
-
-  <!-- DOWNLOAD -->
   <section class="card green">
-    <div class="title">Version <span id="latestVersion">2.0.8</span></div>
-    <div class="muted">Current Public Release</div>
+    <div class="title">Latest Version</div>
+    <div class="muted">Always up to date installer</div>
 
     <ul>
-      <li>Latest stability improvements</li>
-      <li>Updater enhancements</li>
-      <li>Discord + VTC fixes</li>
-      <li>Companion improvements</li>
+      <li>One-time install</li>
+      <li>Automatic updates built-in</li>
+      <li>No reinstall needed</li>
     </ul>
 
     <div class="buttons">
-      <a class="button" href="/download/latest" onclick="markStep('download')">Download Installer</a>
+
+      <!-- 🔥 FIXED DOWNLOAD BUTTON -->
+      <a class="button"
+         href="https://github.com/GasMonkey87/OverWatchELD-Bot/releases/latest/download/OverWatchELD-win-Setup.exe">
+         Download OverWatch ELD
+      </a>
+
       <a class="button secondary" href="/">Back to Home</a>
     </div>
   </section>
@@ -87,86 +62,6 @@
 <footer>
   © Gas Monkey Creations — OverWatch ELD
 </footer>
-
-<script>
-let apiReady = false;
-
-function markStep(step) {
-  localStorage.setItem("oweld_" + step, "done");
-  refreshSteps();
-}
-
-function refreshSteps() {
-  const labels = {
-    bot: "Discord bot added to server",
-    download: "Installer downloaded",
-    setup: "Setup guide opened"
-  };
-
-  Object.keys(labels).forEach(step => {
-    const el = document.getElementById("step-" + step);
-    const done = localStorage.getItem("oweld_" + step) === "done";
-    el.textContent = done ? "✅ " + labels[step] : "⬜ " + labels[step];
-  });
-
-  document.getElementById("step-api").textContent =
-    apiReady ? "✅ Bot API checked" : "⬜ Bot API checked";
-
-  const loginDone = localStorage.getItem("oweld_login") === "done";
-  document.getElementById("step-login").textContent =
-    loginDone ? "✅ Discord account connected" : "⬜ Discord account connected";
-}
-
-async function loadOnboardingStatus() {
-  const pill = document.getElementById("apiStatus");
-
-  try {
-    const res = await fetch("/api/onboarding/status");
-    const data = await res.json();
-
-    apiReady = true;
-
-    document.getElementById("latestVersion").textContent = data.latestVersion;
-    document.getElementById("downloadBtn").href = data.downloadUrl;
-    document.getElementById("setupBtn").href = data.setupUrl;
-    document.getElementById("botInviteBtn").href = data.botInviteUrl;
-
-    if (data.discordReady) {
-      pill.textContent = "Bot Online • " + data.guildCount + " servers";
-      pill.style.background = "#22c55e";
-      pill.style.color = "#052e16";
-    } else {
-      pill.textContent = "Bot starting...";
-      pill.style.background = "#f59e0b";
-      pill.style.color = "#111827";
-    }
-  } catch {
-    apiReady = false;
-    pill.textContent = "Bot API unavailable";
-    pill.style.background = "#7f1d1d";
-    pill.style.color = "#fee2e2";
-  }
-
-  refreshSteps();
-}
-
-async function checkUser() {
-  try {
-    const res = await fetch("/api/onboarding/me");
-    const data = await res.json();
-
-    if (data.loggedIn) {
-      localStorage.setItem("oweld_login", "done");
-      document.getElementById("step-login").textContent =
-        "✅ Discord connected (" + data.username + ")";
-    }
-  } catch {}
-}
-
-refreshSteps();
-loadOnboardingStatus();
-checkUser();
-</script>
 
 </body>
 </html>
