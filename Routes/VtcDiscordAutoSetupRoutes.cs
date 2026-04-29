@@ -69,14 +69,14 @@ public static class VtcDiscordAutoSetupRoutes
 
                     webhooks = new
                     {
-                        dispatchWebhookUrl = dispatchWebhook.GetWebhookUrl(),
-                        bolWebhookUrl = bolWebhook.GetWebhookUrl(),
-                        logsWebhookUrl = logsWebhook.GetWebhookUrl(),
-                        inspectionsWebhookUrl = inspectionsWebhook.GetWebhookUrl(),
-                        maintenanceWebhookUrl = maintenanceWebhook.GetWebhookUrl(),
-                        leaderboardWebhookUrl = leaderboardWebhook.GetWebhookUrl(),
-                        announcementsWebhookUrl = announcementsWebhook.GetWebhookUrl(),
-                        systemWebhookUrl = systemWebhook.GetWebhookUrl()
+                        dispatchWebhookUrl = GetWebhookUrl(dispatchWebhook),
+                        bolWebhookUrl = GetWebhookUrl(bolWebhook),
+                        logsWebhookUrl = GetWebhookUrl(logsWebhook),
+                        inspectionsWebhookUrl = GetWebhookUrl(inspectionsWebhook),
+                        maintenanceWebhookUrl = GetWebhookUrl(maintenanceWebhook),
+                        leaderboardWebhookUrl = GetWebhookUrl(leaderboardWebhook),
+                        announcementsWebhookUrl = GetWebhookUrl(announcementsWebhook),
+                        systemWebhookUrl = GetWebhookUrl(systemWebhook)
                     },
 
                     updatedUtc = DateTime.UtcNow
@@ -131,7 +131,7 @@ public static class VtcDiscordAutoSetupRoutes
         }
     }
 
-    private static async Task<SocketCategoryChannel> EnsureCategoryAsync(SocketGuild guild, string name)
+    private static async Task<ICategoryChannel> EnsureCategoryAsync(SocketGuild guild, string name)
     {
         var existing = guild.CategoryChannels
             .FirstOrDefault(x => string.Equals(x.Name, name, StringComparison.OrdinalIgnoreCase));
@@ -142,9 +142,9 @@ public static class VtcDiscordAutoSetupRoutes
         return await guild.CreateCategoryChannelAsync(name);
     }
 
-    private static async Task<SocketTextChannel> EnsureTextChannelAsync(
+    private static async Task<ITextChannel> EnsureTextChannelAsync(
         SocketGuild guild,
-        SocketCategoryChannel category,
+        ICategoryChannel category,
         string name)
     {
         var existing = guild.TextChannels
@@ -165,7 +165,7 @@ public static class VtcDiscordAutoSetupRoutes
         });
     }
 
-    private static async Task<IWebhook> EnsureWebhookAsync(SocketTextChannel channel, string name)
+    private static async Task<IWebhook> EnsureWebhookAsync(ITextChannel channel, string name)
     {
         var hooks = await channel.GetWebhooksAsync();
 
@@ -178,7 +178,7 @@ public static class VtcDiscordAutoSetupRoutes
         return await channel.CreateWebhookAsync(name);
     }
 
-    private static string GetWebhookUrl(this IWebhook webhook)
+    private static string GetWebhookUrl(IWebhook webhook)
     {
         return $"https://discord.com/api/webhooks/{webhook.Id}/{webhook.Token}";
     }
