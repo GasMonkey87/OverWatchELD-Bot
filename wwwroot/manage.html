@@ -35,6 +35,7 @@ button.danger{background:#7f1d1d;color:white;border:1px solid #ef4444;border-rad
 .notice{padding:12px;border-radius:12px;background:#172554;border:1px solid #1d4ed8;margin-bottom:14px}
 .error{padding:12px;border-radius:12px;background:#450a0a;border:1px solid #dc2626;margin-bottom:14px}
 .successbox{padding:12px;border-radius:12px;background:#052e16;border:1px solid #22c55e;color:#bbf7d0;margin-top:12px}
+.preview-strip{display:grid;grid-template-columns:90px 1fr;gap:12px;align-items:center;background:#020617;border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0 16px}.preview-logo{width:72px;height:72px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#0f172a}.preview-company-pic{width:100%;max-height:150px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#020617;margin-top:8px}
 @media(max-width:850px){.sidebar{position:relative;width:100%;height:auto}.layout{display:block}.main{margin-left:0;width:100%}}
 </style>
 </head>
@@ -141,8 +142,11 @@ function lowerPortalData(d){
   return {
     guildId: d.guildId || d.GuildId || guildId,
     siteTitle: d.siteTitle || d.SiteTitle || "",
+    companyName: d.companyName || d.CompanyName || d.siteTitle || d.SiteTitle || "",
     welcomeText: d.welcomeText || d.WelcomeText || "",
     companyInfo: d.companyInfo || d.CompanyInfo || "",
+    logoImageUrl: d.logoImageUrl || d.LogoImageUrl || d.logoUrl || d.LogoUrl || "",
+    companyPictureUrl: d.companyPictureUrl || d.CompanyPictureUrl || d.companyImageUrl || d.CompanyImageUrl || "",
     heroImageUrl: d.heroImageUrl || d.HeroImageUrl || "",
     joinDiscordUrl: d.joinDiscordUrl || d.JoinDiscordUrl || "",
     learnMoreUrl: d.learnMoreUrl || d.LearnMoreUrl || "",
@@ -159,7 +163,7 @@ async function loadPortalData(){
   if(!guildId) throw new Error("Missing guildId. Open manage.html?guildId=YOUR_SERVER_ID");
   const json = await api(`/api/vtc/portal/data?guildId=${encodeURIComponent(guildId)}`);
   portalData = lowerPortalData(json.data || {});
-  document.getElementById("guildLine").textContent = `${portalData.siteTitle || "VTC"} · Guild ${guildId}`;
+  document.getElementById("guildLine").textContent = `${portalData.companyName || portalData.siteTitle || "VTC"} · Guild ${guildId}`;
   return portalData;
 }
 
@@ -236,7 +240,7 @@ async function loadDashboard(){
       <div class="card"><h3>Featured Driver</h3><div style="font-size:22px;font-weight:800">${esc(featured?.name || "Not selected")}</div><div class="muted">Shown on portal after portal upgrade</div></div>
     </div>
     <div class="card" style="margin-top:16px">
-      <h3>Company Info</h3>
+      <h3>${esc(portal.companyName || portal.siteTitle || "Company")} Info</h3>
       <p>${esc(portal.companyInfo || portal.welcomeText || "No portal company information saved yet.")}</p>
       <div class="actions"><button class="primary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Open Portal</button></div>
     </div>
@@ -487,10 +491,21 @@ async function loadPortal(){
   document.getElementById("content").innerHTML = `
     <div class="card">
       <h2>Portal Settings</h2>
-      <label>Site Title</label><input id="siteTitle" value="${esc(p.siteTitle)}" placeholder="VTC name">
+      <div class="preview-strip">
+        <img class="preview-logo" src="${esc(p.logoImageUrl || "")}" onerror="this.style.display='none'">
+        <div>
+          <b>${esc(p.companyName || p.siteTitle || "Company Name")}</b>
+          <div class="muted">This controls the portal header name and logo.</div>
+          ${p.companyPictureUrl ? `<img class="preview-company-pic" src="${esc(p.companyPictureUrl)}" onerror="this.style.display='none'">` : ""}
+        </div>
+      </div>
+      <label>Company Name</label><input id="companyName" value="${esc(p.companyName || p.siteTitle)}" placeholder="Company / VTC name">
+      <label>Logo Image URL</label><input id="logoImageUrl" value="${esc(p.logoImageUrl)}" placeholder="https://... logo image">
+      <label>Company Picture URL</label><input id="companyPictureUrl" value="${esc(p.companyPictureUrl)}" placeholder="https://... header/company picture">
+      <label>Site Title / Browser Title</label><input id="siteTitle" value="${esc(p.siteTitle)}" placeholder="VTC portal title">
       <label>Welcome Text</label><textarea id="welcomeText">${esc(p.welcomeText)}</textarea>
       <label>Company Info</label><textarea id="companyInfo">${esc(p.companyInfo)}</textarea>
-      <label>Hero Image URL</label><input id="heroImageUrl" value="${esc(p.heroImageUrl)}" placeholder="https://...">
+      <label>Hero / Slideshow Image URL</label><input id="heroImageUrl" value="${esc(p.heroImageUrl)}" placeholder="https://...">
       <label>Discord Invite URL</label><input id="joinDiscordUrl" value="${esc(p.joinDiscordUrl)}" placeholder="https://discord.gg/...">
       <label>Learn More / Join Team URL</label><input id="learnMoreUrl" value="${esc(p.learnMoreUrl)}" placeholder="https://...">
       <label>Featured Driver</label>
@@ -513,8 +528,11 @@ async function savePortal(){
     ...current,
     guildId,
     siteTitle:siteTitle.value,
+    companyName:companyName.value,
     welcomeText:welcomeText.value,
     companyInfo:companyInfo.value,
+    logoImageUrl:logoImageUrl.value,
+    companyPictureUrl:companyPictureUrl.value,
     heroImageUrl:heroImageUrl.value,
     joinDiscordUrl:joinDiscordUrl.value,
     learnMoreUrl:learnMoreUrl.value,
