@@ -169,6 +169,25 @@ button.active{background:#075985;border-color:#38bdf8}
 .profile-note{margin-top:12px;color:#cbd5e1;line-height:1.45}
 @media(max-width:850px){.roster-profile-layout{grid-template-columns:1fr}.roster-scroll-box{height:300px}.profile-grid{grid-template-columns:1fr}}
 
+
+
+/* ===== PORTAL NAVIGATION / VTC HUB UPGRADE ===== */
+.portal-shell{display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;max-width:1450px;margin:0 auto;padding:18px 22px 28px}
+.portal-nav{position:sticky;top:16px;align-self:start;background:rgba(15,23,42,.92);border:1px solid #334155;border-radius:18px;padding:14px;box-shadow:0 20px 60px rgba(0,0,0,.28)}
+.nav-brand{display:flex;align-items:center;gap:10px;padding:8px 8px 14px;border-bottom:1px solid #1e293b;margin-bottom:10px}
+.nav-logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#38bdf8,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:900;color:#020617;box-shadow:0 0 20px rgba(56,189,248,.25)}
+.nav-title{font-weight:900;line-height:1.05}.nav-sub{font-size:12px;color:#94a3b8;margin-top:3px}
+.portal-nav button{width:100%;display:flex;align-items:center;justify-content:space-between;margin:6px 0;text-align:left;background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:11px 12px;color:#cbd5e1;font-weight:800;transition:.15s ease}
+.portal-nav button:hover{border-color:#38bdf8;background:#082f49;color:#fff;transform:translateX(2px)}
+.portal-nav button.active{background:linear-gradient(135deg,#075985,#0f172a);border-color:#38bdf8;color:white;box-shadow:0 0 0 1px rgba(56,189,248,.15) inset}
+.portal-content{max-width:none;margin:0;padding:0}.portal-section{display:none}.portal-section.active{display:block}.portal-section .card:last-child{margin-bottom:0}
+.vtc-hero{position:relative;overflow:hidden;min-height:360px;background:radial-gradient(circle at 25% 0%,rgba(56,189,248,.26),transparent 35%),linear-gradient(135deg,#0f172a,#020617 55%,#111827);border:1px solid #334155;border-radius:22px;padding:0;margin-bottom:18px;display:grid;grid-template-columns:1.15fr .85fr;gap:0}
+.vtc-hero-info{padding:24px;display:flex;flex-direction:column;justify-content:space-between;gap:22px;z-index:2}.vtc-eyebrow{color:#38bdf8;text-transform:uppercase;letter-spacing:.12em;font-size:12px;font-weight:900}.vtc-name{font-size:42px;line-height:1;margin:8px 0 10px;font-weight:950}.vtc-desc{color:#cbd5e1;line-height:1.55;max-width:720px}.vtc-links{display:flex;gap:10px;flex-wrap:wrap}.vtc-link{display:inline-flex;align-items:center;gap:8px;padding:10px 13px;border-radius:12px;border:1px solid #334155;color:#f8fafc;text-decoration:none;background:#0b1220;font-weight:800}.vtc-link:hover{border-color:#38bdf8;background:#082f49}
+.slideshow{position:relative;min-height:360px;background:#020617;border-left:1px solid #1e293b}.slide-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .55s ease}.slide-img.active{opacity:1}.slide-overlay{position:absolute;inset:0;background:linear-gradient(90deg,rgba(2,6,23,.25),rgba(2,6,23,.05),rgba(2,6,23,.45))}.slide-empty{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;color:#94a3b8;padding:24px}.slide-dots{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:7px}.slide-dot{width:9px;height:9px;border-radius:999px;background:#475569;border:1px solid rgba(255,255,255,.35)}.slide-dot.active{background:#38bdf8}
+.management-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.manager-card{background:#020617;border:1px solid #1e293b;border-radius:16px;padding:14px;display:flex;gap:12px;align-items:center}.manager-avatar{width:48px;height:48px;border-radius:14px;background:#0f172a;border:1px solid #334155;object-fit:cover;display:flex;align-items:center;justify-content:center;font-weight:900;color:#38bdf8}.manager-name{font-weight:900}.manager-role{font-size:12px;color:#94a3b8;margin-top:3px}.info-list{display:grid;gap:10px}.info-item{background:#020617;border:1px solid #1e293b;border-radius:14px;padding:13px}.info-title{font-weight:900}.info-meta{font-size:12px;color:#64748b;margin:4px 0}.info-body{color:#cbd5e1;line-height:1.45}.section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}.section-head h2{margin:0}.page-hint{font-size:12px;color:#94a3b8;margin-top:3px}
+@media(max-width:1050px){.portal-shell{grid-template-columns:1fr}.portal-nav{position:relative;top:auto}.portal-nav .nav-buttons{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.vtc-hero{grid-template-columns:1fr}.slideshow{border-left:0;border-top:1px solid #1e293b}}
+@media(max-width:650px){.portal-shell{padding:12px}.portal-nav .nav-buttons{grid-template-columns:1fr}.vtc-name{font-size:30px}.vtc-hero-info{padding:18px}}
+
 </style>
 </head>
 
@@ -178,14 +197,59 @@ button.active{background:#075985;border-color:#38bdf8}
   <div id="welcomeText" class="muted"></div>
 </header>
 
-<main>
-  <section class="grid">
+<div class="portal-shell">
+  <aside class="portal-nav" aria-label="Portal navigation">
+    <div class="nav-brand">
+      <div class="nav-logo">OW</div>
+      <div><div class="nav-title">VTC Portal</div><div class="nav-sub">Open each section independently</div></div>
+    </div>
+    <div class="nav-buttons">
+      <button class="active" data-page="overview" onclick="openPortalSection('overview')">🏠 VTC Home <span>›</span></button>
+      <button data-page="map" onclick="openPortalSection('map')">🗺 Live Map <span>›</span></button>
+      <button data-page="convoy" onclick="openPortalSection('convoy')">🚛 Convoy <span>›</span></button>
+      <button data-page="roster" onclick="openPortalSection('roster')">👥 Roster <span>›</span></button>
+      <button data-page="fleet" onclick="openPortalSection('fleet')">🧰 Fleet <span>›</span></button>
+      <button data-page="garages" onclick="openPortalSection('garages')">🏢 Garages <span>›</span></button>
+      <button data-page="loads" onclick="openPortalSection('loads')">📦 Loads <span>›</span></button>
+    </div>
+  </aside>
+
+<main class="portal-content">
+  <section class="portal-section active" data-section="overview">
+    <div class="vtc-hero">
+      <div class="vtc-hero-info">
+        <div>
+          <div class="vtc-eyebrow">OverWatch ELD Company Hub</div>
+          <h1 id="vtcHomeTitle" class="vtc-name">VTC Portal</h1>
+          <p id="vtcHomeInfo" class="vtc-desc">Loading VTC information...</p>
+          <div class="vtc-links">
+            <a id="joinDiscordLink" class="vtc-link" href="#" target="_blank" rel="noopener" style="display:none">Join Discord</a>
+            <a id="learnMoreLink" class="vtc-link" href="#" target="_blank" rel="noopener" style="display:none">Learn More</a>
+          </div>
+        </div>
+        <div>
+          <h2 style="margin:0 0 10px">Management Team</h2>
+          <div id="managementTeam" class="management-grid"><div class="muted">Loading management team...</div></div>
+        </div>
+      </div>
+      <div class="slideshow" id="vtcSlideshow"><div class="slide-empty">Admin slideshow images will show here.</div></div>
+    </div>
+
+    <section class="grid">
     <div class="card"><h3>Drivers</h3><div class="stat" id="driverCount">0</div><div class="muted">Company roster</div></div>
     <div class="card"><h3>Fleet</h3><div class="stat" id="fleetCount">0</div><div class="muted">Company trucks</div></div>
     <div class="card"><h3>Garages</h3><div class="stat" id="garageCount">0</div><div class="muted">Owned locations</div></div>
     <div class="card"><h3>Live Units</h3><div class="stat" id="liveCount">0</div><div class="muted">Telemetry trucks</div></div>
   </section>
 
+    <section class="card">
+      <div class="section-head"><div><h2>More VTC Information</h2><div class="page-hint">Managed from manage.html portal settings and latest info.</div></div></div>
+      <p id="companyInfo" class="muted"></p>
+      <div id="latestInfoList" class="info-list" style="margin-top:12px"></div>
+    </section>
+  </section>
+
+  <section class="portal-section" data-section="map">
   <section class="card">
     <h2>Live ATS Map</h2>
     <div class="actions">
@@ -204,6 +268,9 @@ button.active{background:#075985;border-color:#38bdf8}
     <div id="map"></div>
     <p id="mapStatus" class="muted">Loading ATS map...</p>
   </section>
+  </section>
+
+  <section class="portal-section" data-section="convoy">
 <section class="card">
   <h2>Convoy Mode</h2>
   <div id="convoyPanel" class="grid"></div>
@@ -213,16 +280,16 @@ button.active{background:#075985;border-color:#38bdf8}
   <h2>Live Fleet Dashboard</h2>
   <div id="fleetDashboard" class="grid"></div>
 </section>
+  <section class="portal-section" data-section="loads">
   <section class="card">
     <h2>Current Load</h2>
     <div id="loadInfo" class="muted">Waiting for load telemetry...</div>
   </section>
 
-  <section class="card">
-    <h2>Company Info</h2>
-    <p id="companyInfo" class="muted"></p>
+
   </section>
 
+  <section class="portal-section" data-section="roster">
   <section class="card">
     <h2>Featured Driver</h2>
     <div id="featuredDriver" class="muted">No featured driver selected.</div>
@@ -242,7 +309,9 @@ button.active{background:#075985;border-color:#38bdf8}
       </div>
     </div>
   </section>
+  </section>
 
+  <section class="portal-section" data-section="fleet">
   <section class="card">
     <h2>Fleet</h2>
     <table class="table">
@@ -250,12 +319,16 @@ button.active{background:#075985;border-color:#38bdf8}
       <tbody id="fleetTable"></tbody>
     </table>
   </section>
+  </section>
 
+  <section class="portal-section" data-section="garages">
   <section class="card">
     <h2>Garages</h2>
     <div id="garageList" class="grid"></div>
   </section>
+</section>
 </main>
+</div>
 
 <script type="module">
 import { PMTiles, Protocol } from "https://cdn.jsdelivr.net/npm/pmtiles@3.2.0/+esm";
@@ -281,6 +354,8 @@ let selectedDriverKey = "";
 let selectedDriverDetails = {};
 let convoyRouteSourceId = "convoy-route-source";
 let convoyRouteLayerId = "convoy-route-layer";
+let slideTimer = null;
+let currentSlide = 0;
 const STATES = [
   ["California",[-119.5,37.2]],["Nevada",[-116.8,39.4]],["Arizona",[-111.7,34.2]],["Utah",[-111.6,39.3]],
   ["New Mexico",[-106.1,34.4]],["Colorado",[-105.5,39.0]],["Texas",[-99.3,31.0]],["Oklahoma",[-97.5,35.5]],
@@ -644,10 +719,18 @@ renderFleetDashboard(units);
 
 function lowerPortalData(d){
   return {
+    guildId:d.guildId || d.GuildId || guildId,
     siteTitle:d.siteTitle || d.SiteTitle || "",
     welcomeText:d.welcomeText || d.WelcomeText || "",
     companyInfo:d.companyInfo || d.CompanyInfo || "",
+    heroImageUrl:d.heroImageUrl || d.HeroImageUrl || "",
+    joinDiscordUrl:d.joinDiscordUrl || d.JoinDiscordUrl || "",
+    learnMoreUrl:d.learnMoreUrl || d.LearnMoreUrl || "",
+    latestInfo:d.latestInfo || d.LatestInfo || [],
+    slideshowImages:d.slideshowImages || d.SlideshowImages || d.galleryImages || d.GalleryImages || d.photos || d.Photos || [],
+    managementTeam:d.managementTeam || d.ManagementTeam || d.managers || d.Managers || [],
     selectedFeaturedDriver:d.selectedFeaturedDriver || d.SelectedFeaturedDriver || "",
+    featuredDrivers:d.featuredDrivers || d.FeaturedDrivers || [],
     drivers:d.drivers || d.Drivers || [],
     trucks:d.trucks || d.Trucks || [],
     garages:d.garages || d.Garages || []
@@ -857,6 +940,85 @@ function renderFleetDashboard(units){
     `;
   }).join("");
 }
+
+function normalizeImageEntry(x){
+  if(!x) return "";
+  if(typeof x === "string") return x.trim();
+  return (x.url || x.Url || x.imageUrl || x.ImageUrl || x.src || x.Src || "").trim();
+}
+
+function driverImage(d){
+  return d.imageUrl || d.ImageUrl || d.discordAvatarUrl || d.DiscordAvatarUrl || d.avatarUrl || "";
+}
+
+function renderSlideshow(portal, drivers){
+  const images = [];
+  if(portal.heroImageUrl) images.push(portal.heroImageUrl);
+  (portal.slideshowImages || []).forEach(x=>{ const u = normalizeImageEntry(x); if(u) images.push(u); });
+  (portal.featuredDrivers || []).forEach(d=>{ const u = driverImage(d); if(u) images.push(u); });
+  drivers.forEach(d=>{ const u = d.imageUrl || d.discordAvatarUrl || ""; if(u) images.push(u); });
+
+  const unique = [...new Set(images.filter(Boolean))].slice(0,10);
+  if(!unique.length){
+    vtcSlideshow.innerHTML = `<div class="slide-empty"><div><b>No slideshow images yet.</b><br><span class="muted">Add a Hero Image URL or driver image URLs in manage.html.</span></div></div>`;
+    return;
+  }
+
+  vtcSlideshow.innerHTML = unique.map((url,i)=>`<img class="slide-img ${i===0?'active':''}" src="${esc(url)}" alt="VTC image ${i+1}">`).join("") +
+    `<div class="slide-overlay"></div><div class="slide-dots">${unique.map((_,i)=>`<span class="slide-dot ${i===0?'active':''}"></span>`).join("")}</div>`;
+
+  if(slideTimer) clearInterval(slideTimer);
+  currentSlide = 0;
+  if(unique.length > 1){
+    slideTimer = setInterval(()=>{
+      const imgs = [...vtcSlideshow.querySelectorAll('.slide-img')];
+      const dots = [...vtcSlideshow.querySelectorAll('.slide-dot')];
+      imgs[currentSlide]?.classList.remove('active');
+      dots[currentSlide]?.classList.remove('active');
+      currentSlide = (currentSlide + 1) % imgs.length;
+      imgs[currentSlide]?.classList.add('active');
+      dots[currentSlide]?.classList.add('active');
+    }, 4200);
+  }
+}
+
+function isManagementRole(role){
+  const r = String(role || "").toLowerCase();
+  return r.includes('owner') || r.includes('admin') || r.includes('manager') || r.includes('dispatch');
+}
+
+function renderManagementTeam(portal, drivers){
+  let team = (portal.managementTeam || []).map(normalizeDriver);
+  if(!team.length) team = drivers.filter(d=>isManagementRole(d.role));
+  if(!team.length) team = drivers.slice(0,4);
+
+  managementTeam.innerHTML = team.length ? team.slice(0,8).map(m=>{
+    const img = m.imageUrl || m.discordAvatarUrl || "";
+    const initials = (m.name || "GM").split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase();
+    return `<div class="manager-card">
+      ${img ? `<img class="manager-avatar" src="${esc(img)}" alt="${esc(m.name)}">` : `<div class="manager-avatar">${esc(initials)}</div>`}
+      <div><div class="manager-name">${esc(m.name)}</div><div class="manager-role">${esc(m.role || 'Management')}</div></div>
+    </div>`;
+  }).join("") : `<div class="muted">No management team has been added yet.</div>`;
+}
+
+function renderLatestInfo(portal){
+  const items = (portal.latestInfo || []).slice(0,5);
+  latestInfoList.innerHTML = items.length ? items.map(i=>`
+    <div class="info-item">
+      <div class="info-title">${esc(i.title || i.Title || 'Update')}</div>
+      <div class="info-meta">${esc(i.meta || i.Meta || i.createdUtc || i.CreatedUtc || '')}</div>
+      <div class="info-body">${esc(i.body || i.Body || '')}</div>
+    </div>
+  `).join("") : `<div class="muted">No extra VTC updates have been added yet.</div>`;
+}
+
+window.openPortalSection = function(page){
+  document.querySelectorAll('.portal-section').forEach(s=>s.classList.toggle('active', s.dataset.section === page));
+  document.querySelectorAll('.portal-nav button').forEach(b=>b.classList.toggle('active', b.dataset.page === page));
+  if(page === 'map' && map){ setTimeout(()=>map.resize(), 60); }
+};
+
 async function loadRosterDrivers(){
   const r = await safe(`/api/vtc/roster?guildId=${encodeURIComponent(guildId)}`, {});
   return (r.data || r.drivers || r.roster || []).map(normalizeDriver);
@@ -871,7 +1033,14 @@ async function loadPortal(){
 
   siteTitle.textContent = portal.siteTitle || "VTC Portal";
   welcomeText.textContent = portal.welcomeText || "";
+  vtcHomeTitle.textContent = portal.siteTitle || "VTC Portal";
+  vtcHomeInfo.textContent = portal.companyInfo || portal.welcomeText || "Company information has not been added yet.";
   companyInfo.textContent = portal.companyInfo || "Company information has not been added yet.";
+  if(portal.joinDiscordUrl){ joinDiscordLink.href = portal.joinDiscordUrl; joinDiscordLink.style.display = "inline-flex"; }
+  if(portal.learnMoreUrl){ learnMoreLink.href = portal.learnMoreUrl; learnMoreLink.style.display = "inline-flex"; }
+  renderManagementTeam(portal, drivers);
+  renderSlideshow(portal, drivers);
+  renderLatestInfo(portal);
 
   driverCount.textContent = drivers.length;
   fleetCount.textContent = portal.trucks.length;
