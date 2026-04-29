@@ -182,7 +182,7 @@ public static partial class Program
         await _client.StartAsync();
 
         var builder = WebApplication.CreateBuilder(args);
-
+        builder.Services.AddSingleton(_client);
         builder.Services.AddDistributedMemoryCache();
         builder.Services.AddSession(options =>
         {
