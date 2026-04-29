@@ -229,13 +229,30 @@ public static partial class Program
 
         app.MapGet("/api/updates/latest", () =>
 {
-    return Results.Json(new
+    try
     {
-        ok = true,
-        version = "2.0.5",
-        url = "https://overwatcheld.up.railway.app/downloads.html",
-        notes = "Latest public release"
-    });
+        var path = Path.Combine(AppContext.BaseDirectory, "data", "version.json");
+
+        if (!File.Exists(path))
+        {
+            return Results.Json(new
+            {
+                ok = false,
+                error = "version file missing"
+            });
+        }
+
+        var json = File.ReadAllText(path);
+        return Results.Content(json, "application/json");
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            ok = false,
+            error = ex.Message
+        });
+    }
 });
         
         app.MapGet("/health", () => Results.Ok(new
