@@ -15,79 +15,103 @@ public static class VtcDiscordAutoSetupRoutes
             HttpContext ctx,
             DiscordSocketClient discord) =>
         {
-            var guildIdText = ctx.Request.Query["guildId"].ToString();
-
-            if (!ulong.TryParse(guildIdText, out var guildId))
-                return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
-
-            var guild = discord.GetGuild(guildId);
-            if (guild == null)
-                return Results.NotFound(new { ok = false, error = "GuildNotFound" });
-
-            Directory.CreateDirectory(DataDir);
-
-            var category = await EnsureCategoryAsync(guild, "OverWatch ELD");
-
-            var dispatch = await EnsureTextChannelAsync(guild, category, "eld-dispatch");
-            var bol = await EnsureTextChannelAsync(guild, category, "eld-bol");
-            var logs = await EnsureTextChannelAsync(guild, category, "eld-logs");
-            var inspections = await EnsureTextChannelAsync(guild, category, "eld-inspections");
-            var maintenance = await EnsureTextChannelAsync(guild, category, "eld-maintenance");
-            var leaderboard = await EnsureTextChannelAsync(guild, category, "eld-leaderboard");
-            var announcements = await EnsureTextChannelAsync(guild, category, "eld-announcements");
-            var system = await EnsureTextChannelAsync(guild, category, "eld-system");
-
-            var dispatchWebhook = await EnsureWebhookAsync(dispatch, "OverWatch ELD Dispatch");
-            var bolWebhook = await EnsureWebhookAsync(bol, "OverWatch ELD BOL");
-            var logsWebhook = await EnsureWebhookAsync(logs, "OverWatch ELD Logs");
-            var inspectionsWebhook = await EnsureWebhookAsync(inspections, "OverWatch ELD Inspections");
-            var maintenanceWebhook = await EnsureWebhookAsync(maintenance, "OverWatch ELD Maintenance");
-            var leaderboardWebhook = await EnsureWebhookAsync(leaderboard, "OverWatch ELD Leaderboard");
-            var announcementsWebhook = await EnsureWebhookAsync(announcements, "OverWatch ELD Announcements");
-            var systemWebhook = await EnsureWebhookAsync(system, "OverWatch ELD System");
-
-            var setup = new
+            try
             {
-                ok = true,
-                guildId = guild.Id.ToString(),
-                guildName = guild.Name,
-                categoryId = category.Id.ToString(),
+                var guildIdText = ctx.Request.Query["guildId"].ToString();
 
-                channels = new
+                if (!ulong.TryParse(guildIdText, out var guildId))
+                    return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
+
+                var guild = discord.GetGuild(guildId);
+                if (guild == null)
+                    return Results.NotFound(new { ok = false, error = "GuildNotFound" });
+
+                Directory.CreateDirectory(DataDir);
+
+                var category = await EnsureCategoryAsync(guild, "OverWatch ELD");
+
+                var dispatch = await EnsureTextChannelAsync(guild, category, "eld-dispatch");
+                var bol = await EnsureTextChannelAsync(guild, category, "eld-bol");
+                var logs = await EnsureTextChannelAsync(guild, category, "eld-logs");
+                var inspections = await EnsureTextChannelAsync(guild, category, "eld-inspections");
+                var maintenance = await EnsureTextChannelAsync(guild, category, "eld-maintenance");
+                var leaderboard = await EnsureTextChannelAsync(guild, category, "eld-leaderboard");
+                var announcements = await EnsureTextChannelAsync(guild, category, "eld-announcements");
+                var system = await EnsureTextChannelAsync(guild, category, "eld-system");
+
+                var dispatchWebhook = await EnsureWebhookAsync(dispatch, "OverWatch ELD Dispatch");
+                var bolWebhook = await EnsureWebhookAsync(bol, "OverWatch ELD BOL");
+                var logsWebhook = await EnsureWebhookAsync(logs, "OverWatch ELD Logs");
+                var inspectionsWebhook = await EnsureWebhookAsync(inspections, "OverWatch ELD Inspections");
+                var maintenanceWebhook = await EnsureWebhookAsync(maintenance, "OverWatch ELD Maintenance");
+                var leaderboardWebhook = await EnsureWebhookAsync(leaderboard, "OverWatch ELD Leaderboard");
+                var announcementsWebhook = await EnsureWebhookAsync(announcements, "OverWatch ELD Announcements");
+                var systemWebhook = await EnsureWebhookAsync(system, "OverWatch ELD System");
+
+                var setup = new
                 {
-                    dispatchChannelId = dispatch.Id.ToString(),
-                    bolChannelId = bol.Id.ToString(),
-                    logsChannelId = logs.Id.ToString(),
-                    inspectionsChannelId = inspections.Id.ToString(),
-                    maintenanceChannelId = maintenance.Id.ToString(),
-                    leaderboardChannelId = leaderboard.Id.ToString(),
-                    announcementsChannelId = announcements.Id.ToString(),
-                    systemLogChannelId = system.Id.ToString()
-                },
+                    ok = true,
+                    guildId = guild.Id.ToString(),
+                    guildName = guild.Name,
+                    categoryId = category.Id.ToString(),
 
-                webhooks = new
+                    channels = new
+                    {
+                        dispatchChannelId = dispatch.Id.ToString(),
+                        bolChannelId = bol.Id.ToString(),
+                        logsChannelId = logs.Id.ToString(),
+                        inspectionsChannelId = inspections.Id.ToString(),
+                        maintenanceChannelId = maintenance.Id.ToString(),
+                        leaderboardChannelId = leaderboard.Id.ToString(),
+                        announcementsChannelId = announcements.Id.ToString(),
+                        systemLogChannelId = system.Id.ToString()
+                    },
+
+                    webhooks = new
+                    {
+                        dispatchWebhookUrl = dispatchWebhook.GetWebhookUrl(),
+                        bolWebhookUrl = bolWebhook.GetWebhookUrl(),
+                        logsWebhookUrl = logsWebhook.GetWebhookUrl(),
+                        inspectionsWebhookUrl = inspectionsWebhook.GetWebhookUrl(),
+                        maintenanceWebhookUrl = maintenanceWebhook.GetWebhookUrl(),
+                        leaderboardWebhookUrl = leaderboardWebhook.GetWebhookUrl(),
+                        announcementsWebhookUrl = announcementsWebhook.GetWebhookUrl(),
+                        systemWebhookUrl = systemWebhook.GetWebhookUrl()
+                    },
+
+                    updatedUtc = DateTime.UtcNow
+                };
+
+                var all = LoadAll();
+                all[guild.Id.ToString()] = setup;
+
+                await File.WriteAllTextAsync(
+                    SetupFile,
+                    JsonSerializer.Serialize(all, new JsonSerializerOptions { WriteIndented = true }));
+
+                return Results.Json(setup);
+            }
+            catch (Discord.Net.HttpException ex)
+            {
+                return Results.Json(new
                 {
-                    dispatchWebhookUrl = dispatchWebhook.GetWebhookUrl(),
-                    bolWebhookUrl = bolWebhook.GetWebhookUrl(),
-                    logsWebhookUrl = logsWebhook.GetWebhookUrl(),
-                    inspectionsWebhookUrl = inspectionsWebhook.GetWebhookUrl(),
-                    maintenanceWebhookUrl = maintenanceWebhook.GetWebhookUrl(),
-                    leaderboardWebhookUrl = leaderboardWebhook.GetWebhookUrl(),
-                    announcementsWebhookUrl = announcementsWebhook.GetWebhookUrl(),
-                    systemWebhookUrl = systemWebhook.GetWebhookUrl()
-                },
-
-                updatedUtc = DateTime.UtcNow
-            };
-
-            var all = LoadAll();
-            all[guild.Id.ToString()] = setup;
-
-            await File.WriteAllTextAsync(
-                SetupFile,
-                JsonSerializer.Serialize(all, new JsonSerializerOptions { WriteIndented = true }));
-
-            return Results.Json(setup);
+                    ok = false,
+                    error = "DiscordHttpException",
+                    statusCode = ex.HttpCode,
+                    reason = ex.Reason,
+                    message = ex.Message
+                }, statusCode: 500);
+            }
+            catch (Exception ex)
+            {
+                return Results.Json(new
+                {
+                    ok = false,
+                    error = "AutoDiscordSetupFailed",
+                    message = ex.Message,
+                    type = ex.GetType().FullName
+                }, statusCode: 500);
+            }
         });
     }
 
@@ -129,9 +153,7 @@ public static class VtcDiscordAutoSetupRoutes
         if (existing != null)
         {
             if (existing.CategoryId != category.Id)
-            {
                 await existing.ModifyAsync(x => x.CategoryId = category.Id);
-            }
 
             return existing;
         }
