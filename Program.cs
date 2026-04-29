@@ -235,7 +235,7 @@ public static partial class Program
             guildCount = _client?.Guilds.Count ?? 0
         }));
 
-        app.MapVtcDiscordAutoSetupRoutes();
+        app.MapVtcDiscordAutoSetupRoutes(_client);
         
         app.MapPost("/api/report-issue", async (HttpContext ctx) =>
         {
