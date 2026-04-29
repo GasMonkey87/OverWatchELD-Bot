@@ -9,13 +9,13 @@ public static class VtcDiscordAutoSetupRoutes
     private static readonly string DataDir = Path.Combine(AppContext.BaseDirectory, "data");
     private static readonly string SetupFile = Path.Combine(DataDir, "vtc_discord_setup.json");
 
-    public static void MapVtcDiscordAutoSetupRoutes(this WebApplication app)
+    public static void MapVtcDiscordAutoSetupRoutes(this WebApplication app, DiscordSocketClient? discordClient)
     {
         app.MapPost("/api/vtc/setup/auto-discord", async (HttpContext ctx) =>
         {
             try
             {
-                var discord = ctx.RequestServices.GetService<DiscordSocketClient>();
+                var discord = discordClient;
 
                 if (discord == null)
                 {
