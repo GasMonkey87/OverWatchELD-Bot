@@ -1,329 +1,332 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>OverWatch ELD Setup Guide</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OverWatch ELD Setup Guide</title>
 
-<style>
-:root{
-  --bg:#06101f;
-  --panel:#101b2d;
-  --accent:#1e90ff;
-  --text:#f8fafc;
-  --muted:#a8b7cc;
-  --line:rgba(255,255,255,.1);
-}
+  <style>
+    * { box-sizing:border-box; }
 
-body{
-  margin:0;
-  font-family:Segoe UI, Arial;
-  background:var(--bg);
-  color:var(--text);
-}
+    body {
+      margin:0;
+      font-family:Arial,sans-serif;
+      background:#0b1220;
+      color:#e5e7eb;
+    }
 
-.container{
-  width:min(1100px,92%);
-  margin:auto;
-}
+    header {
+      padding:28px 20px;
+      text-align:center;
+      background:linear-gradient(135deg,#111827,#1e3a8a);
+      border-bottom:1px solid #334155;
+    }
 
-header{
-  padding:30px 0;
-  text-align:center;
-  border-bottom:1px solid var(--line);
-}
+    h1 { margin:0; font-size:34px; }
+    h2 { margin-top:0; color:#fff; }
+    p, li { color:#cbd5e1; line-height:1.7; }
+    code { background:#020617; color:#93c5fd; padding:3px 6px; border-radius:6px; }
 
-h1{margin:0;font-size:32px;}
-.subtitle{color:var(--muted);}
+    .subtitle {
+      margin-top:10px;
+      color:#cbd5e1;
+    }
 
-.section{
-  margin:30px 0;
-  padding:24px;
-  background:var(--panel);
-  border:1px solid var(--line);
-  border-radius:16px;
-}
+    .layout {
+      display:grid;
+      grid-template-columns:280px 1fr;
+      gap:20px;
+      max-width:1200px;
+      margin:30px auto;
+      padding:0 20px;
+    }
 
-.section h2{
-  margin-top:0;
-  color:#fff;
-}
+    .sidebar {
+      background:#111827;
+      border:1px solid #334155;
+      border-radius:16px;
+      padding:14px;
+      height:fit-content;
+      position:sticky;
+      top:20px;
+    }
 
-.step{
-  margin:16px 0;
-  padding:14px;
-  border-radius:10px;
-  background:rgba(255,255,255,.04);
-  border:1px solid var(--line);
-}
+    .side-title {
+      font-weight:bold;
+      color:#fff;
+      padding:10px 12px;
+      border-bottom:1px solid #334155;
+      margin-bottom:10px;
+    }
 
-.code{
-  background:#000;
-  padding:10px;
-  border-radius:8px;
-  font-family:monospace;
-  display:block;
-  margin-top:6px;
-  color:#22c55e;
-}
+    .nav-btn {
+      width:100%;
+      text-align:left;
+      display:block;
+      border:0;
+      background:transparent;
+      color:#cbd5e1;
+      padding:12px;
+      border-radius:10px;
+      cursor:pointer;
+      font-weight:bold;
+      margin-bottom:6px;
+    }
 
-a.button{
-  display:inline-block;
-  margin-top:10px;
-  padding:10px 16px;
-  background:var(--accent);
-  color:white;
-  border-radius:10px;
-  text-decoration:none;
-}
+    .nav-btn:hover {
+      background:#1f2937;
+      color:#fff;
+    }
 
-footer{
-  text-align:center;
-  padding:30px;
-  color:var(--muted);
-}
-</style>
+    .nav-btn.active {
+      background:#2563eb;
+      color:#fff;
+    }
+
+    .content {
+      background:#111827;
+      border:1px solid #334155;
+      border-radius:16px;
+      padding:26px;
+      box-shadow:0 10px 24px rgba(0,0,0,.25);
+      min-height:520px;
+    }
+
+    .section {
+      display:none;
+    }
+
+    .section.active {
+      display:block;
+    }
+
+    .buttons {
+      margin-top:18px;
+      display:flex;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+
+    a.button {
+      text-decoration:none;
+      background:#2563eb;
+      color:white;
+      padding:14px 18px;
+      border-radius:10px;
+      font-weight:bold;
+      font-size:16px;
+    }
+
+    a.button:hover { background:#1d4ed8; }
+
+    .green {
+      background:#22c55e !important;
+      color:#052e16 !important;
+    }
+
+    .secondary {
+      background:#334155 !important;
+    }
+
+    .warning-box {
+      background:#451a03;
+      border:1px solid #f59e0b;
+      border-radius:12px;
+      padding:14px;
+      margin:16px 0;
+      color:#fde68a;
+    }
+
+    footer {
+      text-align:center;
+      color:#94a3b8;
+      padding:30px 20px;
+    }
+
+    @media (max-width:800px) {
+      .layout {
+        grid-template-columns:1fr;
+      }
+
+      .sidebar {
+        position:relative;
+        top:0;
+      }
+    }
+  </style>
 </head>
 
 <body>
 
 <header>
   <h1>OverWatch ELD Setup Guide</h1>
-  <div class="subtitle">Step-by-step setup from install to full VTC operation</div>
+  <div class="subtitle">Click a section on the left to open setup instructions.</div>
 </header>
 
-<div class="container">
+<main class="layout">
 
-<!-- DOWNLOAD -->
-<div class="section">
-<h2>1. Download & Install</h2>
+  <aside class="sidebar">
+    <div class="side-title">Setup Sections</div>
 
-<div class="step">
-Go to the downloads page and install the latest version.
-<br>
-<a class="button" href="/downloads.html">Download ELD</a>
-</div>
+    <button class="nav-btn active" onclick="openSection('download', this)">1. Download</button>
+    <button class="nav-btn" onclick="openSection('install', this)">2. Install</button>
+    <button class="nav-btn" onclick="openSection('security', this)">3. Windows Warning</button>
+    <button class="nav-btn" onclick="openSection('open', this)">4. Open ELD</button>
+    <button class="nav-btn" onclick="openSection('botaddress', this)">5. Bot Address</button>
+    <button class="nav-btn" onclick="openSection('discordbot', this)">6. Add Discord Bot</button>
+    <button class="nav-btn" onclick="openSection('linkvtc', this)">7. Link VTC</button>
+    <button class="nav-btn" onclick="openSection('companion', this)">8. Companion App</button>
+    <button class="nav-btn" onclick="openSection('firewall', this)">9. Firewall Port</button>
+    <button class="nav-btn" onclick="openSection('updates', this)">10. Auto Updates</button>
+    <button class="nav-btn" onclick="openSection('help', this)">Need Help?</button>
+  </aside>
 
-<div class="step">
-Run the installer and open <strong>OverWatch ELD</strong>.
-</div>
-</div>
+  <section class="content">
 
-<!-- DISCORD BOT -->
-<div class="section">
-<h2>2. Add Discord Bot</h2>
+    <div id="download" class="section active">
+      <h2>1. Download OverWatch ELD</h2>
+      <p>Go to the downloads page and click <strong>Download OverWatch ELD</strong>.</p>
 
-<div class="step">
-Invite the bot to your Discord server:
-<br>
-<a class="button" target="_blank"
-href="https://discord.com/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=8&scope=bot%20applications.commands">
-Add Bot
-</a>
-</div>
+      <div class="buttons">
+        <a class="button" href="/downloads.html">Open Downloads Page</a>
+        <a class="button green"
+           href="https://github.com/GasMonkey87/OverWatchELD-Bot/releases/latest/download/OverWatchELD-win-Setup.exe">
+          Download Installer
+        </a>
+      </div>
+    </div>
 
-<div class="step">
-Make sure the bot has permissions:
-<ul>
-<li>Send Messages</li>
-<li>Manage Threads</li>
-<li>Read Channels</li>
-</ul>
-</div>
+    <div id="install" class="section">
+      <h2>2. Run the Installer</h2>
+      <ol>
+        <li>Open your <strong>Downloads</strong> folder.</li>
+        <li>Double-click <code>OverWatchELD-win-Setup.exe</code>.</li>
+        <li>Follow the installer prompts.</li>
+        <li>Wait for installation to complete.</li>
+      </ol>
+    </div>
 
-</div>
+    <div id="security" class="section">
+      <h2>3. Windows Security Warning</h2>
 
-<!-- LINK ACCOUNT -->
-<div class="section">
-<h2>3. Link Your Driver Account</h2>
+      <div class="warning-box">
+        Windows may show a warning because the app is new or not signed yet.
+      </div>
 
-<div class="step">
-In the ELD app, go to <strong>VTC → Link</strong> and copy your code.
-</div>
+      <ol>
+        <li>Click <strong>More info</strong>.</li>
+        <li>Click <strong>Run anyway</strong>.</li>
+        <li>Allow the installer to continue.</li>
+      </ol>
+    </div>
 
-<div class="step">
-In Discord, type:
-<span class="code">!link YOURCODE</span>
-</div>
+    <div id="open" class="section">
+      <h2>4. Open OverWatch ELD</h2>
+      <p>After installation, open OverWatch ELD from:</p>
+      <p><code>Start Menu → OverWatch ELD</code></p>
+      <p>You may also have a desktop shortcut.</p>
+    </div>
 
-<div class="step">
-You will receive confirmation:
-<ul>
-<li>Driver linked</li>
-<li>VTC connected</li>
-</ul>
-</div>
+    <div id="botaddress" class="section">
+      <h2>5. Use the Correct Bot Address</h2>
+      <p>When setting up the app, use this Bot API address:</p>
+      <p><code>https://overwatcheld.up.railway.app</code></p>
+    </div>
 
-</div>
+    <div id="discordbot" class="section">
+      <h2>6. Add the Discord Bot to Your Server</h2>
+      <p>Click the button below, choose your Discord server, and authorize the bot.</p>
 
-<!-- LOGIN -->
-<div class="section">
-<h2>4. Login to Web Portal</h2>
+      <div class="buttons">
+        <a class="button green"
+           href="https://discord.com/oauth2/authorize?client_id=1469496462294520081&permissions=8&scope=bot%20applications.commands"
+           target="_blank">
+          Add Discord Bot to Server
+        </a>
+      </div>
+    </div>
 
-<div class="step">
-Go to:
-<span class="code">https://overwatcheld.up.railway.app</span>
-</div>
+    <div id="linkvtc" class="section">
+      <h2>7. Link Your Discord / VTC</h2>
+      <ol>
+        <li>Open your Discord server.</li>
+        <li>Type <code>!link</code> in a channel where the bot can respond.</li>
+        <li>The bot gives you a link code.</li>
+        <li>Open OverWatch ELD.</li>
+        <li>Enter the link code when prompted.</li>
+        <li>After linking, ELD connects to your VTC/Discord server.</li>
+      </ol>
+    </div>
 
-<div class="step">
-Click <strong>Login with Discord</strong>.
-</div>
+    <div id="companion" class="section">
+      <h2>8. Companion App Access</h2>
+      <p>The companion app runs locally from the ELD on port <code>5234</code>.</p>
 
-<div class="step">
-Select your VTC and complete setup.
-</div>
+      <p>On the same PC:</p>
+      <p><code>http://127.0.0.1:5234</code></p>
 
-</div>
+      <p>On a phone/tablet using the same Wi-Fi:</p>
+      <p><code>http://YOUR-PC-IP:5234</code></p>
+    </div>
 
-<!-- DASHBOARD -->
-<div class="section">
-<h2>5. Main Dashboard</h2>
+    <div id="firewall" class="section">
+      <h2>9. Allow Companion Through Firewall</h2>
+      <p>If your phone cannot connect to the companion app, open PowerShell as Administrator and run:</p>
 
-<div class="step">
-After login you will see:
-<ul>
-<li>Connection status</li>
-<li>Driver dashboard</li>
-<li>Quick actions (Logs, Messages, Documents)</li>
-</ul>
-</div>
+      <p><code>New-NetFirewallRule -DisplayName "OverWatchELD Companion 5234" -Direction Inbound -Protocol TCP -LocalPort 5234 -Action Allow</code></p>
+    </div>
 
-</div>
+    <div id="updates" class="section">
+      <h2>10. Auto Updates</h2>
+      <p>OverWatch ELD only needs to be installed once.</p>
 
-<!-- LOGS -->
-<div class="section">
-<h2>6. Logs System</h2>
+      <ol>
+        <li>Open OverWatch ELD.</li>
+        <li>The app checks for updates automatically.</li>
+        <li>If a newer version is found, it downloads in the background.</li>
+        <li>When prompted, click <strong>Yes</strong> to restart and finish updating.</li>
+      </ol>
+    </div>
 
-<div class="step">
-View and manage:
-<ul>
-<li>Duty status (ON / OFF / DRIVE / SB)</li>
-<li>Daily logs</li>
-<li>Certify logs</li>
-</ul>
-</div>
+    <div id="help" class="section">
+      <h2>Need Help?</h2>
+      <p>If setup does not work, verify:</p>
 
-</div>
+      <ul>
+        <li>The Discord bot was added to your server.</li>
+        <li>You used the correct bot address.</li>
+        <li>You entered the correct <code>!link</code> code.</li>
+        <li>Your firewall allows port <code>5234</code> for companion access.</li>
+      </ul>
 
-<!-- VTC -->
-<div class="section">
-<h2>7. VTC Features</h2>
+      <div class="buttons">
+        <a class="button secondary" href="/">Back to Home</a>
+        <a class="button" href="/downloads.html">Downloads</a>
+      </div>
+    </div>
 
-<div class="step">
-<strong>Live Map</strong>
-<ul>
-<li>Track drivers in real time</li>
-<li>View locations</li>
-</ul>
-</div>
+  </section>
 
-<div class="step">
-<strong>Fleet / Maintenance</strong>
-<ul>
-<li>Truck condition</li>
-<li>Service tracking</li>
-</ul>
-</div>
-
-<div class="step">
-<strong>Performance</strong>
-<ul>
-<li>Miles</li>
-<li>Loads</li>
-<li>Driver stats</li>
-</ul>
-</div>
-
-<div class="step">
-<strong>Roster</strong>
-<ul>
-<li>Driver list</li>
-<li>Roles (Driver, Admin, Owner)</li>
-</ul>
-</div>
-
-</div>
-
-<!-- TELEMETRY -->
-<div class="section">
-<h2>8. Telemetry Setup (ATS)</h2>
-
-<div class="step">
-Install ATS Telemetry SDK plugin.
-</div>
-
-<div class="step">
-Start American Truck Simulator.
-</div>
-
-<div class="step">
-Make sure telemetry is enabled:
-<ul>
-<li>Speed</li>
-<li>Fuel</li>
-<li>Damage</li>
-<li>Location</li>
-</ul>
-</div>
-
-<div class="step">
-Once connected, ELD will show:
-<ul>
-<li>Live driving status</li>
-<li>Truck info</li>
-<li>Load tracking</li>
-</ul>
-</div>
-
-</div>
-
-<!-- COMPANION -->
-<div class="section">
-<h2>9. Companion App</h2>
-
-<div class="step">
-At the bottom of ELD, copy your Companion URL:
-<span class="code">http://YOUR-IP:5234</span>
-</div>
-
-<div class="step">
-Open it on your phone or scan QR code.
-</div>
-
-<div class="step">
-You now have:
-<ul>
-<li>Mobile duty controls</li>
-<li>Live clocks</li>
-<li>Dispatch access</li>
-</ul>
-</div>
-
-</div>
-
-<!-- FINAL -->
-<div class="section">
-<h2>You're Ready</h2>
-
-<div class="step">
-Your system is now fully connected:
-<ul>
-<li>ELD Installed</li>
-<li>Discord Linked</li>
-<li>Telemetry Active</li>
-<li>VTC Connected</li>
-</ul>
-</div>
-
-<a class="button" href="/downloads.html">Go to Downloads</a>
-
-</div>
-
-</div>
+</main>
 
 <footer>
-© Gas Monkey Creations — OverWatch ELD
+  © Gas Monkey Creations — OverWatch ELD
 </footer>
+
+<script>
+  function openSection(id, btn) {
+    document.querySelectorAll(".section").forEach(section => {
+      section.classList.remove("active");
+    });
+
+    document.querySelectorAll(".nav-btn").forEach(button => {
+      button.classList.remove("active");
+    });
+
+    document.getElementById(id).classList.add("active");
+    btn.classList.add("active");
+  }
+</script>
 
 </body>
 </html>
