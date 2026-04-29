@@ -11,6 +11,15 @@
 <style>
 body{margin:0;background:#020617;color:white;font-family:Segoe UI,Arial,sans-serif}
 header{padding:18px 24px;background:#111827;border-bottom:1px solid #334155}
+.header-bar{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.header-brand{display:flex;align-items:center;gap:13px;min-width:0}
+.header-logo{width:54px;height:54px;border-radius:14px;border:1px solid #334155;background:#020617;object-fit:cover;display:none}
+.header-logo-fallback{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#38bdf8,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:950;color:#020617;box-shadow:0 0 20px rgba(56,189,248,.25)}
+.header-title-wrap{min-width:0}
+#siteTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.header-company-photo{width:220px;height:78px;border-radius:16px;border:1px solid #334155;background:#020617;object-fit:cover;display:none;box-shadow:0 12px 28px rgba(0,0,0,.25)}
+.header-company-placeholder{width:220px;height:78px;border-radius:16px;border:1px dashed #334155;color:#64748b;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;background:#020617}
+@media(max-width:760px){.header-bar{align-items:flex-start;flex-direction:column}.header-company-photo,.header-company-placeholder{width:100%;height:120px}}
 main{max-width:1250px;margin:auto;padding:22px}
 .card{background:#0f172a;border:1px solid #334155;border-radius:16px;padding:18px;margin-bottom:18px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
@@ -175,7 +184,7 @@ button.active{background:#075985;border-color:#38bdf8}
 .portal-shell{display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px;max-width:1450px;margin:0 auto;padding:18px 22px 28px}
 .portal-nav{position:sticky;top:16px;align-self:start;background:rgba(15,23,42,.92);border:1px solid #334155;border-radius:18px;padding:14px;box-shadow:0 20px 60px rgba(0,0,0,.28)}
 .nav-brand{display:flex;align-items:center;gap:10px;padding:8px 8px 14px;border-bottom:1px solid #1e293b;margin-bottom:10px}
-.nav-logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#38bdf8,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:900;color:#020617;box-shadow:0 0 20px rgba(56,189,248,.25)}
+.nav-logo{width:38px;height:38px;border-radius:12px;background:linear-gradient(135deg,#38bdf8,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:900;color:#020617;box-shadow:0 0 20px rgba(56,189,248,.25);overflow:hidden}.nav-logo img{width:100%;height:100%;object-fit:cover;display:none}
 .nav-title{font-weight:900;line-height:1.05}.nav-sub{font-size:12px;color:#94a3b8;margin-top:3px}
 .portal-nav button{width:100%;display:flex;align-items:center;justify-content:space-between;margin:6px 0;text-align:left;background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:11px 12px;color:#cbd5e1;font-weight:800;transition:.15s ease}
 .portal-nav button:hover{border-color:#38bdf8;background:#082f49;color:#fff;transform:translateX(2px)}
@@ -193,15 +202,25 @@ button.active{background:#075985;border-color:#38bdf8}
 
 <body>
 <header>
-  <h2 id="siteTitle" style="margin:0">VTC Portal</h2>
-  <div id="welcomeText" class="muted"></div>
+  <div class="header-bar">
+    <div class="header-brand">
+      <img id="companyLogoImg" class="header-logo" alt="Company logo">
+      <div id="companyLogoFallback" class="header-logo-fallback">OW</div>
+      <div class="header-title-wrap">
+        <h2 id="siteTitle" style="margin:0">VTC Portal</h2>
+        <div id="welcomeText" class="muted"></div>
+      </div>
+    </div>
+    <img id="companyHeaderImage" class="header-company-photo" alt="Company picture">
+    <div id="companyHeaderPlaceholder" class="header-company-placeholder">Admin company picture</div>
+  </div>
 </header>
 
 <div class="portal-shell">
   <aside class="portal-nav" aria-label="Portal navigation">
     <div class="nav-brand">
-      <div class="nav-logo">OW</div>
-      <div><div class="nav-title">VTC Portal</div><div class="nav-sub">Open each section independently</div></div>
+      <div class="nav-logo"><img id="navLogoImg" alt="Logo"><span id="navLogoFallback">OW</span></div>
+      <div><div id="navCompanyTitle" class="nav-title">VTC Portal</div><div class="nav-sub">Open each section independently</div></div>
     </div>
     <div class="nav-buttons">
       <button class="active" data-page="overview" onclick="openPortalSection('overview')">🏠 VTC Home <span>›</span></button>
@@ -723,6 +742,9 @@ function lowerPortalData(d){
     siteTitle:d.siteTitle || d.SiteTitle || "",
     welcomeText:d.welcomeText || d.WelcomeText || "",
     companyInfo:d.companyInfo || d.CompanyInfo || "",
+    companyName:d.companyName || d.CompanyName || d.siteTitle || d.SiteTitle || "",
+    logoImageUrl:d.logoImageUrl || d.LogoImageUrl || d.logoUrl || d.LogoUrl || "",
+    companyPictureUrl:d.companyPictureUrl || d.CompanyPictureUrl || d.companyImageUrl || d.CompanyImageUrl || "",
     heroImageUrl:d.heroImageUrl || d.HeroImageUrl || "",
     joinDiscordUrl:d.joinDiscordUrl || d.JoinDiscordUrl || "",
     learnMoreUrl:d.learnMoreUrl || d.LearnMoreUrl || "",
@@ -1031,9 +1053,22 @@ async function loadPortal(){
   const portalDrivers = portal.drivers.map(normalizeDriver);
   const drivers = portalDrivers.length ? portalDrivers : roster;
 
-  siteTitle.textContent = portal.siteTitle || "VTC Portal";
+  const companyDisplayName = portal.companyName || portal.siteTitle || "VTC Portal";
+  siteTitle.textContent = companyDisplayName;
   welcomeText.textContent = portal.welcomeText || "";
-  vtcHomeTitle.textContent = portal.siteTitle || "VTC Portal";
+  vtcHomeTitle.textContent = companyDisplayName;
+  if(typeof navCompanyTitle !== "undefined") navCompanyTitle.textContent = companyDisplayName;
+  const logoUrl = portal.logoImageUrl || "";
+  if(logoUrl){
+    companyLogoImg.src = logoUrl; companyLogoImg.style.display = "block"; companyLogoFallback.style.display = "none";
+    navLogoImg.src = logoUrl; navLogoImg.style.display = "block"; navLogoFallback.style.display = "none";
+  }else{
+    companyLogoImg.style.display = "none"; companyLogoFallback.style.display = "flex";
+    navLogoImg.style.display = "none"; navLogoFallback.style.display = "inline";
+  }
+  const companyPhoto = portal.companyPictureUrl || portal.heroImageUrl || "";
+  if(companyPhoto){ companyHeaderImage.src = companyPhoto; companyHeaderImage.style.display = "block"; companyHeaderPlaceholder.style.display = "none"; }
+  else{ companyHeaderImage.style.display = "none"; companyHeaderPlaceholder.style.display = "flex"; }
   vtcHomeInfo.textContent = portal.companyInfo || portal.welcomeText || "Company information has not been added yet.";
   companyInfo.textContent = portal.companyInfo || "Company information has not been added yet.";
   if(portal.joinDiscordUrl){ joinDiscordLink.href = portal.joinDiscordUrl; joinDiscordLink.style.display = "inline-flex"; }
