@@ -57,53 +57,7 @@ public static class ManagementRoutes
 
             return Results.Ok(new { ok = true });
         });
-        app.MapPost("/api/vtc/setup/auto-discord", async (HttpContext ctx) =>
-        {
-            if (!IsAuthorized(ctx))
-                return Results.Unauthorized();
-
-            var body = await ReadJsonBodyAsync(ctx);
-
-            var guildId = Get(body, "guildId");
-            if (string.IsNullOrWhiteSpace(guildId) || !ulong.TryParse(guildId, out var guildUlong))
-                return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
-
-            var guild = services.Client.GetGuild(guildUlong);
-            if (guild == null)
-                return Results.BadRequest(new { ok = false, error = "BotNotInServer" });
-
-            var categoryName = Get(body, "categoryName") ?? "OverWatch ELD";
-            var dispatchName = Get(body, "dispatchChannelName") ?? "dispatch-center";
-            var announcementsName = Get(body, "announcementsChannelName") ?? "announcements";
-            var bolName = Get(body, "bolChannelName") ?? "bol-documents";
-            var systemLogName = Get(body, "systemLogChannelName") ?? "system-logs";
-
-            // Create/fetch category. Discord.NET create calls return Rest* types,
-            // so we re-fetch from the socket cache after creation.
-            var category = guild.CategoryChannels.FirstOrDefault(c =>
-                string.Equals(c.Name, categoryName, StringComparison.OrdinalIgnoreCase));
-
-            if (category == null)
-            {
-                var createdCategory = await guild.CreateCategoryChannelAsync(categoryName);
-                category = guild.GetCategoryChannel(createdCategory.Id);
-
-                if (category == null)
-                    return Results.Problem("Category was created but could not be resolved from Discord cache.");
-            }
-
-            async Task<SocketTextChannel> EnsureTextChannelAsync(string name)
-            {
-                var existing = guild.TextChannels.FirstOrDefault(c =>
-                    string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
-
-                if (existing != null)
-                    return existing;
-
-                var created = await guild.CreateTextChannelAsync(name, props =>
-                {
-                    props.CategoryId = category.Id;
-                });
+       
 
                 var resolved = guild.GetTextChannel(created.Id);
                 if (resolved == null)
