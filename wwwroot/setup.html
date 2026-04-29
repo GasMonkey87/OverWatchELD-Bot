@@ -178,6 +178,7 @@
     <button class="nav-btn" onclick="openSection('companion', this)">8. Companion App</button>
     <button class="nav-btn" onclick="openSection('firewall', this)">9. Firewall Port</button>
     <button class="nav-btn" onclick="openSection('updates', this)">10. Auto Updates</button>
+    <button class="nav-btn" onclick="openSection('telemetry', this)">11. ATS Telemetry</button>
     <button class="nav-btn" onclick="openSection('help', this)">Need Help?</button>
   </aside>
 
@@ -288,6 +289,69 @@
       </ol>
     </div>
 
+    <div id="telemetry" class="section">
+  <h2>11. Install & Run ATS Telemetry Server</h2>
+
+  <p>OverWatch ELD needs the telemetry server running so it can read American Truck Simulator data like speed, location, fuel, damage, and job/load status.</p>
+
+  <h3>Step 1: Download the Telemetry Server</h3>
+  <ol>
+    <li>Open the OverWatch ELD downloads page.</li>
+    <li>Download the ATS Telemetry Server/Reader if it is listed separately.</li>
+    <li>If it is included with OverWatch ELD, continue to the next step.</li>
+  </ol>
+
+  <h3>Step 2: Install the ATS Telemetry Plugin</h3>
+  <ol>
+    <li>Close American Truck Simulator.</li>
+    <li>Open the telemetry server folder.</li>
+    <li>Copy the telemetry plugin files into your ATS plugins folder.</li>
+    <li>The common ATS plugin folder is:</li>
+  </ol>
+
+  <p><code>Documents\American Truck Simulator\plugins</code></p>
+
+  <p>If the <code>plugins</code> folder does not exist, create it.</p>
+
+  <h3>Step 3: Start the Telemetry Server</h3>
+  <ol>
+    <li>Run the telemetry server as Administrator if needed.</li>
+    <li>Make sure it starts without errors.</li>
+    <li>Leave it running while using OverWatch ELD and ATS.</li>
+  </ol>
+
+  <h3>Step 4: Start American Truck Simulator</h3>
+  <ol>
+    <li>Open ATS.</li>
+    <li>Load into your profile.</li>
+    <li>Enter the truck.</li>
+    <li>Drive or start a job so telemetry data becomes active.</li>
+  </ol>
+
+  <h3>Step 5: Connect OverWatch ELD</h3>
+  <ol>
+    <li>Open OverWatch ELD.</li>
+    <li>Go to the main dashboard.</li>
+    <li>Verify speed, duty status, location, or telemetry status updates.</li>
+    <li>If using VTC mode, make sure your bot address is:</li>
+  </ol>
+
+  <p><code>https://overwatcheld.up.railway.app</code></p>
+
+  <h3>Troubleshooting</h3>
+  <ul>
+    <li>If ELD shows no telemetry, make sure ATS is open and you are inside a truck.</li>
+    <li>Make sure the telemetry server is running.</li>
+    <li>Restart ATS after installing the plugin.</li>
+    <li>Run the telemetry server as Administrator if Windows blocks it.</li>
+    <li>Check that firewall or antivirus is not blocking the telemetry server.</li>
+  </ul>
+
+  <div class="warning-box">
+    ATS must be restarted after installing the telemetry plugin. ELD cannot read ATS telemetry until the plugin is loaded by the game.
+  </div>
+</div>
+    
     <div id="help" class="section">
       <h2>Need Help?</h2>
       <p>If setup does not work, verify:</p>
