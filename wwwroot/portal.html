@@ -116,6 +116,59 @@ button.active{background:#075985;border-color:#38bdf8}
 .status-pill.offline{background:#334155;color:#cbd5e1}
 .status-pill.unknown{background:#075985;color:#bae6fd}
   
+/* ===== ROSTER PROFILE PANEL ===== */
+.roster-profile-layout{
+  display:grid;
+  grid-template-columns:minmax(280px,420px) 1fr;
+  gap:14px;
+  align-items:start;
+}
+.roster-scroll-box{
+  height:360px;
+  overflow-y:auto;
+  overflow-x:hidden;
+  border:1px solid #334155;
+  border-radius:14px;
+  background:#020617;
+  padding:8px;
+}
+.roster-scroll-box::-webkit-scrollbar{width:10px}
+.roster-scroll-box::-webkit-scrollbar-track{background:#0f172a;border-radius:999px}
+.roster-scroll-box::-webkit-scrollbar-thumb{background:#334155;border-radius:999px}
+.roster-scroll-box::-webkit-scrollbar-thumb:hover{background:#475569}
+.roster-row{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  padding:11px 10px;
+  border:1px solid transparent;
+  border-bottom-color:#1e293b;
+  border-radius:10px;
+  cursor:pointer;
+  transition:background .12s ease,border-color .12s ease,transform .12s ease;
+}
+.roster-row:hover{background:#0f172a;border-color:#334155;transform:translateY(-1px)}
+.roster-row.active{background:#082f49;border-color:#38bdf8;box-shadow:0 0 0 1px rgba(56,189,248,.18) inset}
+.roster-row-main{min-width:0}
+.roster-row-name{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.roster-row-sub{font-size:12px;color:#94a3b8;margin-top:3px}
+.roster-row-mile{font-weight:800;color:#cbd5e1;white-space:nowrap;font-size:13px}
+.driver-profile-card{
+  min-height:360px;
+  border:1px solid #334155;
+  border-radius:14px;
+  background:linear-gradient(180deg,#0f172a,#020617);
+  padding:16px;
+}
+.profile-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:12px}
+.profile-title{font-size:22px;font-weight:900;margin:0}
+.profile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.profile-field{background:#020617;border:1px solid #1e293b;border-radius:12px;padding:10px}
+.profile-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:800}
+.profile-value{margin-top:4px;color:#f8fafc;font-weight:700;word-break:break-word}
+.profile-note{margin-top:12px;color:#cbd5e1;line-height:1.45}
+@media(max-width:850px){.roster-profile-layout{grid-template-columns:1fr}.roster-scroll-box{height:300px}.profile-grid{grid-template-columns:1fr}}
+
 </style>
 </head>
 
@@ -177,7 +230,17 @@ button.active{background:#075985;border-color:#38bdf8}
 
   <section class="card">
     <h2>Driver Roster</h2>
-    <div id="driverList" class="muted">Loading drivers...</div>
+    <p class="muted" style="margin-top:-6px">Select a driver to view a basic profile. The roster stays inside a fixed scroll box.</p>
+    <div class="roster-profile-layout">
+      <div>
+        <div id="driverList" class="roster-scroll-box">
+          <div class="muted">Loading drivers...</div>
+        </div>
+      </div>
+      <div id="driverProfilePanel" class="driver-profile-card">
+        <div class="muted">Select a driver from the roster to view their profile.</div>
+      </div>
+    </div>
   </section>
 
   <section class="card">
@@ -213,6 +276,9 @@ let convoyModeEnabled = true;
 let showStates = true;
 let showCities = true;
 let showCompanies = true;
+let portalDriversCache = [];
+let selectedDriverKey = "";
+let selectedDriverDetails = {};
 let convoyRouteSourceId = "convoy-route-source";
 let convoyRouteLayerId = "convoy-route-layer";
 const STATES = [
@@ -590,16 +656,130 @@ function lowerPortalData(d){
 
 function normalizeDriver(d){
   return {
-    id:d.id || d.Id || d.discordUserId || d.DiscordUserId || "",
-    name:d.name || d.Name || d.driverName || d.displayName || d.discordUsername || "Driver",
+    id:d.id || d.Id || d.discordUserId || d.DiscordUserId || d.driverDiscordUserId || d.DriverDiscordUserId || "",
+    name:d.name || d.Name || d.driverName || d.DriverName || d.displayName || d.discordUsername || d.DiscordUsername || "Driver",
     role:d.role || d.Role || "Driver",
-    status:d.status || d.Status || "Member",
-    discordUserId:d.discordUserId || d.DiscordUserId || "",
-    assignedTruck:d.assignedTruck || d.AssignedTruck || "",
+    status:d.status || d.Status || d.dutyStatus || d.DutyStatus || "Member",
+    discordUserId:d.discordUserId || d.DiscordUserId || d.driverDiscordUserId || d.DriverDiscordUserId || "",
+    discordUsername:d.discordUsername || d.DiscordUsername || "",
+    assignedTruck:d.assignedTruck || d.AssignedTruck || d.truckNumber || d.TruckNumber || d.truck || d.Truck || "",
     totalMiles:d.totalMiles || d.TotalMiles || d.mileage || d.Mileage || "0",
-    bio:d.bio || d.Bio || ""
+    location:d.location || d.Location || "",
+    loadNumber:d.loadNumber || d.LoadNumber || "",
+    lastSeenUtc:d.lastSeenUtc || d.LastSeenUtc || "",
+    speedMph:d.speedMph || d.SpeedMph || "",
+    bio:d.bio || d.Bio || d.notes || d.Notes || ""
   };
 }
+
+function driverKey(d){
+  return String(d?.discordUserId || d?.id || d?.name || "");
+}
+
+function mergeDriver(base, extra){
+  const e = normalizeDriver(extra || {});
+  return {
+    ...base,
+    ...Object.fromEntries(Object.entries(e).filter(([_,v]) => v !== "" && v !== null && v !== undefined))
+  };
+}
+
+function renderDriverRoster(drivers){
+  portalDriversCache = drivers || [];
+
+  if(!portalDriversCache.length){
+    driverList.innerHTML = `<div class="muted">No drivers found.</div>`;
+    renderDriverProfile(null);
+    return;
+  }
+
+  if(!selectedDriverKey)
+    selectedDriverKey = driverKey(portalDriversCache[0]);
+
+  driverList.innerHTML = portalDriversCache.map(d=>{
+    const key = driverKey(d);
+    const active = key === selectedDriverKey ? " active" : "";
+    return `
+      <div class="roster-row${active}" data-driver-key="${esc(key)}" role="button" tabindex="0">
+        <div class="roster-row-main">
+          <div class="roster-row-name">${esc(d.name)}</div>
+          <div class="roster-row-sub">${esc(d.role)} · ${esc(d.status)}</div>
+        </div>
+        <div class="roster-row-mile">${esc(d.totalMiles)} mi</div>
+      </div>
+    `;
+  }).join("");
+
+  const selected = portalDriversCache.find(d=>driverKey(d) === selectedDriverKey) || portalDriversCache[0];
+  selectedDriverKey = driverKey(selected);
+  renderDriverProfile(selectedDriverDetails[selectedDriverKey] || selected);
+}
+
+function renderDriverProfile(driver){
+  if(!driver){
+    driverProfilePanel.innerHTML = `<div class="muted">Select a driver from the roster to view their profile.</div>`;
+    return;
+  }
+
+  const status = String(driver.status || "Member");
+  const statusCls = statusClass({status});
+  const lastSeen = driver.lastSeenUtc ? new Date(driver.lastSeenUtc).toLocaleString() : "Not available";
+
+  driverProfilePanel.innerHTML = `
+    <div class="profile-header">
+      <div>
+        <h3 class="profile-title">${esc(driver.name)}</h3>
+        <div class="muted">${esc(driver.discordUsername || driver.discordUserId || "No Discord ID saved")}</div>
+      </div>
+      <span class="status-pill ${statusCls}">${esc(status)}</span>
+    </div>
+
+    <div class="profile-grid">
+      <div class="profile-field"><div class="profile-label">Role</div><div class="profile-value">${esc(driver.role || "Driver")}</div></div>
+      <div class="profile-field"><div class="profile-label">Truck</div><div class="profile-value">${esc(driver.assignedTruck || "Unassigned")}</div></div>
+      <div class="profile-field"><div class="profile-label">Miles</div><div class="profile-value">${esc(driver.totalMiles || "0")} mi</div></div>
+      <div class="profile-field"><div class="profile-label">Location</div><div class="profile-value">${esc(driver.location || "Not available")}</div></div>
+      <div class="profile-field"><div class="profile-label">Current Load</div><div class="profile-value">${esc(driver.loadNumber || "None")}</div></div>
+      <div class="profile-field"><div class="profile-label">Last Seen</div><div class="profile-value">${esc(lastSeen)}</div></div>
+    </div>
+
+    <div class="profile-note">${esc(driver.bio || "No driver notes/profile details have been added yet.")}</div>
+  `;
+}
+
+async function selectDriverByKey(key){
+  selectedDriverKey = key;
+  const selected = portalDriversCache.find(d=>driverKey(d) === key);
+  if(!selected) return;
+
+  renderDriverRoster(portalDriversCache);
+  renderDriverProfile(selected);
+
+  const id = selected.discordUserId || selected.id;
+  if(id){
+    const details = await safe(`/api/management/drivers/${encodeURIComponent(id)}?guildId=${encodeURIComponent(guildId)}`, null);
+    const detailDriver = details?.data?.driver || details?.driver || null;
+    const live = details?.data?.live || details?.live || null;
+    const merged = mergeDriver(mergeDriver(selected, detailDriver), live);
+    selectedDriverDetails[key] = merged;
+    renderDriverRoster(portalDriversCache);
+    renderDriverProfile(merged);
+  }
+}
+
+driverList.addEventListener("click", e=>{
+  const row = e.target.closest(".roster-row");
+  if(row?.dataset?.driverKey) selectDriverByKey(row.dataset.driverKey);
+});
+
+driverList.addEventListener("keydown", e=>{
+  if(e.key !== "Enter" && e.key !== " ") return;
+  const row = e.target.closest(".roster-row");
+  if(row?.dataset?.driverKey){
+    e.preventDefault();
+    selectDriverByKey(row.dataset.driverKey);
+  }
+});
 function unitName(u){
   return u.driver || u.Driver || u.driverName || u.DriverName || "Driver";
 }
@@ -703,9 +883,7 @@ async function loadPortal(){
     ? `<h3>${esc(featured.name)}</h3><p class="muted">${esc(featured.role)} · ${esc(featured.status)}</p><p>${esc(featured.bio || "A valued member of the company.")}</p>`
     : `<div class="muted">No featured driver selected.</div>`;
 
-  driverList.innerHTML = drivers.length ? drivers.map(d=>`
-    <div class="row"><div><b>${esc(d.name)}</b><div class="muted">${esc(d.role)} · ${esc(d.status)}</div></div><div>${esc(d.totalMiles)} mi</div></div>
-  `).join("") : `<div class="muted">No drivers found.</div>`;
+  renderDriverRoster(drivers);
 
   fleetTable.innerHTML = portal.trucks.length ? portal.trucks.map(t=>`
     <tr><td>${esc(t.truckNumber || t.name || "Truck")}</td><td>${esc(t.driver || "Unassigned")}</td><td>${esc(t.plate || "")}</td><td>${esc(t.location || "")}</td><td>${esc(t.status || "Available")}</td></tr>
