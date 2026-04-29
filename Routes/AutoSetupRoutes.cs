@@ -8,17 +8,13 @@ public static class AutoSetupRoutes
 {
     public static void Register(IEndpointRouteBuilder app, BotServices services, JsonSerializerOptions jsonWrite)
     {
-        // 🔥 IMPORTANT:
-        // The /api/vtc/setup/auto-discord route was REMOVED from this file
-        // to prevent conflicts with:
+        // The old /api/vtc/setup/auto-discord endpoint was removed from this file
+        // to prevent duplicate route conflicts.
         //
+        // The only active auto-discord endpoint is now:
         // Routes/VtcDiscordAutoSetupRoutes.cs
         //
-        // Do NOT add it back here.
-
-        // This file remains so Program.cs does not break:
+        // Keep this file so Program.cs can still call:
         // AutoSetupRoutes.Register(app, services, JsonWriteOpts);
-
-        // You can add OTHER setup routes here later if needed.
     }
 }
