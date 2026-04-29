@@ -35,7 +35,7 @@ button.danger{background:#7f1d1d;color:white;border:1px solid #ef4444;border-rad
 .notice{padding:12px;border-radius:12px;background:#172554;border:1px solid #1d4ed8;margin-bottom:14px}
 .error{padding:12px;border-radius:12px;background:#450a0a;border:1px solid #dc2626;margin-bottom:14px}
 .successbox{padding:12px;border-radius:12px;background:#052e16;border:1px solid #22c55e;color:#bbf7d0;margin-top:12px}
-.preview-strip{display:grid;grid-template-columns:90px 1fr;gap:12px;align-items:center;background:#020617;border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0 16px}.preview-logo{width:72px;height:72px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#0f172a}.preview-company-pic{width:100%;max-height:150px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#020617;margin-top:8px}
+.preview-strip{display:grid;grid-template-columns:90px 1fr;gap:12px;align-items:center;background:#020617;border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0 16px}.preview-logo{width:72px;height:72px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#0f172a}.preview-company-pic{width:100%;max-height:190px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#020617;margin-top:8px}.hint{font-size:12px;color:var(--muted);margin:-6px 0 10px}
 @media(max-width:850px){.sidebar{position:relative;width:100%;height:auto}.layout{display:block}.main{margin-left:0;width:100%}}
 </style>
 </head>
@@ -147,6 +147,7 @@ function lowerPortalData(d){
     companyInfo: d.companyInfo || d.CompanyInfo || "",
     logoImageUrl: d.logoImageUrl || d.LogoImageUrl || d.logoUrl || d.LogoUrl || "",
     companyPictureUrl: d.companyPictureUrl || d.CompanyPictureUrl || d.companyImageUrl || d.CompanyImageUrl || "",
+    bannerImageUrl: d.bannerImageUrl || d.BannerImageUrl || d.companyBannerUrl || d.CompanyBannerUrl || "",
     heroImageUrl: d.heroImageUrl || d.HeroImageUrl || "",
     joinDiscordUrl: d.joinDiscordUrl || d.JoinDiscordUrl || "",
     learnMoreUrl: d.learnMoreUrl || d.LearnMoreUrl || "",
@@ -495,13 +496,14 @@ async function loadPortal(){
         <img class="preview-logo" src="${esc(p.logoImageUrl || "")}" onerror="this.style.display='none'">
         <div>
           <b>${esc(p.companyName || p.siteTitle || "Company Name")}</b>
-          <div class="muted">This controls the portal header name and logo.</div>
-          ${p.companyPictureUrl ? `<img class="preview-company-pic" src="${esc(p.companyPictureUrl)}" onerror="this.style.display='none'">` : ""}
+          <div class="muted">This controls the portal VTC name, logo, and top banner.</div>
+          ${(p.bannerImageUrl || p.companyPictureUrl) ? `<img class="preview-company-pic" src="${esc(p.bannerImageUrl || p.companyPictureUrl)}" onerror="this.style.display='none'">` : ""}
         </div>
       </div>
-      <label>Company Name</label><input id="companyName" value="${esc(p.companyName || p.siteTitle)}" placeholder="Company / VTC name">
-      <label>Logo Image URL</label><input id="logoImageUrl" value="${esc(p.logoImageUrl)}" placeholder="https://... logo image">
-      <label>Company Picture URL</label><input id="companyPictureUrl" value="${esc(p.companyPictureUrl)}" placeholder="https://... header/company picture">
+      <label>VTC Name</label><input id="companyName" value="${esc(p.companyName || p.siteTitle)}" placeholder="Your VTC / company name">
+      <label>Logo / Icon Image URL</label><input id="logoImageUrl" value="${esc(p.logoImageUrl)}" placeholder="https://... square logo image"><div class="hint">Recommended logo/icon size: 512 × 512 px. Square PNG/JPG/WebP works best.</div>
+      <label>Top Banner Image URL</label><input id="bannerImageUrl" value="${esc(p.bannerImageUrl || p.companyPictureUrl)}" placeholder="https://... wide banner image"><div class="hint">Recommended banner size: 1600 × 400 px. This appears in the blank space beside the VTC name on portal.html.</div>
+      <label>Company Picture URL / Legacy Fallback</label><input id="companyPictureUrl" value="${esc(p.companyPictureUrl)}" placeholder="https://... optional company picture">
       <label>Site Title / Browser Title</label><input id="siteTitle" value="${esc(p.siteTitle)}" placeholder="VTC portal title">
       <label>Welcome Text</label><textarea id="welcomeText">${esc(p.welcomeText)}</textarea>
       <label>Company Info</label><textarea id="companyInfo">${esc(p.companyInfo)}</textarea>
@@ -533,6 +535,7 @@ async function savePortal(){
     companyInfo:companyInfo.value,
     logoImageUrl:logoImageUrl.value,
     companyPictureUrl:companyPictureUrl.value,
+    bannerImageUrl:bannerImageUrl.value,
     heroImageUrl:heroImageUrl.value,
     joinDiscordUrl:joinDiscordUrl.value,
     learnMoreUrl:learnMoreUrl.value,
