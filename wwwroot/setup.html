@@ -180,6 +180,7 @@
     <button class="nav-btn" onclick="openSection('updates', this)">10. Auto Updates</button>
     <button class="nav-btn" onclick="openSection('telemetry', this)">11. ATS Telemetry</button>
     <button class="nav-btn" onclick="openSection('vehicle', this)">12. Connect to Vehicle</button>
+    <button class="nav-btn" onclick="openSection('vtcnav', this)">13. VTC Navigation</button>
     <button class="nav-btn" onclick="openSection('help', this)">Need Help?</button>
   </aside>
 
@@ -415,6 +416,86 @@
     <li>Watch the ELD dashboard update in real time</li>
   </ol>
 
+</div>
+
+    <div id="vtcnav" class="section">
+  <h2>13. VTC Window Navigation</h2>
+
+  <p>The VTC window is where drivers and managers can access company tools, live tracking, roster information, maintenance, performance, and Discord-connected features.</p>
+
+  <h3>Step 1: Open the VTC Window</h3>
+  <ol>
+    <li>Open <strong>OverWatch ELD</strong>.</li>
+    <li>Log in normally.</li>
+    <li>From the main dashboard, click <strong>VTC</strong>.</li>
+    <li>If you do not see VTC tools, make sure you linked with <code>!link</code> first.</li>
+  </ol>
+
+  <h3>Step 2: VTC Home</h3>
+  <p>The VTC home page shows your company overview, status cards, announcements, and quick access buttons.</p>
+
+  <ul>
+    <li><strong>Announcements:</strong> messages from your VTC/Discord server.</li>
+    <li><strong>Fleet Snapshot:</strong> quick fleet status overview.</li>
+    <li><strong>Activity Feed:</strong> recent VTC activity.</li>
+  </ul>
+
+  <h3>Step 3: Live Map</h3>
+  <ol>
+    <li>Click <strong>Live Map</strong>.</li>
+    <li>View active drivers and vehicle locations.</li>
+    <li>Use convoy mode if available to view route/driver tracking.</li>
+    <li>Use the back button to return to the VTC page.</li>
+  </ol>
+
+  <h3>Step 4: Roster</h3>
+  <ol>
+    <li>Click <strong>Roster</strong>.</li>
+    <li>View drivers, Discord names, ranks, performance, and achievements.</li>
+    <li>Admins/managers may see extra actions such as profile tools, awards, or management options.</li>
+  </ol>
+
+  <h3>Step 5: Maintenance</h3>
+  <ol>
+    <li>Click <strong>Maintenance</strong>.</li>
+    <li>Review truck condition, service status, inspection status, and fleet maintenance needs.</li>
+    <li>Managers can use this area to help track fleet readiness.</li>
+  </ol>
+
+  <h3>Step 6: Performance</h3>
+  <ol>
+    <li>Click <strong>Performance</strong>.</li>
+    <li>Review driving stats, miles, loads, safety, and VTC performance tracking.</li>
+    <li>Use this page to compare driver progress and company activity.</li>
+  </ol>
+
+  <h3>Step 7: Dispatch / Loads</h3>
+  <ol>
+    <li>Open dispatch or load tools from the VTC/dashboard area if enabled.</li>
+    <li>View assigned loads, active loads, pickup status, and delivery tracking.</li>
+    <li>Some VTCs may post load activity to Discord automatically.</li>
+  </ol>
+
+  <h3>Step 8: Admin / Manager Tools</h3>
+  <p>Some buttons only appear for users with the correct Discord/VTC role.</p>
+
+  <ul>
+    <li><strong>Owner/Admin:</strong> can manage settings and VTC tools.</li>
+    <li><strong>Manager:</strong> may access roster, fleet, dispatch, or maintenance controls.</li>
+    <li><strong>Driver:</strong> can view driver tools and assigned VTC features.</li>
+  </ul>
+
+  <div class="warning-box">
+    If a VTC button is missing, your account may not be linked, your Discord role may not have access, or the VTC server may not be configured yet.
+  </div>
+
+  <h3>Troubleshooting</h3>
+  <ul>
+    <li>If VTC says Standalone, run <code>!link</code> again and enter the new code.</li>
+    <li>If Live Map shows no drivers, make sure telemetry is running and drivers are inside ATS trucks.</li>
+    <li>If announcements do not appear, verify the Discord bot is online and configured for your server.</li>
+    <li>If admin tools are missing, check your Discord role permissions.</li>
+  </ul>
 </div>
     
     <div id="help" class="section">
