@@ -183,6 +183,7 @@
     <button class="nav-btn" onclick="openSection('vtcnav', this)">13. VTC Navigation</button>
     <button class="nav-btn" onclick="openSection('shortcuts', this)">14. Shortcut Keys</button>
     <button class="nav-btn" onclick="openSection('ports', this)">15. Check Open Ports</button>
+    <button class="nav-btn" onclick="openSection('commands', this)">16. Discord Commands</button>
     <button class="nav-btn" onclick="openSection('help', this)">Need Help?</button>
   </aside>
 
@@ -602,6 +603,59 @@
   <div class="warning-box">
     If the port is not open, restart OverWatch ELD and make sure the Companion API started successfully.
   </div>
+
+</div>
+
+    <div id="commands" class="section">
+  <h2>16. Discord Bot Commands</h2>
+
+  <p>Use these commands inside your Discord server where the OverWatch ELD bot is installed.</p>
+
+  <h3>Getting Started</h3>
+  <ul>
+    <li><code>!link</code> → Generate a code to connect your ELD to the VTC</li>
+    <li><code>!unlink</code> → Disconnect your ELD from the VTC</li>
+    <li><code>!status</code> → Check bot status and connection</li>
+  </ul>
+
+  <h3>Driver Commands</h3>
+  <ul>
+    <li><code>!myinfo</code> → View your driver stats and info</li>
+    <li><code>!logs</code> → View your recent logs/activity</li>
+    <li><code>!loads</code> → View your active or recent loads</li>
+  </ul>
+
+  <h3>Dispatch Commands</h3>
+  <ul>
+    <li><code>!dispatch</code> → Open dispatch menu or send message</li>
+    <li><code>!reply</code> → Reply to dispatch messages</li>
+  </ul>
+
+  <h3>Admin / Setup Commands</h3>
+  <ul>
+    <li><code>!setdispatchchannel</code> → Set dispatch channel</li>
+    <li><code>!setbolchannel</code> → Set BOL channel</li>
+    <li><code>!setlogschannel</code> → Set logs channel</li>
+    <li><code>!setinspectionchannel</code> → Set inspection channel</li>
+    <li><code>!setleaderboardchannel</code> → Set leaderboard channel</li>
+  </ul>
+
+  <h3>System Commands</h3>
+  <ul>
+    <li><code>!help</code> → Show available commands</li>
+    <li><code>!ping</code> → Check bot response time</li>
+  </ul>
+
+  <div class="warning-box">
+    Some commands require Admin, Owner, or Manager roles in your Discord server.
+  </div>
+
+  <h3>Tips</h3>
+  <ul>
+    <li>Use commands in a channel where the bot has permission to read and send messages.</li>
+    <li>If a command doesn’t work, check bot permissions and roles.</li>
+    <li>Make sure your ELD is linked using <code>!link</code> first.</li>
+  </ul>
 
 </div>
     
