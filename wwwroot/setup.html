@@ -181,6 +181,8 @@
     <button class="nav-btn" onclick="openSection('telemetry', this)">11. ATS Telemetry</button>
     <button class="nav-btn" onclick="openSection('vehicle', this)">12. Connect to Vehicle</button>
     <button class="nav-btn" onclick="openSection('vtcnav', this)">13. VTC Navigation</button>
+    <button class="nav-btn" onclick="openSection('shortcuts', this)">14. Shortcut Keys</button>
+    <button class="nav-btn" onclick="openSection('ports', this)">15. Check Open Ports</button>
     <button class="nav-btn" onclick="openSection('help', this)">Need Help?</button>
   </aside>
 
@@ -496,6 +498,111 @@
     <li>If announcements do not appear, verify the Discord bot is online and configured for your server.</li>
     <li>If admin tools are missing, check your Discord role permissions.</li>
   </ul>
+</div>
+
+    <div id="shortcuts" class="section">
+  <h2>14. Shortcut Keys</h2>
+
+  <p>OverWatch ELD includes keyboard shortcuts to quickly control the app without using the mouse.</p>
+
+  <h3>Window Controls</h3>
+  <ul>
+    <li><code>Ctrl + Shift + M</code> → Minimize window</li>
+    <li><code>Ctrl + Shift + X</code> → Close ELD</li>
+    <li><code>Ctrl + Shift + R</code> → Restart ELD</li>
+  </ul>
+
+  <h3>Navigation</h3>
+  <ul>
+    <li><code>Ctrl + 1</code> → Dashboard</li>
+    <li><code>Ctrl + 2</code> → Logs</li>
+    <li><code>Ctrl + 3</code> → VTC Window</li>
+    <li><code>Ctrl + 4</code> → Fleet / Maintenance</li>
+    <li><code>Ctrl + 5</code> → Performance</li>
+  </ul>
+
+  <h3>VTC Quick Access</h3>
+  <ul>
+    <li><code>Ctrl + Shift + L</code> → Open Live Map</li>
+    <li><code>Ctrl + Shift + R</code> → Open Roster</li>
+    <li><code>Ctrl + Shift + P</code> → Open Performance</li>
+  </ul>
+
+  <h3>Duty Status (Quick Change)</h3>
+  <ul>
+    <li><code>Ctrl + D</code> → Driving</li>
+    <li><code>Ctrl + O</code> → On Duty</li>
+    <li><code>Ctrl + S</code> → Sleeper Berth</li>
+    <li><code>Ctrl + F</code> → Off Duty</li>
+  </ul>
+
+  <h3>Companion / Tools</h3>
+  <ul>
+    <li><code>Ctrl + Shift + C</code> → Open Companion QR</li>
+    <li><code>Ctrl + Shift + T</code> → Restart Telemetry</li>
+  </ul>
+
+  <div class="warning-box">
+    Some shortcuts may depend on your version or user role. Admin features may not be available to all users.
+  </div>
+
+  <h3>Pro Tip</h3>
+  <p>
+    Use shortcuts while driving to quickly switch duty status or open tools without leaving your workflow.
+  </p>
+
+</div>
+
+    <div id="ports" class="section">
+  <h2>15. Check Open Ports (Companion Verification)</h2>
+
+  <p>This step verifies that the OverWatch ELD Companion App is running and accessible on port <code>5234</code>.</p>
+
+  <h3>Step 1: Check Port Using PowerShell</h3>
+  <p>Open PowerShell as Administrator and run:</p>
+
+  <p><code>Get-NetTCPConnection -LocalPort 5234</code></p>
+
+  <p>If the companion is running correctly, you should see:</p>
+
+  <p><code>State: Listen</code></p>
+
+  <h3>Step 2: Verify in Command Prompt</h3>
+  <p>Alternatively, open Command Prompt and run:</p>
+
+  <p><code>netstat -ano | findstr :5234</code></p>
+
+  <p>Expected output:</p>
+
+  <p><code>TCP 0.0.0.0:5234 LISTENING</code></p>
+
+  <h3>Step 3: Identify the Program (Optional)</h3>
+  <p>If needed, find what program is using the port:</p>
+
+  <p><code>tasklist | findstr [PID]</code></p>
+
+  <p>Replace <code>[PID]</code> with the number shown from the netstat command.</p>
+
+  <h3>Step 4: Test in Browser</h3>
+  <p>On your PC, open:</p>
+
+  <p><code>http://127.0.0.1:5234</code></p>
+
+  <p>On your phone (same Wi-Fi):</p>
+
+  <p><code>http://YOUR-IP:5234</code></p>
+
+  <h3>Important Notes</h3>
+  <ul>
+    <li><strong>0.0.0.0:5234</strong> → Works for phones and other devices</li>
+    <li><strong>127.0.0.1:5234</strong> → Works only on your PC</li>
+    <li>If nothing shows → Companion app is not running</li>
+  </ul>
+
+  <div class="warning-box">
+    If the port is not open, restart OverWatch ELD and make sure the Companion API started successfully.
+  </div>
+
 </div>
     
     <div id="help" class="section">
