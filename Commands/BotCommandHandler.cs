@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Cryptography;
 using Discord;
 using Discord.Rest;
@@ -75,9 +76,21 @@ public static class BotCommandHandler
             return;
         }
 
+        if (ctx.Cmd == "help" || ctx.Cmd == "commands")
+        {
+            await HandleHelpAsync(ctx);
+            return;
+        }
+
         if (ctx.Cmd == "link")
         {
             await HandleLinkAsync(ctx, services);
+            return;
+        }
+
+        if (ctx.Cmd == "unlink")
+        {
+            await HandleUnlinkAsync(ctx, services);
             return;
         }
 
@@ -192,6 +205,20 @@ public static class BotCommandHandler
         return false;
     }
 
+    private static async Task HandleHelpAsync(CommandContext ctx)
+    {
+        await ctx.Message.Channel.SendMessageAsync(
+            "**OverWatch ELD Commands**\n" +
+            "`!link` - Generate an ELD link code\n" +
+            "`!unlink` - Unlink your Discord account from this VTC\n" +
+            "`!ping` - Check bot response\n" +
+            "`!rosterlist` - Show roster list\n" +
+            "`!rosterlink @user | DriverName` - Link a Discord user to roster\n" +
+            "`!announcement #channel` - Set announcement channel\n" +
+            "`!setannouncementwebhook <url>` - Set announcement webhook\n" +
+            "`!setdispatchwebhook <url>` - Set dispatch webhook");
+    }
+
     private static async Task HandleLinkAsync(CommandContext ctx, BotServices services)
     {
         if (services.LinkCodeStore == null)
@@ -226,7 +253,6 @@ public static class BotCommandHandler
 
             services.LinkCodeStore.Put(entry);
 
-            // ✅ full finish: save linked history candidate immediately
             try
             {
                 services.LinkedDriversStore?.Link(
@@ -237,7 +263,6 @@ public static class BotCommandHandler
             }
             catch { }
 
-            // ✅ full finish: ensure roster reflects the Discord user
             try
             {
                 if (services.RosterStore != null)
@@ -267,6 +292,115 @@ public static class BotCommandHandler
             Console.WriteLine($"[LINK] Error: {ex}");
             await ctx.Message.Channel.SendMessageAsync("❌ Failed to create link code.");
         }
+    }
+
+    private static async Task HandleUnlinkAsync(CommandContext ctx, BotServices services)
+    {
+        if (ctx.Message.Channel is not SocketGuildChannel)
+        {
+            await ctx.Message.Channel.SendMessageAsync("❌ Run `!unlink` inside your VTC server, not in DM.");
+            return;
+        }
+
+        var guildId = ctx.GuildIdStr;
+        var userId = ctx.Message.Author.Id.ToString();
+
+        if (string.IsNullOrWhiteSpace(guildId))
+        {
+            await ctx.Message.Channel.SendMessageAsync("❌ Could not detect server.");
+            return;
+        }
+
+        var removedAnything = false;
+
+        try
+        {
+            removedAnything |= TryInvokeStoreUnlink(services.LinkCodeStore, guildId, userId);
+        }
+        catch { }
+
+        try
+        {
+            removedAnything |= TryInvokeStoreUnlink(services.LinkedDriversStore, guildId, userId);
+        }
+        catch { }
+
+        try
+        {
+            if (services.RosterStore != null)
+            {
+                var guildUser = ctx.Guild?.GetUser(ctx.Message.Author.Id);
+                var driverName = (guildUser?.DisplayName ?? guildUser?.Username ?? ctx.Message.Author.Username ?? "Driver").Trim();
+
+                services.RosterStore.AddOrUpdateByName(guildId, new VtcDriver
+                {
+                    Name = driverName,
+                    DiscordUserId = userId,
+                    DiscordUsername = (ctx.Message.Author.Username ?? "").Trim(),
+                    Role = "Driver",
+                    Status = "Unlinked"
+                });
+
+                removedAnything = true;
+            }
+        }
+        catch { }
+
+        await ctx.Message.Channel.SendMessageAsync(
+            "✅ You have been unlinked from this VTC. Use `!link` again to reconnect your ELD.");
+
+        Console.WriteLine($"[UNLINK] Guild={guildId} User={userId} RemovedAnything={removedAnything}");
+    }
+
+    private static bool TryInvokeStoreUnlink(object? store, string guildId, string discordUserId)
+    {
+        if (store == null) return false;
+
+        var type = store.GetType();
+
+        var methodNames = new[]
+        {
+            "UnlinkUser",
+            "Unlink",
+            "RemoveUser",
+            "Remove",
+            "DeleteUser",
+            "Delete",
+            "ClearUser"
+        };
+
+        foreach (var methodName in methodNames)
+        {
+            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(m => m.Name.Equals(methodName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            foreach (var method in methods)
+            {
+                var p = method.GetParameters();
+
+                try
+                {
+                    if (p.Length == 2 &&
+                        p[0].ParameterType == typeof(string) &&
+                        p[1].ParameterType == typeof(string))
+                    {
+                        method.Invoke(store, new object[] { guildId, discordUserId });
+                        return true;
+                    }
+
+                    if (p.Length == 1 &&
+                        p[0].ParameterType == typeof(string))
+                    {
+                        method.Invoke(store, new object[] { discordUserId });
+                        return true;
+                    }
+                }
+                catch { }
+            }
+        }
+
+        return false;
     }
 
     private static async Task HandleSetDispatchWebhookAsync(CommandContext ctx, BotServices services)
