@@ -358,6 +358,8 @@ Message:
 });
         app.MapGet("/", () => Results.Redirect("/index.html"));
 
+        app.MapGet("/auth/login", (HttpContext http) => Results.Redirect("/login"));
+
         app.MapGet("/login", (HttpContext http, DiscordOAuthService oauth) =>
         {
             var state = Guid.NewGuid().ToString("N");
