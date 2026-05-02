@@ -134,7 +134,51 @@ public static class ApiRoutes
                 isGuildOwner = guild.OwnerId == user.Id
             }, jsonWrite);
         });
+                r.MapGet("/vtc/role", async (HttpRequest req) =>
+        {
+            var guild = DiscordThreadService.ResolveGuild(services.Client, req.Query["guildId"].ToString());
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
 
+            var discordUserId = (req.Query["discordUserId"].ToString() ?? "").Trim();
+            if (!ulong.TryParse(discordUserId, out var uid) || uid == 0)
+                return Results.Json(new { ok = false, error = "MissingDiscordUserId" }, statusCode: 400);
+
+            try { await guild.DownloadUsersAsync(); } catch { }
+
+            var user = guild.GetUser(uid);
+            if (user == null)
+                return Results.Json(new { ok = false, error = "MemberNotFound" }, statusCode: 404);
+
+            string storedRole = "Driver";
+
+            try
+            {
+                var manual = services.RosterStore?.List(guild.Id.ToString());
+                var hit = manual?.FirstOrDefault(x =>
+                    string.Equals((x.DiscordUserId ?? "").Trim(), discordUserId, StringComparison.OrdinalIgnoreCase));
+
+                if (!string.IsNullOrWhiteSpace(hit?.Role))
+                    storedRole = hit.Role.Trim();
+            }
+            catch { }
+
+            var resolvedRole = ResolveGuildRole(guild, user, storedRole);
+
+            return Results.Json(new
+            {
+                ok = true,
+                guildId = guild.Id.ToString(),
+                discordUserId = user.Id.ToString(),
+                discordUsername = user.Username,
+                displayName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Username : user.DisplayName,
+                role = resolvedRole,
+                resolvedRole,
+                canManageRoster = CanManageRoster(resolvedRole),
+                canConfigureVtc = CanConfigureVtc(resolvedRole),
+                isGuildOwner = guild.OwnerId == user.Id
+            }, jsonWrite);
+        });
         r.MapGet("/vtc/pair/claim", (HttpRequest req) =>
         {
             var code = (req.Query["code"].ToString() ?? "").Trim();
