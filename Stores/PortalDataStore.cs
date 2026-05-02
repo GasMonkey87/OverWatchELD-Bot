@@ -94,6 +94,10 @@ public sealed class PortalGuildData
 {
     public string GuildId { get; set; } = "";
     public string SiteTitle { get; set; } = "";
+    public string CompanyName { get; set; } = "";
+    public string LogoImageUrl { get; set; } = "";
+    public string CompanyPictureUrl { get; set; } = "";
+    public string BannerImageUrl { get; set; } = "";
     public string WelcomeText { get; set; } = "";
     public string CompanyInfo { get; set; } = "";
     public string HeroImageUrl { get; set; } = "";
@@ -102,6 +106,8 @@ public sealed class PortalGuildData
     public List<PortalLatestInfo> LatestInfo { get; set; } = new();
     public List<PortalDriver> Drivers { get; set; } = new();
     public List<PortalDriver> FeaturedDrivers { get; set; } = new();
+    public List<string> SlideshowImages { get; set; } = new();
+    public List<PortalDriver> ManagementTeam { get; set; } = new();
     public string SelectedFeaturedDriver { get; set; } = "";
     public List<PortalTruck> Trucks { get; set; } = new();
     public List<PortalGarage> Garages { get; set; } = new();
