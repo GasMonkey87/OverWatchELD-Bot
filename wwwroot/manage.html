@@ -35,7 +35,10 @@ button.danger{background:#7f1d1d;color:white;border:1px solid #ef4444;border-rad
 .notice{padding:12px;border-radius:12px;background:#172554;border:1px solid #1d4ed8;margin-bottom:14px}
 .error{padding:12px;border-radius:12px;background:#450a0a;border:1px solid #dc2626;margin-bottom:14px}
 .successbox{padding:12px;border-radius:12px;background:#052e16;border:1px solid #22c55e;color:#bbf7d0;margin-top:12px}
-.preview-strip{display:grid;grid-template-columns:90px 1fr;gap:12px;align-items:center;background:#020617;border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0 16px}.preview-logo{width:72px;height:72px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#0f172a}.preview-company-pic{width:100%;max-height:190px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#020617;margin-top:8px}.hint{font-size:12px;color:var(--muted);margin:-6px 0 10px}
+.preview-strip{display:grid;grid-template-columns:90px 1fr;gap:12px;align-items:center;background:#020617;border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0 16px}
+.preview-logo{width:72px;height:72px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#0f172a}
+.preview-company-pic{width:100%;max-height:190px;border-radius:16px;border:1px solid var(--line);object-fit:cover;background:#020617;margin-top:8px}
+.hint{font-size:12px;color:var(--muted);margin:-6px 0 10px}
 @media(max-width:850px){.sidebar{position:relative;width:100%;height:auto}.layout{display:block}.main{margin-left:0;width:100%}}
 </style>
 </head>
@@ -50,7 +53,8 @@ button.danger{background:#7f1d1d;color:white;border:1px solid #ef4444;border-rad
       <button data-page="drivers" onclick="route('drivers')">Drivers</button>
       <button data-page="fleet" onclick="route('fleet')">Fleet</button>
       <button data-page="garage" onclick="route('garage')">Garage</button>
-      <button data-page="portal" onclick="route('portal')">Portal</button>
+      <button data-page="portal" onclick="route('portal')">Edit Portal</button>
+      <button onclick="openPortalPage()">Open Portal</button>
       <button data-page="settings" onclick="route('settings')">Settings</button>
     </div>
   </aside>
@@ -61,8 +65,13 @@ button.danger{background:#7f1d1d;color:white;border:1px solid #ef4444;border-rad
         <h1 id="pageTitle">Dashboard</h1>
         <div class="muted" id="guildLine">Loading VTC...</div>
       </div>
-      <div class="badge" id="statusBadge">Connecting...</div>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="secondary" onclick="openPortalPage()">Open Portal</button>
+        <div class="badge" id="statusBadge">Connecting...</div>
+      </div>
     </div>
+
     <div id="content"></div>
   </main>
 </div>
@@ -89,6 +98,15 @@ function esc(v){
 }
 function jsObj(o){ return esc(JSON.stringify(o)); }
 
+function openPortalPage(){
+  if(!guildId){
+    alert("No VTC selected.");
+    return;
+  }
+
+  window.open(`/portal.html?guildId=${encodeURIComponent(guildId)}`, "_blank");
+}
+
 async function api(path, options={}){
   const res = await fetch(`${API}${path}`, {
     ...options,
@@ -114,12 +132,12 @@ function setStatus(text, good=true){
 }
 
 function setActive(page){
-  document.querySelectorAll(".nav button").forEach(b=>b.classList.toggle("active", b.dataset.page === page));
+  document.querySelectorAll(".nav button[data-page]").forEach(b=>b.classList.toggle("active", b.dataset.page === page));
 }
 
 function setTitle(page){
   document.getElementById("pageTitle").textContent = {
-    dashboard:"Dashboard",drivers:"Drivers",fleet:"Fleet",garage:"Garage",portal:"Portal",settings:"Settings"
+    dashboard:"Dashboard",drivers:"Drivers",fleet:"Fleet",garage:"Garage",portal:"Edit Portal",settings:"Settings"
   }[page] || "Management";
 }
 
@@ -243,7 +261,10 @@ async function loadDashboard(){
     <div class="card" style="margin-top:16px">
       <h3>${esc(portal.companyName || portal.siteTitle || "Company")} Info</h3>
       <p>${esc(portal.companyInfo || portal.welcomeText || "No portal company information saved yet.")}</p>
-      <div class="actions"><button class="primary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Open Portal</button></div>
+      <div class="actions">
+        <button class="primary" onclick="openPortalPage()">Open Portal</button>
+        <button class="secondary" onclick="route('portal')">Edit Portal</button>
+      </div>
     </div>
   `;
 }
@@ -501,8 +522,8 @@ async function loadPortal(){
         </div>
       </div>
       <label>VTC Name</label><input id="companyName" value="${esc(p.companyName || p.siteTitle)}" placeholder="Your VTC / company name">
-      <label>Logo / Icon Image URL</label><input id="logoImageUrl" value="${esc(p.logoImageUrl)}" placeholder="https://... square logo image"><div class="hint">Recommended logo/icon size: 512 × 512 px. Square PNG/JPG/WebP works best.</div>
-      <label>Top Banner Image URL</label><input id="bannerImageUrl" value="${esc(p.bannerImageUrl || p.companyPictureUrl)}" placeholder="https://... wide banner image"><div class="hint">Recommended banner size: 1600 × 400 px. This appears in the blank space beside the VTC name on portal.html.</div>
+      <label>Logo / Icon Image URL</label><input id="logoImageUrl" value="${esc(p.logoImageUrl)}" placeholder="https://... square logo image"><div class="hint">Recommended logo/icon size: 512 × 512 px.</div>
+      <label>Top Banner Image URL</label><input id="bannerImageUrl" value="${esc(p.bannerImageUrl || p.companyPictureUrl)}" placeholder="https://... wide banner image"><div class="hint">Recommended banner size: 1600 × 400 px.</div>
       <label>Company Picture URL / Legacy Fallback</label><input id="companyPictureUrl" value="${esc(p.companyPictureUrl)}" placeholder="https://... optional company picture">
       <label>Site Title / Browser Title</label><input id="siteTitle" value="${esc(p.siteTitle)}" placeholder="VTC portal title">
       <label>Welcome Text</label><textarea id="welcomeText">${esc(p.welcomeText)}</textarea>
@@ -518,7 +539,10 @@ async function loadPortal(){
           return `<option value="${esc(key)}" ${p.selectedFeaturedDriver === key ? "selected" : ""}>${esc(d.name)}</option>`;
         }).join("")}
       </select>
-      <div class="actions"><button class="primary" onclick="savePortal()">Save Portal</button><button class="secondary" onclick="window.open('/portal.html?guildId=${esc(guildId)}','_blank')">Preview Portal</button></div>
+      <div class="actions">
+        <button class="primary" onclick="savePortal()">Save Portal</button>
+        <button class="secondary" onclick="openPortalPage()">Open Portal</button>
+      </div>
     </div>
   `;
 }
@@ -561,31 +585,15 @@ function loadSettings(){
 
     <div class="card" style="margin-top:16px;">
       <h2>Discord Auto Setup</h2>
-      <p class="muted">
-        Automatically create the Discord category, channels, and webhooks needed for OverWatch ELD.
-      </p>
-
-      <label>Category Name</label>
-      <input id="autoCategoryName" value="OverWatch ELD">
-
-      <label>Dispatch Channel</label>
-      <input id="autoDispatchChannelName" value="dispatch-center">
-
-      <label>Announcements Channel</label>
-      <input id="autoAnnouncementsChannelName" value="announcements">
-
-      <label>BOL Channel</label>
-      <input id="autoBolChannelName" value="bol-documents">
-
-      <label>System Log Channel</label>
-      <input id="autoSystemLogChannelName" value="system-logs">
-
+      <p class="muted">Automatically create the Discord category, channels, and webhooks needed for OverWatch ELD.</p>
+      <label>Category Name</label><input id="autoCategoryName" value="OverWatch ELD">
+      <label>Dispatch Channel</label><input id="autoDispatchChannelName" value="dispatch-center">
+      <label>Announcements Channel</label><input id="autoAnnouncementsChannelName" value="announcements">
+      <label>BOL Channel</label><input id="autoBolChannelName" value="bol-documents">
+      <label>System Log Channel</label><input id="autoSystemLogChannelName" value="system-logs">
       <div class="actions">
-        <button class="primary" onclick="autoSetupDiscord()">
-          Auto Create Discord Channels + Webhooks
-        </button>
+        <button class="primary" onclick="autoSetupDiscord()">Auto Create Discord Channels + Webhooks</button>
       </div>
-
       <div id="autoSetupStatus" class="muted" style="margin-top:12px;"></div>
       <div id="autoSetupResult"></div>
     </div>
@@ -646,11 +654,9 @@ function clearSettings(){
   location.href = "/manage.html";
 }
 
-
 async function loadManageAccess(){
-  let meResp;
   try{
-    meResp = await api('/api/auth/me');
+    await api('/api/auth/me');
   }catch(e){
     const returnTo = encodeURIComponent(location.pathname + location.search);
     location.href = `/login.html?returnTo=${returnTo}`;
