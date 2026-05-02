@@ -221,10 +221,26 @@ public static partial class Program
                 {
                     ok = true,
                     guildId = "",
-                    points = Array.Empty<object>()
+                    points = Array.Empty<object>(),
+                    source = "none"
                 });
             }
 
+            // Primary source: desktop ATS telemetry posted to /api/telemetry.
+            var telemetryPoints = LoadTelemetryMapPointsFromDisk(dataDir, guildId);
+            if (telemetryPoints.Count > 0)
+            {
+                return Results.Ok(new
+                {
+                    ok = true,
+                    guildId,
+                    count = telemetryPoints.Count,
+                    points = telemetryPoints,
+                    source = "telemetry"
+                });
+            }
+
+            // Fallback source: older Discord driver status store.
             var rows = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
 
             var points = rows
@@ -241,16 +257,172 @@ public static partial class Program
                     latitude = x.Latitude,
                     longitude = x.Longitude,
                     heading = x.Heading,
-                    lastSeenUtc = x.LastSeenUtc
+                    lastSeenUtc = x.LastSeenUtc,
+                    source = "driverStatus"
                 })
+                .Cast<object>()
                 .ToList();
 
             return Results.Ok(new
             {
                 ok = true,
                 guildId,
+                count = points.Count,
+                points,
+                source = "driverStatus"
+            });
+        });
+
+        app.MapGet("/api/vtc/live-summary", (HttpRequest req) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(guildId))
+                guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
+
+            var points = string.IsNullOrWhiteSpace(guildId)
+                ? new List<object>()
+                : LoadTelemetryMapPointsFromDisk(dataDir, guildId);
+
+            var activeLoads = points.Count(x =>
+            {
+                var json = JsonSerializer.Serialize(x);
+                return json.Contains("sourceCompany", StringComparison.OrdinalIgnoreCase) ||
+                       json.Contains("destinationCompany", StringComparison.OrdinalIgnoreCase) ||
+                       json.Contains("cargo", StringComparison.OrdinalIgnoreCase);
+            });
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                activeDrivers = points.Count,
+                activeLoads,
+                updatedUtc = DateTimeOffset.UtcNow,
                 points
             });
         });
     }
+
+    private static List<object> LoadTelemetryMapPointsFromDisk(string dataDir, string guildId)
+    {
+        var result = new List<object>();
+
+        try
+        {
+            var path = Path.Combine(dataDir, "live_telemetry.json");
+            if (!File.Exists(path))
+                return result;
+
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return result;
+
+            if (!doc.RootElement.TryGetProperty(guildId, out var arr) || arr.ValueKind != JsonValueKind.Array)
+                return result;
+
+            foreach (var unit in arr.EnumerateArray())
+            {
+                var updatedUtc = ReadDate(unit, "updatedUtc", "UpdatedUtc");
+                if (updatedUtc.HasValue && (DateTimeOffset.UtcNow - updatedUtc.Value).TotalMinutes > 10)
+                    continue;
+
+                var lat = ReadDouble(unit, "latitude", "Latitude", "lat", "Lat");
+                var lng = ReadDouble(unit, "longitude", "Longitude", "lng", "Lng", "lon", "Lon");
+
+                if (!lat.HasValue || !lng.HasValue || (Math.Abs(lat.Value) < 0.000001 && Math.Abs(lng.Value) < 0.000001))
+                    continue;
+
+                var city = ReadString(unit, "city", "City");
+                var state = ReadString(unit, "state", "State");
+
+                result.Add(new
+                {
+                    discordUserId = ReadString(unit, "driverDiscordUserId", "DriverDiscordUserId", "discordUserId", "DiscordUserId"),
+                    driverName = FirstTelemetryNonBlank(ReadString(unit, "driverName", "DriverName"), ReadString(unit, "driver", "Driver"), ReadString(unit, "discordUsername", "DiscordUsername"), "Driver"),
+                    dutyStatus = FirstTelemetryNonBlank(ReadString(unit, "status", "Status", "dutyStatus", "DutyStatus"), "Live"),
+                    truck = FirstTelemetryNonBlank(ReadString(unit, "truckName", "TruckName"), ReadString(unit, "truck", "Truck"), ReadString(unit, "truckNumber", "TruckNumber")),
+                    truckNumber = ReadString(unit, "truckNumber", "TruckNumber"),
+                    loadNumber = ReadString(unit, "loadNumber", "LoadNumber", "currentLoadNumber", "CurrentLoadNumber"),
+                    cargo = ReadString(unit, "cargo", "Cargo", "cargoName", "CargoName"),
+                    sourceCity = ReadString(unit, "sourceCity", "SourceCity", "pickupCity", "PickupCity"),
+                    sourceCompany = ReadString(unit, "sourceCompany", "SourceCompany", "pickupCompany", "PickupCompany"),
+                    destinationCity = ReadString(unit, "destinationCity", "DestinationCity", "dropCity", "DropCity"),
+                    destinationCompany = ReadString(unit, "destinationCompany", "DestinationCompany", "dropCompany", "DropCompany"),
+                    location = string.Join(", ", new[] { city, state }.Where(x => !string.IsNullOrWhiteSpace(x))),
+                    city,
+                    state,
+                    speedMph = ReadDouble(unit, "speedMph", "SpeedMph", "speed", "Speed"),
+                    fuel = ReadDouble(unit, "fuel", "Fuel", "fuelPercent", "FuelPercent"),
+                    damage = ReadDouble(unit, "damage", "Damage", "damagePercent", "DamagePercent"),
+                    latitude = lat.Value,
+                    longitude = lng.Value,
+                    heading = ReadDouble(unit, "heading", "Heading", "headingDeg", "HeadingDeg"),
+                    lastSeenUtc = updatedUtc,
+                    updatedUtc,
+                    source = "telemetry"
+                });
+            }
+        }
+        catch
+        {
+        }
+
+        return result;
+    }
+
+    private static string? FirstTelemetryNonBlank(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+        }
+        return null;
+    }
+
+    private static string? ReadString(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!root.TryGetProperty(name, out var el))
+                continue;
+
+            if (el.ValueKind == JsonValueKind.String)
+                return el.GetString();
+
+            if (el.ValueKind == JsonValueKind.Number || el.ValueKind == JsonValueKind.True || el.ValueKind == JsonValueKind.False)
+                return el.ToString();
+        }
+
+        return null;
+    }
+
+    private static double? ReadDouble(JsonElement root, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (!root.TryGetProperty(name, out var el))
+                continue;
+
+            try
+            {
+                if (el.ValueKind == JsonValueKind.Number)
+                    return el.GetDouble();
+
+                if (el.ValueKind == JsonValueKind.String && double.TryParse(el.GetString(), out var d))
+                    return d;
+            }
+            catch { }
+        }
+
+        return null;
+    }
+
+    private static DateTimeOffset? ReadDate(JsonElement root, params string[] names)
+    {
+        var s = ReadString(root, names);
+        return DateTimeOffset.TryParse(s, out var dto) ? dto : null;
+    }
+
+    
 }
