@@ -19,22 +19,32 @@ namespace OverWatchELD.VtcBot.Routes;
 public static class ApiRoutes
 {
     private static readonly HashSet<string> AdminRoleNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Admin",
-        "Administrator",
-        "Staff",
-        "Dispatch",
-        "Dispatch Admin",
-        "VTC Admin"
-    };
+{
+    "Admin",
+    "Administrator",
+    "Owner",
+    "Founder",
+    "Co-Owner",
+    "Head Admin",
+    "VTC Admin",
+    "Company Owner",
+    "Server Owner"
+};
 
-    private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Manager",
-        "Supervisor",
-        "Fleet Manager",
-        "Roster Manager"
-    };
+private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.OrdinalIgnoreCase)
+{
+    "Manager",
+    "Management",
+    "Supervisor",
+    "Fleet Manager",
+    "Roster Manager",
+    "Dispatch",
+    "Dispatch Admin",
+    "Operations",
+    "Ops",
+    "Lead",
+    "Team Lead"
+};
 
     public static void Register(
         IEndpointRouteBuilder app,
@@ -1041,11 +1051,18 @@ public static class ApiRoutes
                     .Where(x => !string.IsNullOrWhiteSpace(x))
                     .ToList();
 
-                if (names.Any(x => AdminRoleNames.Contains(x)))
-                    return "Admin";
+                if (names.Any(x =>
+    AdminRoleNames.Contains(x) ||
+    x.ToLower().Contains("admin") ||
+    x.ToLower().Contains("owner")))
+    return "Admin";
 
-                if (names.Any(x => ManagerRoleNames.Contains(x)))
-                    return "Manager";
+if (names.Any(x =>
+    ManagerRoleNames.Contains(x) ||
+    x.ToLower().Contains("manager") ||
+    x.ToLower().Contains("management") ||
+    x.ToLower().Contains("dispatch")))
+    return "Manager";
             }
         }
         catch { }
