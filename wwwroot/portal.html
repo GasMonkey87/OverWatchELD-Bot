@@ -10,16 +10,18 @@
 
 <style>
 body{margin:0;background:#020617;color:white;font-family:Segoe UI,Arial,sans-serif}
-header{padding:18px 24px;background:#111827;border-bottom:1px solid #334155}
-.header-bar{display:flex;align-items:center;justify-content:space-between;gap:18px}
-.header-brand{display:flex;align-items:center;gap:13px;min-width:0}
-.header-logo{width:54px;height:54px;border-radius:14px;border:1px solid #334155;background:#020617;object-fit:cover;display:none}
-.header-logo-fallback{width:54px;height:54px;border-radius:14px;background:linear-gradient(135deg,#38bdf8,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:950;color:#020617;box-shadow:0 0 20px rgba(56,189,248,.25)}
+header{position:relative;min-height:300px;background:#020617;border-bottom:1px solid #334155;overflow:hidden}
+.header-bar{position:relative;min-height:300px;padding:24px;display:flex;align-items:flex-end;justify-content:flex-start}
+.header-bar::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(2,6,23,.92),rgba(2,6,23,.48),rgba(2,6,23,.78));z-index:1}
+.header-brand{position:relative;z-index:2;display:flex;align-items:center;gap:16px;min-width:0;max-width:min(980px,calc(100vw - 48px));background:rgba(2,6,23,.58);border:1px solid rgba(148,163,184,.25);border-radius:22px;padding:16px 18px;backdrop-filter:blur(8px);box-shadow:0 18px 55px rgba(0,0,0,.35)}
+.header-logo{width:86px;height:86px;border-radius:22px;border:1px solid #334155;background:#020617;object-fit:cover;display:none;box-shadow:0 0 24px rgba(56,189,248,.18)}
+.header-logo-fallback{width:86px;height:86px;border-radius:22px;background:linear-gradient(135deg,#38bdf8,#1d4ed8);display:flex;align-items:center;justify-content:center;font-weight:950;font-size:27px;color:#020617;box-shadow:0 0 24px rgba(56,189,248,.25)}
 .header-title-wrap{min-width:0}
-#siteTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.header-company-photo{width:min(52vw,620px);height:118px;border-radius:18px;border:1px solid #334155;background:#020617;object-fit:cover;display:none;box-shadow:0 12px 28px rgba(0,0,0,.25)}
-.header-company-placeholder{width:min(52vw,620px);height:118px;border-radius:18px;border:1px dashed #334155;color:#64748b;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px;background:#020617;padding:10px}
-@media(max-width:760px){.header-bar{align-items:flex-start;flex-direction:column}.header-company-photo,.header-company-placeholder{width:100%;height:140px}}
+#siteTitle{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:clamp(30px,4vw,58px);line-height:.95;font-weight:950;text-shadow:0 10px 28px rgba(0,0,0,.55)}
+#welcomeText{font-size:15px;margin-top:8px;max-width:760px}
+.header-company-photo{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;background:#020617;object-fit:cover;display:none;box-shadow:none;z-index:0}
+.header-company-placeholder{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;color:#64748b;display:flex;align-items:center;justify-content:center;text-align:center;font-size:14px;background:radial-gradient(circle at 25% 10%,rgba(56,189,248,.20),transparent 35%),linear-gradient(135deg,#020617,#0f172a 55%,#111827);padding:10px;z-index:0}
+@media(max-width:760px){header,.header-bar{min-height:250px}.header-brand{align-items:flex-start}.header-logo,.header-logo-fallback{width:68px;height:68px;border-radius:18px;font-size:22px}#siteTitle{font-size:30px}}
 main{max-width:1250px;margin:auto;padding:22px}
 .card{background:#0f172a;border:1px solid #334155;border-radius:16px;padding:18px;margin-bottom:18px}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
@@ -212,7 +214,7 @@ button.active{background:#075985;border-color:#38bdf8}
       </div>
     </div>
     <img id="companyHeaderImage" class="header-company-photo" alt="Company picture">
-    <div id="companyHeaderPlaceholder" class="header-company-placeholder">Admin banner image<br>Recommended size: 1600 × 400 px</div>
+    <div id="companyHeaderPlaceholder" class="header-company-placeholder">Admin banner image<br>Recommended size: 1600 × 400 px. This banner fills the top of the portal.</div>
   </div>
 </header>
 
@@ -739,11 +741,11 @@ renderFleetDashboard(units);
 function lowerPortalData(d){
   return {
     guildId:d.guildId || d.GuildId || guildId,
-    siteTitle:d.siteTitle || d.SiteTitle || "",
+    siteTitle:d.siteTitle || d.SiteTitle || d.vtcName || d.VtcName || d.guildName || d.GuildName || "",
     welcomeText:d.welcomeText || d.WelcomeText || "",
     companyInfo:d.companyInfo || d.CompanyInfo || "",
-    companyName:d.companyName || d.CompanyName || d.siteTitle || d.SiteTitle || "",
-    logoImageUrl:d.logoImageUrl || d.LogoImageUrl || d.logoUrl || d.LogoUrl || "",
+    companyName:d.companyName || d.CompanyName || d.vtcName || d.VtcName || d.guildName || d.GuildName || d.siteTitle || d.SiteTitle || "",
+    logoImageUrl:d.logoImageUrl || d.LogoImageUrl || d.logoUrl || d.LogoUrl || d.discordIconUrl || d.DiscordIconUrl || "",
     companyPictureUrl:d.companyPictureUrl || d.CompanyPictureUrl || d.companyImageUrl || d.CompanyImageUrl || "",
     bannerImageUrl:d.bannerImageUrl || d.BannerImageUrl || d.companyBannerUrl || d.CompanyBannerUrl || "",
     heroImageUrl:d.heroImageUrl || d.HeroImageUrl || "",
@@ -1055,10 +1057,22 @@ async function loadPortal(){
   const drivers = portalDrivers.length ? portalDrivers : roster;
 
   const companyDisplayName = portal.companyName || portal.siteTitle || "VTC Name";
+  const initials = companyDisplayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0,2)
+    .map(x => x[0])
+    .join("")
+    .toUpperCase() || "OW";
+
   siteTitle.textContent = companyDisplayName;
   welcomeText.textContent = portal.welcomeText || "";
   vtcHomeTitle.textContent = companyDisplayName;
   if(typeof navCompanyTitle !== "undefined") navCompanyTitle.textContent = companyDisplayName;
+
+  companyLogoFallback.textContent = initials;
+  navLogoFallback.textContent = initials;
+
   const logoUrl = portal.logoImageUrl || "";
   if(logoUrl){
     companyLogoImg.src = logoUrl; companyLogoImg.style.display = "block"; companyLogoFallback.style.display = "none";
@@ -1067,9 +1081,17 @@ async function loadPortal(){
     companyLogoImg.style.display = "none"; companyLogoFallback.style.display = "flex";
     navLogoImg.style.display = "none"; navLogoFallback.style.display = "inline";
   }
+
   const companyPhoto = portal.bannerImageUrl || portal.companyPictureUrl || portal.heroImageUrl || "";
-  if(companyPhoto){ companyHeaderImage.src = companyPhoto; companyHeaderImage.style.display = "block"; companyHeaderPlaceholder.style.display = "none"; }
-  else{ companyHeaderImage.style.display = "none"; companyHeaderPlaceholder.style.display = "flex"; }
+  if(companyPhoto){
+    companyHeaderImage.src = companyPhoto;
+    companyHeaderImage.style.display = "block";
+    companyHeaderPlaceholder.style.display = "none";
+  }
+  else{
+    companyHeaderImage.style.display = "none";
+    companyHeaderPlaceholder.style.display = "flex";
+  }
   vtcHomeInfo.textContent = portal.companyInfo || portal.welcomeText || "Company information has not been added yet.";
   companyInfo.textContent = portal.companyInfo || "Company information has not been added yet.";
   if(portal.joinDiscordUrl){ joinDiscordLink.href = portal.joinDiscordUrl; joinDiscordLink.style.display = "inline-flex"; }
