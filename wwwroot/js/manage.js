@@ -824,6 +824,33 @@
     }
   }
 
+
+  async function verifyManageAccess() {
+    const { res, data } = await getJson('/api/auth/vtcs');
+    if (!res.ok || !data?.ok) {
+      alert('Unable to verify VTC admin access. Please log in again.');
+      window.location.href = '/login.html';
+      return false;
+    }
+
+    const vtcs = Array.isArray(data.data) ? data.data : [];
+    const selected = vtcs.find(v => String(v.guildId || '') === String(guildId));
+
+    if (!selected) {
+      alert('This VTC is not available to your Discord login. Choose the correct VTC.');
+      window.location.href = '/select-vtc.html';
+      return false;
+    }
+
+    if (selected.isManager !== true) {
+      alert('You are logged in, but you are not a VTC admin for this server. Detected role: ' + (selected.role || 'Driver'));
+      window.location.href = '/select-vtc.html';
+      return false;
+    }
+
+    return true;
+  }
+
   if (driverSearch) driverSearch.addEventListener("input", renderRoster);
 
   if (driverProfileForm) {
@@ -894,6 +921,8 @@
 
   refreshBtn.addEventListener("click", refreshAll);
   logoutBtn.addEventListener("click", logout);
+
+  if (!(await verifyManageAccess())) return;
 
   await refreshAll();
 })();
