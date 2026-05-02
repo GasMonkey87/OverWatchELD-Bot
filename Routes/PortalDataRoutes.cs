@@ -1,3 +1,4 @@
+using Discord.WebSocket;
 using Microsoft.AspNetCore.Mvc;
 using OverWatchELD.VtcBot.Stores;
 
@@ -10,12 +11,38 @@ public static class PortalDataRoutes
         app.MapGet("/api/vtc/portal/data", async (
             [FromQuery] string guildId,
             PortalDataStore store,
+            DiscordSocketClient discord,
             HttpContext ctx) =>
         {
             if (string.IsNullOrWhiteSpace(guildId))
                 return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
 
             var guild = store.GetGuild(guildId);
+
+            // Pull default VTC name/logo from Discord when admins have not customized them yet.
+            try
+            {
+                if (ulong.TryParse(guildId, out var parsedGuildId))
+                {
+                    var discordGuild = discord.GetGuild(parsedGuildId);
+                    if (discordGuild != null)
+                    {
+                        var discordName = discordGuild.Name ?? "";
+                        var discordLogo = discordGuild.IconUrl ?? "";
+
+                        if (string.IsNullOrWhiteSpace(guild.CompanyName))
+                            guild.CompanyName = discordName;
+
+                        if (string.IsNullOrWhiteSpace(guild.SiteTitle))
+                            guild.SiteTitle = discordName;
+
+                        if (string.IsNullOrWhiteSpace(guild.LogoImageUrl))
+                            guild.LogoImageUrl = discordLogo;
+                    }
+                }
+            }
+            catch { }
+
             return Results.Ok(new { ok = true, data = guild });
         });
 
@@ -40,6 +67,10 @@ public static class PortalDataRoutes
             var updated = store.UpdateGuild(payload.GuildId, g =>
             {
                 g.SiteTitle = payload.SiteTitle ?? "";
+                g.CompanyName = payload.CompanyName ?? "";
+                g.LogoImageUrl = payload.LogoImageUrl ?? "";
+                g.CompanyPictureUrl = payload.CompanyPictureUrl ?? "";
+                g.BannerImageUrl = payload.BannerImageUrl ?? "";
                 g.WelcomeText = payload.WelcomeText ?? "";
                 g.CompanyInfo = payload.CompanyInfo ?? "";
                 g.HeroImageUrl = payload.HeroImageUrl ?? "";
@@ -47,6 +78,8 @@ public static class PortalDataRoutes
                 g.LearnMoreUrl = payload.LearnMoreUrl ?? "";
                 g.LatestInfo = payload.LatestInfo ?? new();
                 g.FeaturedDrivers = payload.FeaturedDrivers ?? new();
+                g.SlideshowImages = payload.SlideshowImages ?? new();
+                g.ManagementTeam = payload.ManagementTeam ?? new();
                 g.SelectedFeaturedDriver = payload.SelectedFeaturedDriver ?? "";
                 g.Drivers = payload.Drivers ?? new();
                 g.Trucks = payload.Trucks ?? new();
