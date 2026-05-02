@@ -646,16 +646,103 @@ function clearSettings(){
   location.href = "/manage.html";
 }
 
+
+async function loadManageAccess(){
+  let meResp;
+  try{
+    meResp = await api('/api/auth/me');
+  }catch(e){
+    const returnTo = encodeURIComponent(location.pathname + location.search);
+    location.href = `/login.html?returnTo=${returnTo}`;
+    return false;
+  }
+
+  let vtcsResp;
+  try{
+    vtcsResp = await api('/api/auth/vtcs');
+  }catch(e){
+    document.getElementById('content').innerHTML = `<div class="error"><b>Unable to verify VTC admin access.</b><br>${esc(e.message)}</div>`;
+    setStatus('Auth error', false);
+    return false;
+  }
+
+  const vtcs = Array.isArray(vtcsResp.data) ? vtcsResp.data : [];
+  const managerVtcs = vtcs.filter(v => v && v.isManager === true);
+
+  if(!guildId){
+    if(managerVtcs.length === 1){
+      guildId = String(managerVtcs[0].guildId || '');
+      localStorage.setItem('oweld.guildId', guildId);
+      location.href = `/manage.html?guildId=${encodeURIComponent(guildId)}`;
+      return false;
+    }
+
+    document.getElementById('guildLine').textContent = 'Choose a VTC to manage';
+    document.getElementById('content').innerHTML = `
+      <div class="card">
+        <h2>Select VTC</h2>
+        <p class="muted">Your Discord account can manage these VTCs.</p>
+        ${managerVtcs.length ? managerVtcs.map(v => `
+          <div class="list-item" onclick="location.href='/manage.html?guildId=${encodeURIComponent(v.guildId)}'">
+            <div>
+              <b>${esc(v.vtcName || v.guildId)}</b><br>
+              <span class="muted">Role: ${esc(v.role || 'Manager')} · Guild ${esc(v.guildId)}</span>
+            </div>
+            <button class="primary">Manage</button>
+          </div>
+        `).join('') : `<div class="error"><b>No manageable VTCs found.</b><br>Your /api/auth/vtcs response did not include any VTC with isManager=true.</div>`}
+      </div>`;
+    setStatus(managerVtcs.length ? 'Select VTC' : 'Not admin', managerVtcs.length > 0);
+    return false;
+  }
+
+  const selected = vtcs.find(v => String(v.guildId || '') === String(guildId));
+  if(!selected){
+    document.getElementById('guildLine').textContent = `Guild ${guildId}`;
+    document.getElementById('content').innerHTML = `
+      <div class="error">
+        <b>This VTC is not available to your Discord login.</b><br>
+        Log out/in with the Discord account that owns or manages this server.<br><br>
+        <button class="secondary" onclick="clearSettings()">Choose different VTC</button>
+      </div>`;
+    setStatus('No access', false);
+    return false;
+  }
+
+  if(selected.isManager !== true){
+    document.getElementById('guildLine').textContent = `${esc(selected.vtcName || 'VTC')} · Guild ${esc(guildId)}`;
+    document.getElementById('content').innerHTML = `
+      <div class="error">
+        <b>You are logged in, but you are not a VTC admin for this server.</b><br>
+        Detected role: <b>${esc(selected.role || 'Driver')}</b><br><br>
+        Your /api/auth/vtcs entry must have <code>isManager:true</code> to open management.
+      </div>`;
+    setStatus('Not admin', false);
+    return false;
+  }
+
+  localStorage.setItem('oweld.guildId', guildId);
+  window.currentVtcAccess = selected;
+  setStatus(`Admin: ${selected.role || 'Manager'}`, true);
+  return true;
+}
+
+async function bootManage(){
+  const allowed = await loadManageAccess();
+  if(!allowed) return;
+  route('dashboard');
+
+  setInterval(()=>{
+    const active = document.querySelector('.nav button.active')?.dataset.page;
+    if(active && modal.style.display !== 'block') route(active);
+  }, 30000);
+}
+
 function closeModal(e){
   if(e.target.id === "modal") modal.style.display = "none";
 }
 
-route("dashboard");
-
-setInterval(()=>{
-  const active = document.querySelector(".nav button.active")?.dataset.page;
-  if(active && modal.style.display !== "block") route(active);
-}, 30000);
+bootManage();
 </script>
 </body>
 </html>
