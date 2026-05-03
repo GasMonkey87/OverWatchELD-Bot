@@ -227,6 +227,67 @@ public static partial class Program
 
         app.MapTelemetryRoutes();
 
+        app.MapGet("/api/vtc/member/role", async (HttpContext ctx) =>
+{
+    var guildId = ctx.Request.Query["guildId"].ToString();
+    var discordUserId = ctx.Request.Query["discordUserId"].ToString();
+
+    if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(discordUserId))
+    {
+        return Results.Json(new { ok = false, error = "MissingParams" });
+    }
+
+    try
+    {
+        var discord = ctx.RequestServices.GetRequiredService<DiscordSocketClient>();
+
+        var guild = discord.GetGuild(ulong.Parse(guildId));
+        if (guild == null)
+        {
+            return Results.Json(new { ok = false, error = "GuildNotFound" });
+        }
+
+        var user = guild.GetUser(ulong.Parse(discordUserId));
+        if (user == null)
+        {
+            return Results.Json(new { ok = false, error = "UserNotFound" });
+        }
+
+        // 🔥 ROLE DETECTION LOGIC
+        string role = "Driver";
+
+        if (guild.OwnerId == user.Id)
+        {
+            role = "Owner";
+        }
+        else
+        {
+            var roleNames = user.Roles.Select(r => r.Name.ToLower()).ToList();
+
+            if (roleNames.Any(r => r.Contains("admin")))
+                role = "Admin";
+            else if (roleNames.Any(r => r.Contains("manager")))
+                role = "Manager";
+        }
+
+        return Results.Json(new
+        {
+            ok = true,
+            role = role,
+            linkedUserRole = role
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            ok = false,
+            error = "Exception",
+            message = ex.Message
+        });
+    }
+});
+        
         app.MapGet("/api/updates/latest", () =>
 {
     try
