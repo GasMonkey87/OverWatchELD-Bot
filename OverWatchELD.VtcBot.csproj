@@ -6,27 +6,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>OverWatchELD.VtcBot</AssemblyName>
     <StartupObject>OverWatchELD.VtcBot.Program</StartupObject>
-
-    <!-- Railway/Linux-safe: prevent nested sample/hub apps with top-level Program.cs from being compiled into this bot project. -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);OverWatchELD.Hub/**;OverWatchELD.Hub\**;**/OverWatchELD.Hub/**;**\OverWatchELD.Hub\**;Program_SplitExample.cs;**/Program_SplitExample.cs;**\Program_SplitExample.cs</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);OverWatchELD.Hub/**;OverWatchELD.Hub\**;Program_SplitExample.cs;**/Program_SplitExample.cs;**\Program_SplitExample.cs</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Extra explicit excludes for SDK default globs on Windows and Linux. -->
     <Compile Remove="OverWatchELD.Hub/**/*.cs" />
     <Compile Remove="OverWatchELD.Hub\**\*.cs" />
-    <Compile Remove="**/OverWatchELD.Hub/**/*.cs" />
-    <Compile Remove="**\OverWatchELD.Hub\**\*.cs" />
     <Compile Remove="Program_SplitExample.cs" />
-    <Compile Remove="**/Program_SplitExample.cs" />
-    <Compile Remove="**\Program_SplitExample.cs" />
-
     <None Remove="OverWatchELD.Hub/**/*" />
     <None Remove="OverWatchELD.Hub\**\*" />
     <Content Remove="OverWatchELD.Hub/**/*" />
     <Content Remove="OverWatchELD.Hub\**\*" />
-    <EmbeddedResource Remove="OverWatchELD.Hub/**/*" />
-    <EmbeddedResource Remove="OverWatchELD.Hub\**\*" />
   </ItemGroup>
 
   <ItemGroup>
