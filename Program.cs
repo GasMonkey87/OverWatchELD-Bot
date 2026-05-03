@@ -206,7 +206,10 @@ public static partial class Program
 
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
         var app = builder.Build();
-            try
+
+services.GuildSettingsStore = app.Services.GetRequiredService<GuildSettingsStore>();
+
+try
 {
     using var scope = app.Services.CreateScope();
     var store = scope.ServiceProvider.GetRequiredService<GuildSettingsStore>();
