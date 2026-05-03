@@ -283,8 +283,6 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
                 return Results.Json(new { ok = false, error = "RosterBuildFailed", message = ex.Message }, statusCode: 500);
             }
         });
-
-        app.MapGet("/api/vtc/settings", async (string guildId, GuildSettingsStore store) =>
 {
     if (string.IsNullOrWhiteSpace(guildId))
         return Results.Json(new { ok = false, error = "MissingGuildId" });
