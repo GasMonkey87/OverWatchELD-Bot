@@ -296,8 +296,10 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
     });
 });
 
-app.MapGet("/api/vtc/settings", async (string guildId, GuildSettingsStore store) =>
+r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
 {
+    var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+
     if (string.IsNullOrWhiteSpace(guildId))
         return Results.Json(new { ok = false, error = "MissingGuildId" });
 
