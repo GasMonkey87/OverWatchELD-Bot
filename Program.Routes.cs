@@ -221,208 +221,202 @@ public static partial class Program
                 {
                     ok = true,
                     guildId = "",
+                    source = "none",
                     points = Array.Empty<object>(),
-                    source = "none"
+                    telemetryCount = 0,
+                    statusCount = 0,
+                    message = "Missing guildId"
                 });
             }
 
-            // Primary source: desktop ATS telemetry posted to /api/telemetry.
-            var telemetryPoints = LoadTelemetryMapPointsFromDisk(dataDir, guildId);
-            if (telemetryPoints.Count > 0)
-            {
-                return Results.Ok(new
-                {
-                    ok = true,
-                    guildId,
-                    count = telemetryPoints.Count,
-                    points = telemetryPoints,
-                    source = "telemetry"
-                });
-            }
-
-            // Fallback source: older Discord driver status store.
-            var rows = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
-
-            var points = rows
-                .Where(x => Math.Abs(x.Latitude) > 0.000001 || Math.Abs(x.Longitude) > 0.000001)
-                .Select(x => new
-                {
-                    discordUserId = x.DiscordUserId,
-                    driverName = x.DriverName,
-                    dutyStatus = x.DutyStatus,
-                    truck = x.Truck,
-                    loadNumber = x.LoadNumber,
-                    location = x.Location,
-                    speedMph = x.SpeedMph,
-                    latitude = x.Latitude,
-                    longitude = x.Longitude,
-                    heading = x.Heading,
-                    lastSeenUtc = x.LastSeenUtc,
-                    source = "driverStatus"
-                })
-                .Cast<object>()
-                .ToList();
-
-            return Results.Ok(new
-            {
-                ok = true,
-                guildId,
-                count = points.Count,
-                points,
-                source = "driverStatus"
-            });
-        });
-
-        app.MapGet("/api/vtc/live-summary", (HttpRequest req) =>
-        {
-            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(guildId))
-                guildId = _client?.Guilds.FirstOrDefault()?.Id.ToString() ?? "";
-
-            var points = string.IsNullOrWhiteSpace(guildId)
-                ? new List<object>()
-                : LoadTelemetryMapPointsFromDisk(dataDir, guildId);
-
-            var activeLoads = points.Count(x =>
-            {
-                var json = JsonSerializer.Serialize(x);
-                return json.Contains("sourceCompany", StringComparison.OrdinalIgnoreCase) ||
-                       json.Contains("destinationCompany", StringComparison.OrdinalIgnoreCase) ||
-                       json.Contains("cargo", StringComparison.OrdinalIgnoreCase);
-            });
-
-            return Results.Ok(new
-            {
-                ok = true,
-                guildId,
-                activeDrivers = points.Count,
-                activeLoads,
-                updatedUtc = DateTimeOffset.UtcNow,
-                points
-            });
-        });
-    }
-
-    private static List<object> LoadTelemetryMapPointsFromDisk(string dataDir, string guildId)
-    {
-        var result = new List<object>();
-
-        try
-        {
-            var path = Path.Combine(dataDir, "live_telemetry.json");
-            if (!File.Exists(path))
-                return result;
-
-            using var doc = JsonDocument.Parse(File.ReadAllText(path));
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
-                return result;
-
-            if (!doc.RootElement.TryGetProperty(guildId, out var arr) || arr.ValueKind != JsonValueKind.Array)
-                return result;
-
-            foreach (var unit in arr.EnumerateArray())
-            {
-                var updatedUtc = ReadDate(unit, "updatedUtc", "UpdatedUtc");
-                if (updatedUtc.HasValue && (DateTimeOffset.UtcNow - updatedUtc.Value).TotalMinutes > 10)
-                    continue;
-
-                var lat = ReadDouble(unit, "latitude", "Latitude", "lat", "Lat");
-                var lng = ReadDouble(unit, "longitude", "Longitude", "lng", "Lng", "lon", "Lon");
-
-                if (!lat.HasValue || !lng.HasValue || (Math.Abs(lat.Value) < 0.000001 && Math.Abs(lng.Value) < 0.000001))
-                    continue;
-
-                var city = ReadString(unit, "city", "City");
-                var state = ReadString(unit, "state", "State");
-
-                result.Add(new
-                {
-                    discordUserId = ReadString(unit, "driverDiscordUserId", "DriverDiscordUserId", "discordUserId", "DiscordUserId"),
-                    driverName = FirstTelemetryNonBlank(ReadString(unit, "driverName", "DriverName"), ReadString(unit, "driver", "Driver"), ReadString(unit, "discordUsername", "DiscordUsername"), "Driver"),
-                    dutyStatus = FirstTelemetryNonBlank(ReadString(unit, "status", "Status", "dutyStatus", "DutyStatus"), "Live"),
-                    truck = FirstTelemetryNonBlank(ReadString(unit, "truckName", "TruckName"), ReadString(unit, "truck", "Truck"), ReadString(unit, "truckNumber", "TruckNumber")),
-                    truckNumber = ReadString(unit, "truckNumber", "TruckNumber"),
-                    loadNumber = ReadString(unit, "loadNumber", "LoadNumber", "currentLoadNumber", "CurrentLoadNumber"),
-                    cargo = ReadString(unit, "cargo", "Cargo", "cargoName", "CargoName"),
-                    sourceCity = ReadString(unit, "sourceCity", "SourceCity", "pickupCity", "PickupCity"),
-                    sourceCompany = ReadString(unit, "sourceCompany", "SourceCompany", "pickupCompany", "PickupCompany"),
-                    destinationCity = ReadString(unit, "destinationCity", "DestinationCity", "dropCity", "DropCity"),
-                    destinationCompany = ReadString(unit, "destinationCompany", "DestinationCompany", "dropCompany", "DropCompany"),
-                    location = string.Join(", ", new[] { city, state }.Where(x => !string.IsNullOrWhiteSpace(x))),
-                    city,
-                    state,
-                    speedMph = ReadDouble(unit, "speedMph", "SpeedMph", "speed", "Speed"),
-                    fuel = ReadDouble(unit, "fuel", "Fuel", "fuelPercent", "FuelPercent"),
-                    damage = ReadDouble(unit, "damage", "Damage", "damagePercent", "DamagePercent"),
-                    latitude = lat.Value,
-                    longitude = lng.Value,
-                    heading = ReadDouble(unit, "heading", "Heading", "headingDeg", "HeadingDeg"),
-                    lastSeenUtc = updatedUtc,
-                    updatedUtc,
-                    source = "telemetry"
-                });
-            }
-        }
-        catch
-        {
-        }
-
-        return result;
-    }
-
-    private static string? FirstTelemetryNonBlank(params string?[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-                return value.Trim();
-        }
-        return null;
-    }
-
-    private static string? ReadString(JsonElement root, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            if (!root.TryGetProperty(name, out var el))
-                continue;
-
-            if (el.ValueKind == JsonValueKind.String)
-                return el.GetString();
-
-            if (el.ValueKind == JsonValueKind.Number || el.ValueKind == JsonValueKind.True || el.ValueKind == JsonValueKind.False)
-                return el.ToString();
-        }
-
-        return null;
-    }
-
-    private static double? ReadDouble(JsonElement root, params string[] names)
-    {
-        foreach (var name in names)
-        {
-            if (!root.TryGetProperty(name, out var el))
-                continue;
+            var points = new List<object>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var telemetryCount = 0;
+            var statusCount = 0;
 
             try
             {
-                if (el.ValueKind == JsonValueKind.Number)
-                    return el.GetDouble();
+                var telemetryFile = Path.Combine(dataDir, "live_telemetry.json");
+                if (!File.Exists(telemetryFile))
+                {
+                    var fallbackFile = Path.Combine(AppContext.BaseDirectory, "data", "live_telemetry.json");
+                    if (File.Exists(fallbackFile))
+                        telemetryFile = fallbackFile;
+                }
 
-                if (el.ValueKind == JsonValueKind.String && double.TryParse(el.GetString(), out var d))
-                    return d;
+                if (File.Exists(telemetryFile))
+                {
+                    using var doc = JsonDocument.Parse(File.ReadAllText(telemetryFile));
+                    if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                        doc.RootElement.TryGetProperty(guildId, out var arr) &&
+                        arr.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var el in arr.EnumerateArray())
+                        {
+                            telemetryCount++;
+
+                            var latitude = ReadJsonDouble(el, "Latitude", "latitude", "Lat", "lat");
+                            var longitude = ReadJsonDouble(el, "Longitude", "longitude", "Lng", "lng", "Lon", "lon");
+
+                            if (!IsValidMapPoint(latitude, longitude))
+                                continue;
+
+                            var lastSeenUtc = ReadJsonDate(el, "UpdatedUtc", "updatedUtc", "LastSeenUtc", "lastSeenUtc");
+                            if ((DateTimeOffset.UtcNow - lastSeenUtc).TotalMinutes > 30)
+                                continue;
+
+                            var driverId = ReadJsonString(el, "DriverDiscordUserId", "driverDiscordUserId", "DiscordUserId", "discordUserId", "UserId", "userId");
+                            if (string.IsNullOrWhiteSpace(driverId))
+                                driverId = ReadJsonString(el, "Driver", "driver", "DriverName", "driverName", "TruckName", "truckName") ?? Guid.NewGuid().ToString("N");
+
+                            seen.Add(driverId);
+
+                            var city = ReadJsonString(el, "City", "city") ?? "";
+                            var state = ReadJsonString(el, "State", "state") ?? "";
+                            var location = string.Join(", ", new[] { city, state }.Where(x => !string.IsNullOrWhiteSpace(x)));
+
+                            points.Add(new
+                            {
+                                source = "telemetry",
+                                discordUserId = driverId,
+                                driverName = ReadJsonString(el, "DriverName", "driverName", "Driver", "driver", "DiscordUsername", "discordUsername") ?? "Driver",
+                                dutyStatus = ReadJsonString(el, "Status", "status", "DutyStatus", "dutyStatus") ?? "Driving",
+                                truck = ReadJsonString(el, "TruckName", "truckName", "Truck", "truck", "TruckNumber", "truckNumber") ?? "",
+                                truckNumber = ReadJsonString(el, "TruckNumber", "truckNumber") ?? "",
+                                loadNumber = ReadJsonString(el, "LoadNumber", "loadNumber", "CurrentLoadNumber", "currentLoadNumber") ?? "",
+                                location,
+                                speedMph = ReadJsonDouble(el, "SpeedMph", "speedMph", "SpeedMPH", "speedMPH", "Speed", "speed") ?? 0,
+                                latitude,
+                                longitude,
+                                heading = ReadJsonDouble(el, "Heading", "heading") ?? 0,
+                                conversionMode = ReadJsonString(el, "ConversionMode", "conversionMode") ?? "",
+                                lastSeenUtc
+                            });
+                        }
+                    }
+                }
             }
-            catch { }
-        }
+            catch
+            {
+                // Telemetry fallback below keeps the map alive if the file is corrupt or unavailable.
+            }
 
-        return null;
+            try
+            {
+                var rows = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
+                statusCount = rows.Count;
+
+                foreach (var x in rows)
+                {
+                    if (!IsValidMapPoint(x.Latitude, x.Longitude))
+                        continue;
+
+                    if (!string.IsNullOrWhiteSpace(x.DiscordUserId) && seen.Contains(x.DiscordUserId))
+                        continue;
+
+                    if ((DateTimeOffset.UtcNow - x.LastSeenUtc).TotalMinutes > 30)
+                        continue;
+
+                    points.Add(new
+                    {
+                        source = "driver-status",
+                        discordUserId = x.DiscordUserId,
+                        driverName = x.DriverName,
+                        dutyStatus = x.DutyStatus,
+                        truck = x.Truck,
+                        truckNumber = "",
+                        loadNumber = x.LoadNumber,
+                        location = x.Location,
+                        speedMph = x.SpeedMph,
+                        latitude = x.Latitude,
+                        longitude = x.Longitude,
+                        heading = x.Heading,
+                        conversionMode = "GPS",
+                        lastSeenUtc = x.LastSeenUtc
+                    });
+                }
+            }
+            catch
+            {
+            }
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                source = points.Count > 0 ? "telemetry-or-status" : "none",
+                count = points.Count,
+                telemetryCount,
+                statusCount,
+                points
+            });
+
+            static bool IsValidMapPoint(double? latitude, double? longitude)
+            {
+                return latitude.HasValue && longitude.HasValue &&
+                       double.IsFinite(latitude.Value) && double.IsFinite(longitude.Value) &&
+                       Math.Abs(latitude.Value) <= 90 && Math.Abs(longitude.Value) <= 180 &&
+                       (Math.Abs(latitude.Value) > 0.000001 || Math.Abs(longitude.Value) > 0.000001);
+            }
+
+            static string? ReadJsonString(JsonElement el, params string[] names)
+            {
+                foreach (var name in names)
+                {
+                    if (!el.TryGetProperty(name, out var value))
+                        continue;
+
+                    if (value.ValueKind == JsonValueKind.String)
+                    {
+                        var s = value.GetString();
+                        if (!string.IsNullOrWhiteSpace(s))
+                            return s.Trim();
+                    }
+                    else if (value.ValueKind == JsonValueKind.Number ||
+                             value.ValueKind == JsonValueKind.True ||
+                             value.ValueKind == JsonValueKind.False)
+                    {
+                        var s = value.ToString();
+                        if (!string.IsNullOrWhiteSpace(s))
+                            return s.Trim();
+                    }
+                }
+
+                return null;
+            }
+
+            static double? ReadJsonDouble(JsonElement el, params string[] names)
+            {
+                foreach (var name in names)
+                {
+                    if (!el.TryGetProperty(name, out var value))
+                        continue;
+
+                    try
+                    {
+                        if (value.ValueKind == JsonValueKind.Number)
+                            return value.GetDouble();
+
+                        if (value.ValueKind == JsonValueKind.String &&
+                            double.TryParse(value.GetString(), System.Globalization.NumberStyles.Any,
+                                System.Globalization.CultureInfo.InvariantCulture, out var d))
+                        {
+                            return d;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+
+                return null;
+            }
+
+            static DateTimeOffset ReadJsonDate(JsonElement el, params string[] names)
+            {
+                var s = ReadJsonString(el, names);
+                return DateTimeOffset.TryParse(s, out var dto) ? dto : DateTimeOffset.UtcNow;
+            }
+        });
     }
-
-    private static DateTimeOffset? ReadDate(JsonElement root, params string[] names)
-    {
-        var s = ReadString(root, names);
-        return DateTimeOffset.TryParse(s, out var dto) ? dto : null;
-    }
-
-    
 }
