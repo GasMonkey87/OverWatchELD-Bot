@@ -284,6 +284,34 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
             }
         });
 
+        app.MapGet("/api/vtc/settings", async (string guildId, GuildSettingsStore store) =>
+{
+    if (string.IsNullOrWhiteSpace(guildId))
+        return Results.Json(new { ok = false, error = "MissingGuildId" });
+
+    var s = await store.GetAsync(guildId);
+
+    return Results.Json(new
+    {
+        ok = true,
+        settings = s
+    });
+});
+
+app.MapPost("/api/vtc/settings", async (HttpContext ctx, GuildSettingsStore store) =>
+{
+    var body = await JsonSerializer.DeserializeAsync<GuildSettings>(
+        ctx.Request.Body,
+        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+    if (body == null || string.IsNullOrWhiteSpace(body.GuildId))
+        return Results.Json(new { ok = false, error = "MissingGuildId" });
+
+    await store.UpsertAsync(body);
+
+    return Results.Json(new { ok = true, saved = true });
+});
+
         r.MapGet("/vtc/announcements", async (HttpRequest req) =>
         {
             if (services.Client == null || !services.DiscordReady)
