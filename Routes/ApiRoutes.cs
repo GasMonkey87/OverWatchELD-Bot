@@ -296,21 +296,25 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
     });
 });
 
-r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
-{
-    var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
+        });
 
-    if (string.IsNullOrWhiteSpace(guildId))
-        return Results.Json(new { ok = false, error = "MissingGuildId" });
+        r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
+        {
+            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
 
-    var s = await store.GetAsync(guildId);
+            if (string.IsNullOrWhiteSpace(guildId))
+                return Results.Json(new { ok = false, error = "MissingGuildId" });
 
-    return Results.Json(new
-    {
-        ok = true,
-        settings = s
-    }, jsonWrite);
-});
+            var s = await store.GetAsync(guildId);
+
+            return Results.Json(new
+            {
+                ok = true,
+                settings = s
+            }, jsonWrite);
+        });
+
+       
 
         r.MapGet("/vtc/announcements", async (HttpRequest req) =>
         {
