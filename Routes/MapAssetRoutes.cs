@@ -1,11 +1,13 @@
+using Microsoft.Net.Http.Headers;
+
 namespace OverWatchELD.VtcBot.Routes;
 
 public static class MapAssetRoutes
 {
-    private const string RemoteBaseUrl =
+    private const string ReleaseBaseUrl =
         "https://github.com/GasMonkey87/OverWatchELD-Bot/releases/download/Maps/";
 
-    private static readonly HashSet<string> AllowedRemoteFiles = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> AllowedAssets = new(StringComparer.OrdinalIgnoreCase)
     {
         "ats.pmtiles",
         "sprites.json",
@@ -14,84 +16,62 @@ public static class MapAssetRoutes
         "sprites@2x.png"
     };
 
-    private static readonly HashSet<string> AllowedTileExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "png",
-        "jpg",
-        "jpeg",
-        "webp"
-    };
-
-    // 1x1 transparent PNG. Returned when a tile does not exist so MapLibre does not spam red 404s.
-    private static readonly byte[] EmptyPng = Convert.FromBase64String(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
-
     public static WebApplication MapMapAssetRoutes(this WebApplication app)
     {
-        // Local uploaded raster tiles.
-        // Put tiles in either:
-        //   wwwroot/map-tiles/{z}/{x}/{y}.png
-        //   data/map-tiles/{z}/{x}/{y}.png
-        // Supported extensions: png, jpg, jpeg, webp.
-        app.MapGet("/map-tiles/{z:int}/{x:int}/{y}.{ext}", async (
+        // Normal XYZ tile URL used by live-map.html:
+        // /map-tiles/{z}/{x}/{y}.png
+        app.MapGet("/map-tiles/{z:int}/{x:int}/{y:int}.png", async (
             int z,
             int x,
             int y,
-            string ext,
             HttpContext ctx) =>
         {
-            if (!AllowedTileExtensions.Contains(ext))
-                return Results.NotFound();
-
-            var tilePath = FindLocalTilePath(z, x, y, ext);
-            if (tilePath == null)
+            var local = FindTilePath(z, x, y);
+            if (local == null)
             {
-                ctx.Response.Headers.CacheControl = "public,max-age=300";
-                return Results.File(EmptyPng, "image/png");
+                ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+                await ctx.Response.WriteAsync("Tile not uploaded");
+                return;
             }
 
-            var contentType = GetTileContentType(ext);
-            ctx.Response.Headers.CacheControl = "public,max-age=604800,immutable";
-            ctx.Response.Headers["Access-Control-Allow-Origin"] = "*";
-            return Results.File(tilePath, contentType, enableRangeProcessing: true);
+            ctx.Response.Headers.CacheControl = "public,max-age=86400";
+            ctx.Response.Headers.AccessControlAllowOrigin = "*";
+            await ctx.Response.SendFileAsync(local);
         });
 
-        app.MapGet("/api/map/tile-status", () =>
+        app.MapGet("/api/map/tiles/status", () =>
         {
-            var roots = GetTileRoots()
-                .Select(path => new
-                {
-                    path,
-                    exists = Directory.Exists(path),
-                    tileCount = Directory.Exists(path)
-                        ? Directory.EnumerateFiles(path, "*.*", SearchOption.AllDirectories)
-                            .Count(f => AllowedTileExtensions.Contains(Path.GetExtension(f).TrimStart('.')))
-                        : 0
-                })
-                .ToArray();
+            var root = FirstExistingTileRoot();
+            var sample = root == null ? null : FindFirstTile(root);
 
-            return Results.Json(new
+            return Results.Ok(new
             {
                 ok = true,
-                tileUrl = "/map-tiles/{z}/{x}/{y}.png",
-                roots
+                hasTiles = root != null && sample != null,
+                root = root ?? "",
+                sample = sample ?? "",
+                expected = new[]
+                {
+                    "wwwroot/map-tiles/{z}/{x}/{y}.png",
+                    "data/map-tiles/{z}/{x}/{y}.png"
+                }
             });
         });
 
-        // Existing remote PMTiles/sprite proxy kept for compatibility.
+        // Existing release-hosted map assets remain supported.
         app.MapGet("/map-assets/{file}", async (
             string file,
             HttpContext ctx,
             IHttpClientFactory httpClientFactory) =>
         {
-            if (!AllowedRemoteFiles.Contains(file))
+            if (!AllowedAssets.Contains(file))
                 return Results.NotFound();
 
             var client = httpClientFactory.CreateClient();
-            var req = new HttpRequestMessage(HttpMethod.Get, RemoteBaseUrl + Uri.EscapeDataString(file));
+            var req = new HttpRequestMessage(HttpMethod.Get, ReleaseBaseUrl + Uri.EscapeDataString(file));
 
-            if (ctx.Request.Headers.TryGetValue("Range", out var range))
-                req.Headers.TryAddWithoutValidation("Range", range.ToString());
+            if (ctx.Request.Headers.TryGetValue(HeaderNames.Range, out var range))
+                req.Headers.TryAddWithoutValidation(HeaderNames.Range, range.ToString());
 
             var res = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
 
@@ -103,7 +83,7 @@ public static class MapAssetRoutes
             foreach (var h in res.Content.Headers)
                 ctx.Response.Headers[h.Key] = h.Value.ToArray();
 
-            ctx.Response.Headers["Access-Control-Allow-Origin"] = "*";
+            ctx.Response.Headers.AccessControlAllowOrigin = "*";
             ctx.Response.Headers.Remove("transfer-encoding");
 
             await res.Content.CopyToAsync(ctx.Response.Body);
@@ -113,50 +93,51 @@ public static class MapAssetRoutes
         return app;
     }
 
-    private static string[] GetTileRoots()
+    private static string? FindTilePath(int z, int x, int y)
     {
-        var baseDir = AppContext.BaseDirectory;
-        var currentDir = Directory.GetCurrentDirectory();
-
-        return new[]
+        foreach (var root in CandidateTileRoots())
         {
-            Path.Combine(currentDir, "wwwroot", "map-tiles"),
-            Path.Combine(baseDir, "wwwroot", "map-tiles"),
-            Path.Combine(currentDir, "data", "map-tiles"),
-            Path.Combine(baseDir, "data", "map-tiles"),
-            Path.Combine(currentDir, "maps", "tiles"),
-            Path.Combine(baseDir, "maps", "tiles")
-        }
-        .Distinct(StringComparer.OrdinalIgnoreCase)
-        .ToArray();
-    }
+            var path = Path.Combine(root, z.ToString(), x.ToString(), y + ".png");
+            if (File.Exists(path))
+                return path;
 
-    private static string? FindLocalTilePath(int z, int x, int y, string requestedExt)
-    {
-        foreach (var root in GetTileRoots())
-        {
-            var exact = Path.Combine(root, z.ToString(), x.ToString(), $"{y}.{requestedExt}");
-            if (File.Exists(exact))
-                return exact;
+            var jpg = Path.Combine(root, z.ToString(), x.ToString(), y + ".jpg");
+            if (File.Exists(jpg))
+                return jpg;
 
-            foreach (var ext in AllowedTileExtensions)
-            {
-                var fallback = Path.Combine(root, z.ToString(), x.ToString(), $"{y}.{ext}");
-                if (File.Exists(fallback))
-                    return fallback;
-            }
+            var webp = Path.Combine(root, z.ToString(), x.ToString(), y + ".webp");
+            if (File.Exists(webp))
+                return webp;
         }
 
         return null;
     }
 
-    private static string GetTileContentType(string ext)
+    private static string? FirstExistingTileRoot()
+        => CandidateTileRoots().FirstOrDefault(Directory.Exists);
+
+    private static string? FindFirstTile(string root)
     {
-        return ext.ToLowerInvariant() switch
+        try
         {
-            "jpg" or "jpeg" => "image/jpeg",
-            "webp" => "image/webp",
-            _ => "image/png"
-        };
+            return Directory.EnumerateFiles(root, "*.*", SearchOption.AllDirectories)
+                .FirstOrDefault(p =>
+                    p.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                    p.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                    p.EndsWith(".webp", StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static IEnumerable<string> CandidateTileRoots()
+    {
+        yield return Path.Combine(AppContext.BaseDirectory, "wwwroot", "map-tiles");
+        yield return Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "map-tiles");
+        yield return Path.Combine(AppContext.BaseDirectory, "data", "map-tiles");
+        yield return Path.Combine(Directory.GetCurrentDirectory(), "data", "map-tiles");
+        yield return "/data/map-tiles";
     }
 }

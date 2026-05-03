@@ -25,7 +25,7 @@ public static class TelemetryRoutes
         if (!Units.TryGetValue(guildId, out var units))
             units = new List<TelemetryUnit>();
 
-        units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 3);
+        units.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 30);
 
         if (units.Count > 0)
             Units[guildId] = units;
@@ -103,7 +103,7 @@ public static class TelemetryRoutes
                     string.Equals(x.DriverDiscordUserId, unit.DriverDiscordUserId, StringComparison.OrdinalIgnoreCase));
 
                 list.Add(unit);
-                list.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 10);
+                list.RemoveAll(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes > 30);
 
                 SaveToDiskUnsafe();
             }
@@ -222,6 +222,10 @@ public static class TelemetryRoutes
             City = GetString(root, "city", "City"),
             State = GetString(root, "state", "State"),
             Status = GetString(root, "status", "Status", "dutyStatus", "DutyStatus"),
+            SpeedMph = GetDouble(root, "speedMph", "SpeedMph", "speedMPH", "SpeedMPH", "speed", "Speed") ?? 0,
+            Heading = GetDouble(root, "heading", "Heading") ?? 0,
+            LoadNumber = GetString(root, "loadNumber", "LoadNumber", "currentLoadNumber", "CurrentLoadNumber"),
+            CargoName = GetString(root, "cargoName", "CargoName", "cargo", "Cargo"),
 
             SourceCity = GetString(root, "sourceCity", "SourceCity", "pickupCity", "PickupCity"),
             SourceCompany = GetString(root, "sourceCompany", "SourceCompany", "pickupCompany", "PickupCompany"),
@@ -418,7 +422,7 @@ public static class TelemetryRoutes
                 foreach (var kvp in loaded)
                 {
                     var fresh = kvp.Value
-                        .Where(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes <= 10)
+                        .Where(x => (DateTimeOffset.UtcNow - x.UpdatedUtc).TotalMinutes <= 30)
                         .ToList();
 
                     if (fresh.Count > 0)
@@ -509,6 +513,10 @@ public sealed class TelemetryUnit
     public string? City { get; set; }
     public string? State { get; set; }
     public string? Status { get; set; }
+    public double SpeedMph { get; set; }
+    public double Heading { get; set; }
+    public string? LoadNumber { get; set; }
+    public string? CargoName { get; set; }
     public string? ConversionMode { get; set; }
 
     public string? SourceCity { get; set; }
