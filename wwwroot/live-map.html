@@ -11,15 +11,20 @@
     #map { position: absolute; inset: 0; }
     .hud {
       position: absolute; top: 12px; left: 12px; z-index: 10;
-      background: rgba(8, 21, 47, 0.92); border: 1px solid rgba(125,211,252,.25);
-      border-radius: 12px; padding: 12px 14px; min-width: 290px;
-      box-shadow: 0 16px 38px rgba(0,0,0,.28);
+      background: rgba(8, 21, 47, 0.94); border: 1px solid rgba(96,165,250,.35);
+      border-radius: 12px; padding: 12px 14px; min-width: 300px; box-shadow: 0 16px 35px rgba(0,0,0,.25);
     }
     .hud h2 { margin: 0 0 8px 0; font-size: 18px; }
-    .muted { opacity: 0.8; font-size: 13px; line-height: 1.45; }
-    .pill { display:inline-block; margin-top:8px; padding:4px 8px; border-radius:999px; background:#0f172a; border:1px solid #334155; font-size:12px; color:#bae6fd; }
+    .muted { opacity: 0.85; font-size: 13px; line-height: 1.45; }
+    .pill { display: inline-block; margin-top: 7px; padding: 4px 8px; border: 1px solid rgba(125,211,252,.55); color:#bfdbfe; border-radius: 999px; font-size: 12px; }
+    .warn { color:#fde68a; }
+    .driver-marker {
+      width: 18px; height: 18px; border-radius: 50%; background: #38bdf8;
+      border: 3px solid #e0f2fe; box-shadow: 0 0 0 5px rgba(56,189,248,.25), 0 0 22px rgba(56,189,248,.9);
+    }
+    .driver-marker.stale { background:#f59e0b; border-color:#fff7ed; box-shadow:0 0 0 5px rgba(245,158,11,.22); }
     .maplibregl-popup-content { background:#020617; color:#f8fafc; border:1px solid #334155; border-radius:12px; }
-    .maplibregl-popup-tip { border-top-color:#020617 !important; }
+    .maplibregl-popup-tip { border-top-color:#020617!important; }
   </style>
 </head>
 <body>
@@ -28,140 +33,148 @@
   <div class="hud">
     <h2>OverWatch Live Map</h2>
     <div id="mapStatus" class="muted">Loading…</div>
-    <div id="tileStatus" class="pill">Tiles: local uploaded ATS tiles</div>
+    <div id="tileStatus" class="pill">Tiles: checking…</div>
+    <div id="debugStatus" class="muted" style="margin-top:8px"></div>
   </div>
 
   <script>
-    function qs(name) {
-      return new URLSearchParams(window.location.search).get(name) || "";
-    }
-
+    function qs(name) { return new URLSearchParams(window.location.search).get(name) || ""; }
     const guildId = qs("guildId");
-
-    // Local uploaded ATS/OverWatch raster tiles.
-    // Upload/copy tiles to the bot as:
-    //   wwwroot/map-tiles/{z}/{x}/{y}.png
-    // Example:
-    //   wwwroot/map-tiles/3/2/4.png
-    // The bot also supports data/map-tiles/{z}/{x}/{y}.png for mounted storage.
-    const localTileUrl = "/map-tiles/{z}/{x}/{y}.png";
-
-    const map = new maplibregl.Map({
-      container: "map",
-      style: {
-        version: 8,
-        sources: {
-          overwatchTiles: {
-            type: "raster",
-            tiles: [localTileUrl],
-            tileSize: 256,
-            minzoom: 0,
-            maxzoom: 8,
-            attribution: "OverWatch ELD uploaded map tiles"
-          }
-        },
-        layers: [
-          {
-            id: "overwatchTiles",
-            type: "raster",
-            source: "overwatchTiles"
-          }
-        ]
-      },
-      center: [-98.5795, 39.8283],
-      zoom: 3,
-      minZoom: 1,
-      maxZoom: 8
-    });
-
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+    const statusEl = document.getElementById("mapStatus");
+    const tileEl = document.getElementById("tileStatus");
+    const debugEl = document.getElementById("debugStatus");
 
     let markers = [];
-    let firstFit = true;
+    let map;
+    let fitOnce = false;
 
-    function clearMarkers() {
-      for (const m of markers) m.remove();
+    function esc(v){
+      return String(v ?? "").replace(/[&<>\"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[s]));
+    }
+
+    async function getTileSource(){
+      try{
+        const res = await fetch('/api/map/tiles/status', { cache:'no-store' });
+        const data = await res.json();
+        if(data && data.hasTiles){
+          tileEl.textContent = 'Tiles: uploaded /map-tiles';
+          tileEl.classList.remove('warn');
+          return {
+            id: 'uploaded-tiles',
+            source: {
+              type: 'raster',
+              tiles: [`${location.origin}/map-tiles/{z}/{x}/{y}.png`],
+              tileSize: 256,
+              attribution: 'OverWatch ELD uploaded map tiles'
+            }
+          };
+        }
+      }catch(e){ }
+
+      tileEl.textContent = 'Tiles: fallback OpenStreetMap';
+      tileEl.classList.add('warn');
+      return {
+        id: 'osm',
+        source: {
+          type: 'raster',
+          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          attribution: '© OpenStreetMap contributors'
+        }
+      };
+    }
+
+    async function bootMap(){
+      const tile = await getTileSource();
+      map = new maplibregl.Map({
+        container: 'map',
+        style: {
+          version: 8,
+          sources: { [tile.id]: tile.source },
+          layers: [{ id: tile.id, type: 'raster', source: tile.id }]
+        },
+        center: [-98.5795, 39.8283],
+        zoom: 3
+      });
+
+      map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+      map.on('load', async () => {
+        await loadMapData();
+        setInterval(loadMapData, 5000);
+      });
+    }
+
+    function clearMarkers(){
+      for(const m of markers) m.remove();
       markers = [];
     }
 
-    function validPoint(p) {
-      const lat = Number(p.latitude);
-      const lon = Number(p.longitude);
-      return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+    function ageText(lastSeenUtc){
+      const d = new Date(lastSeenUtc);
+      if(isNaN(d.getTime())) return '';
+      const sec = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
+      if(sec < 60) return `${sec}s ago`;
+      return `${Math.round(sec / 60)}m ago`;
     }
 
-    function markerElement(p) {
-      const el = document.createElement("div");
-      el.style.width = "18px";
-      el.style.height = "18px";
-      el.style.borderRadius = "50%";
-      el.style.background = (p.dutyStatus || "").toLowerCase().includes("driv") ? "#22c55e" : "#38bdf8";
-      el.style.border = "2px solid white";
-      el.style.boxShadow = "0 0 14px rgba(56,189,248,.8)";
-      return el;
-    }
+    async function loadMapData(){
+      try{
+        const url = guildId ? `/api/map/live?guildId=${encodeURIComponent(guildId)}` : '/api/map/live';
+        const res = await fetch(url, { cache:'no-store' });
+        const data = await res.json();
+        const points = Array.isArray(data.points) ? data.points : [];
 
-    async function loadTileStatus() {
-      try {
-        const res = await fetch("/api/map/tile-status");
-        const json = await res.json();
-        const total = (json.roots || []).reduce((n, r) => n + (Number(r.tileCount) || 0), 0);
-        document.getElementById("tileStatus").textContent = total > 0
-          ? `Tiles: ${total.toLocaleString()} uploaded`
-          : "Tiles: waiting for uploaded /map-tiles";
-      } catch {
-        document.getElementById("tileStatus").textContent = "Tiles: local route active";
+        clearMarkers();
+
+        statusEl.textContent = `${points.length} drivers on map · Guild ${data.guildId || guildId || '-'}`;
+        debugEl.innerHTML = `Source: ${esc(data.source || 'none')} · Telemetry rows: ${esc(data.telemetryCount ?? 0)} · Status rows: ${esc(data.statusCount ?? 0)}`;
+
+        const bounds = new maplibregl.LngLatBounds();
+        let validCount = 0;
+
+        for(const p of points){
+          const lat = Number(p.latitude);
+          const lng = Number(p.longitude);
+          if(!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+
+          const age = ageText(p.lastSeenUtc);
+          const stale = age.includes('m ago') && parseInt(age) >= 10;
+          const el = document.createElement('div');
+          el.className = 'driver-marker' + (stale ? ' stale' : '');
+
+          const popup = new maplibregl.Popup({ offset: 18 }).setHTML(`
+            <strong>${esc(p.driverName || 'Driver')}</strong><br>
+            Status: ${esc(p.dutyStatus || '-')}<br>
+            Truck: ${esc(p.truck || p.truckNumber || '-')}<br>
+            Load: ${esc(p.loadNumber || '-')}<br>
+            Speed: ${Math.round(Number(p.speedMph || 0))} mph<br>
+            Location: ${esc(p.location || '-')}<br>
+            Source: ${esc(p.source || data.source || '-')}<br>
+            Seen: ${esc(age || '-')}
+          `);
+
+          const marker = new maplibregl.Marker({ element: el })
+            .setLngLat([lng, lat])
+            .setPopup(popup)
+            .addTo(map);
+
+          markers.push(marker);
+          bounds.extend([lng, lat]);
+          validCount++;
+        }
+
+        if(validCount > 0 && !fitOnce){
+          map.fitBounds(bounds, { padding: 80, maxZoom: 7, duration: 800 });
+          fitOnce = true;
+        }
+      }catch(e){
+        statusEl.textContent = `Map polling error: ${e.message}`;
+        debugEl.textContent = '';
       }
     }
 
-    async function loadMapData() {
-      const url = guildId
-        ? `/api/map/live?guildId=${encodeURIComponent(guildId)}`
-        : `/api/map/live`;
-
-      const res = await fetch(url, { cache: "no-store" });
-      const data = await res.json();
-
-      clearMarkers();
-
-      const points = (data.points || []).filter(validPoint);
-      document.getElementById("mapStatus").textContent =
-        `${points.length} drivers on map` + (guildId ? ` · Guild ${guildId}` : "");
-
-      const bounds = new maplibregl.LngLatBounds();
-
-      for (const p of points) {
-        const popup = new maplibregl.Popup({ offset: 18 }).setHTML(`
-          <strong>${p.driverName || "Driver"}</strong><br>
-          Status: ${p.dutyStatus || "-"}<br>
-          Truck: ${p.truck || "-"}<br>
-          Load: ${p.loadNumber || "-"}<br>
-          Speed: ${Math.round(p.speedMph || 0)} mph<br>
-          Location: ${p.location || "-"}
-        `);
-
-        const lngLat = [Number(p.longitude), Number(p.latitude)];
-        const marker = new maplibregl.Marker({ element: markerElement(p) })
-          .setLngLat(lngLat)
-          .setPopup(popup)
-          .addTo(map);
-
-        markers.push(marker);
-        bounds.extend(lngLat);
-      }
-
-      if (firstFit && points.length > 0) {
-        firstFit = false;
-        map.fitBounds(bounds, { padding: 80, maxZoom: 6, duration: 800 });
-      }
-    }
-
-    map.on("load", async () => {
-      await loadTileStatus();
-      await loadMapData();
-      setInterval(loadMapData, 10000);
-      setInterval(loadTileStatus, 60000);
-    });
+    bootMap();
   </script>
 </body>
 </html>
