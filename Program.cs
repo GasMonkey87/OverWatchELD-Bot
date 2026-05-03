@@ -19,6 +19,7 @@ using OverWatchELD.VtcBot.Routes;
 using OverWatchELD.VtcBot.Services;
 using OverWatchELD.VtcBot.Stores;
 using OverWatchELD.VtcBot.Threads;
+using OverWatchELD.VtcBot.Hubs;
 
 namespace OverWatchELD.VtcBot;
 
@@ -206,7 +207,7 @@ public static partial class Program
 
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
         var app = builder.Build();
-
+await app.Services.GetRequiredService<PersistentDispatchMessageStore>().EnsureCreatedAsync();
 services.GuildSettingsStore = app.Services.GetRequiredService<GuildSettingsStore>();
 
 try
@@ -239,7 +240,7 @@ catch (Exception ex)
         }
 
         app.MapTelemetryRoutes();
-
+        app.MapHub<DispatchHub>("/hubs/dispatch");
         app.MapGet("/api/vtc/member/role", async (HttpContext ctx) =>
 {
     var guildId = ctx.Request.Query["guildId"].ToString();
@@ -756,7 +757,8 @@ Message:
         AwardRoutes.Register(app, services, JsonWriteOpts);
         DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatchMessageStore);
         ManagementRoutes.Register(app, services, dispatchMessageStore, driverDisciplineStore);
-
+        builder.Services.AddSignalR();
+builder.Services.AddSingleton<PersistentDispatchMessageStore>();
         
         app.MapPortalDataRoutes();
 
