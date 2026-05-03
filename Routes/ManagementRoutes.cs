@@ -747,7 +747,7 @@ public static class ManagementRoutes
     {
         try
         {
-            var settings = services.GuildSettingsStore?.Get(guildId);
+            var settings = services.DispatchStore?.Get(guildId);
 
             var title = Get(body, "title") ?? "Announcement";
             var text = Get(body, "body") ?? "";
@@ -823,7 +823,7 @@ public static class ManagementRoutes
                 ? (string.IsNullOrWhiteSpace(driverDiscordUserId) ? "Driver" : driverDiscordUserId)
                 : driverName.Trim();
 
-            var settings = services.GuildSettingsStore?.Get(guildId);
+            var settings = services.DispatchStore?.Get(guildId);
             var dispatchChannelIdText = settings?.DispatchChannelId ?? "";
 
             SocketTextChannel? dispatchTextChannel = null;
@@ -908,7 +908,7 @@ public static class ManagementRoutes
         string guildId,
         bool preferAnnouncement)
     {
-        var dispatchStoreIds = ReadDispatchStoreChannelIds(services.GuildSettingsStore, guildId);
+        var dispatchStoreIds = ReadDispatchStoreChannelIds(services.DispatchStore, guildId);
 
         var preferredStoreId = preferAnnouncement
             ? dispatchStoreIds.AnnouncementChannelId ?? dispatchStoreIds.DispatchChannelId
