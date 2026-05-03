@@ -23,6 +23,18 @@ public static class DiscordThreadService
         return client.Guilds.FirstOrDefault();
     }
 
+    private static string SanitizeThreadName(string s)
+{
+    s = (s ?? "driver").Trim().ToLowerInvariant();
+    if (s.Length > 32) s = s[..32];
+
+    var safe = new string(s
+        .Where(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_')
+        .ToArray());
+
+    return string.IsNullOrWhiteSpace(safe) ? "driver" : safe;
+}
+
     public static ulong ThreadStoreTryGet(ThreadMapStore? threadStore, ulong guildId, ulong userId)
     {
         try
