@@ -12,12 +12,14 @@
     .hud {
       position: absolute; top: 12px; left: 12px; z-index: 10;
       background: rgba(8, 21, 47, 0.94); border: 1px solid rgba(96,165,250,.35);
-      border-radius: 12px; padding: 12px 14px; min-width: 300px; box-shadow: 0 16px 35px rgba(0,0,0,.25);
+      border-radius: 12px; padding: 12px 14px; min-width: 320px; max-width: 520px;
+      box-shadow: 0 16px 35px rgba(0,0,0,.25);
     }
     .hud h2 { margin: 0 0 8px 0; font-size: 18px; }
     .muted { opacity: 0.85; font-size: 13px; line-height: 1.45; }
     .pill { display: inline-block; margin-top: 7px; padding: 4px 8px; border: 1px solid rgba(125,211,252,.55); color:#bfdbfe; border-radius: 999px; font-size: 12px; }
     .warn { color:#fde68a; }
+    .error { color:#fecaca; }
     .driver-marker {
       width: 18px; height: 18px; border-radius: 50%; background: #38bdf8;
       border: 3px solid #e0f2fe; box-shadow: 0 0 0 5px rgba(56,189,248,.25), 0 0 22px rgba(56,189,248,.9);
@@ -52,10 +54,23 @@
       return String(v ?? "").replace(/[&<>\"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[s]));
     }
 
+    async function safeJsonResponse(res){
+      const text = await res.text();
+      if(!text || !text.trim()){
+        return { ok:false, source:"empty", points:[], drivers:[], error:`Empty response HTTP ${res.status}` };
+      }
+
+      try{
+        return JSON.parse(text);
+      }catch(e){
+        return { ok:false, source:"bad-json", points:[], drivers:[], error:`Bad JSON HTTP ${res.status}: ${text.slice(0,180)}` };
+      }
+    }
+
     async function getTileSource(){
       try{
         const res = await fetch('/api/map/tiles/status', { cache:'no-store' });
-        const data = await res.json();
+        const data = await safeJsonResponse(res);
         if(data && data.hasTiles){
           tileEl.textContent = 'Tiles: uploaded /map-tiles';
           tileEl.classList.remove('warn');
@@ -122,34 +137,45 @@
       try{
         const url = guildId ? `/api/map/live?guildId=${encodeURIComponent(guildId)}` : '/api/map/live';
         const res = await fetch(url, { cache:'no-store' });
-        const data = await res.json();
-        const points = Array.isArray(data.points) ? data.points : [];
+        const data = await safeJsonResponse(res);
+
+        if(data.ok === false && data.source !== 'none'){
+          statusEl.innerHTML = `<span class="error">Map polling error: ${esc(data.error || 'Unknown API error')}</span>`;
+          debugEl.innerHTML = `Source: ${esc(data.source || 'error')} · HTTP ${esc(res.status)}`;
+          return;
+        }
+
+        const points = Array.isArray(data.points)
+          ? data.points
+          : (Array.isArray(data.drivers) ? data.drivers : []);
 
         clearMarkers();
 
         statusEl.textContent = `${points.length} drivers on map · Guild ${data.guildId || guildId || '-'}`;
-        debugEl.innerHTML = `Source: ${esc(data.source || 'none')} · Telemetry rows: ${esc(data.telemetryCount ?? 0)} · Status rows: ${esc(data.statusCount ?? 0)}`;
+        debugEl.innerHTML = `Source: ${esc(data.source || 'none')} · Telemetry rows: ${esc(data.telemetryRows ?? data.telemetryCount ?? 0)} · Status rows: ${esc(data.statusRows ?? data.statusCount ?? 0)}`;
 
         const bounds = new maplibregl.LngLatBounds();
         let validCount = 0;
 
         for(const p of points){
-          const lat = Number(p.latitude);
-          const lng = Number(p.longitude);
+          const lat = Number(p.latitude ?? p.lat);
+          const lng = Number(p.longitude ?? p.lng ?? p.lon);
           if(!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
 
-          const age = ageText(p.lastSeenUtc);
+          const age = ageText(p.lastSeenUtc || p.updatedUtc);
           const stale = age.includes('m ago') && parseInt(age) >= 10;
           const el = document.createElement('div');
           el.className = 'driver-marker' + (stale ? ' stale' : '');
 
           const popup = new maplibregl.Popup({ offset: 18 }).setHTML(`
-            <strong>${esc(p.driverName || 'Driver')}</strong><br>
-            Status: ${esc(p.dutyStatus || '-')}<br>
-            Truck: ${esc(p.truck || p.truckNumber || '-')}<br>
+            <strong>${esc(p.driverName || p.driver || 'Driver')}</strong><br>
+            Status: ${esc(p.dutyStatus || p.status || '-')}<br>
+            Truck: ${esc(p.truck || p.truckName || p.truckNumber || '-')}<br>
             Load: ${esc(p.loadNumber || '-')}<br>
-            Speed: ${Math.round(Number(p.speedMph || 0))} mph<br>
+            Cargo: ${esc(p.cargoName || p.cargo || '-')}<br>
+            Speed: ${Math.round(Number(p.speedMph ?? p.speed ?? 0))} mph<br>
             Location: ${esc(p.location || '-')}<br>
+            Converted: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}<br>
             Source: ${esc(p.source || data.source || '-')}<br>
             Seen: ${esc(age || '-')}
           `);
@@ -169,7 +195,7 @@
           fitOnce = true;
         }
       }catch(e){
-        statusEl.textContent = `Map polling error: ${e.message}`;
+        statusEl.innerHTML = `<span class="error">Map polling error: ${esc(e.message)}</span>`;
         debugEl.textContent = '';
       }
     }
