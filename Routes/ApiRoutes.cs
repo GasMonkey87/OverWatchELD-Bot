@@ -667,102 +667,74 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
         });
 
         r.MapGet("/messages", async (HttpRequest req) =>
+{
+    if (services.Client == null || !services.DiscordReady)
+        return Results.Json(Array.Empty<object>(), jsonWrite);
+
+    var guild = DiscordThreadService.ResolveGuild(services.Client, req.Query["guildId"].ToString());
+    if (guild == null) return Results.Json(Array.Empty<object>(), jsonWrite);
+
+    var settings = services.GuildSettingsStore != null
+        ? await services.GuildSettingsStore.GetAsync(guild.Id.ToString())
+        : null;
+
+    if (!ulong.TryParse(settings?.DispatchChannelId, out var dispatchChannelId) || dispatchChannelId == 0)
+        return Results.Json(Array.Empty<object>(), jsonWrite);
+
+    var dispatchChannel = guild.GetTextChannel(dispatchChannelId);
+    if (dispatchChannel == null)
+        return Results.Json(Array.Empty<object>(), jsonWrite);
+
+    var results = new List<object>();
+
+    var threads = await dispatchChannel.GetActiveThreadsAsync();
+    var allThreads = threads.ToList();
+
+    foreach (var thread in allThreads)
+    {
+        try
         {
-            if (services.Client == null || !services.DiscordReady)
-                return Results.Json(Array.Empty<object>(), jsonWrite);
+            var msgs = await thread.GetMessagesAsync(50).FlattenAsync();
 
-            var guild = DiscordThreadService.ResolveGuild(services.Client, req.Query["guildId"].ToString());
-            if (guild == null) return Results.Json(Array.Empty<object>(), jsonWrite);
-
-            try { await guild.DownloadUsersAsync(); } catch { }
-
-            var results = new List<object>();
-
-            foreach (var driver in guild.Users.Where(u => !u.IsBot))
+            foreach (var m in msgs.Where(x => !string.IsNullOrWhiteSpace(x.Content)))
             {
-                try
+                var content = m.Content.Trim();
+
+                results.Add(new
                 {
-                    var linkedThreadId = DiscordThreadService.ThreadStoreTryGet(services.ThreadStore, guild.Id, driver.Id);
-                    if (linkedThreadId == 0) continue;
-
-                    var ch = await DiscordThreadService.ResolveChannelAsync(services.Client, linkedThreadId) as IMessageChannel;
-                    if (ch == null) continue;
-
-                    var msgs = await ch.GetMessagesAsync(50).FlattenAsync();
-                    var driverName = string.IsNullOrWhiteSpace(driver.DisplayName) ? driver.Username : driver.DisplayName;
-
-                    foreach (var m in msgs.Where(x =>
-                    {
-                        var txt = (x.Content ?? "").Trim();
-                        return !string.IsNullOrWhiteSpace(txt) &&
-                               !txt.StartsWith("!", StringComparison.OrdinalIgnoreCase);
-                    }).OrderBy(x => x.Timestamp))
-                    {
-                        var authorId = m.Author?.Id.ToString() ?? "";
-                        var driverId = driver.Id.ToString();
-                        var isFromDriver = string.Equals(authorId, driverId, StringComparison.OrdinalIgnoreCase);
-                        var content = (m.Content ?? "").Trim();
-
-                        results.Add(new
-                        {
-                            id = m.Id.ToString(),
-                            createdUnix = m.Timestamp.ToUnixTimeSeconds().ToString(),
-                            createdUtc = m.Timestamp.UtcDateTime.ToString("o"),
-                            sentUtc = m.Timestamp.UtcDateTime.ToString("o"),
-                            text = content,
-                            message = content,
-                            body = content,
-                            content,
-                            driverName,
-                            displayName = driverName,
-                            discordUserId = driverId,
-                            userId = driverId,
-                            driverId,
-                            threadUserId = driverId,
-                            fromDiscordUserId = isFromDriver ? driverId : "",
-                            toDiscordUserId = isFromDriver ? "" : driverId,
-                            fromName = isFromDriver ? driverName : "Dispatch",
-                            toName = isFromDriver ? "Dispatch" : driverName,
-                            author = isFromDriver ? driverName : "Dispatch",
-                            senderName = isFromDriver ? driverName : "Dispatch",
-                            role = driver.Roles
-                                .Where(x => !string.Equals(x.Name, "@everyone", StringComparison.OrdinalIgnoreCase))
-                                .OrderByDescending(x => x.Position)
-                                .Select(x => x.Name)
-                                .FirstOrDefault() ?? "Driver",
-                            isRead = true,
-                            read = true,
-                            isMine = false,
-                            fromMe = false,
-                            isSystem = false,
-                            system = false,
-                            isDispatcher = !isFromDriver,
-                            threadId = linkedThreadId.ToString(),
-                            avatarUrl = ""
-                        });
-                    }
-                }
-                catch { }
+                    id = m.Id.ToString(),
+                    createdUtc = m.Timestamp.UtcDateTime.ToString("o"),
+                    text = content,
+                    message = content,
+                    body = content,
+                    content,
+                    author = m.Author?.Username ?? "Unknown",
+                    discordUserId = m.Author?.Id.ToString() ?? "",
+                    threadId = thread.Id.ToString(),
+                    isRead = true
+                });
             }
+        }
+        catch { }
+    }
 
-            var ordered = results
-                .OrderBy(x =>
-                {
-                    try
-                    {
-                        var p = x.GetType().GetProperty("sentUtc");
-                        var s = p?.GetValue(x)?.ToString() ?? "";
-                        return DateTimeOffset.TryParse(s, out var dt) ? dt : DateTimeOffset.MinValue;
-                    }
-                    catch
-                    {
-                        return DateTimeOffset.MinValue;
-                    }
-                })
-                .ToArray();
-
-            return Results.Json(ordered, jsonWrite);
-        });
+    return Results.Json(
+        results.OrderBy(x =>
+        {
+            try
+            {
+                var p = x.GetType().GetProperty("createdUtc");
+                var s = p?.GetValue(x)?.ToString() ?? "";
+                return DateTimeOffset.TryParse(s, out var dt) ? dt : DateTimeOffset.MinValue;
+            }
+            catch
+            {
+                return DateTimeOffset.MinValue;
+            }
+        }),
+        jsonWrite
+    );
+});
 
         r.MapMethods("/messages/send", new[] { "POST", "GET" }, async (HttpRequest req) =>
         {
