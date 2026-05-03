@@ -298,18 +298,18 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
     });
 });
 
-app.MapPost("/api/vtc/settings", async (HttpContext ctx, GuildSettingsStore store) =>
+app.MapGet("/api/vtc/settings", async (string guildId, GuildSettingsStore store) =>
 {
-    var body = await JsonSerializer.DeserializeAsync<GuildSettings>(
-        ctx.Request.Body,
-        new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-    if (body == null || string.IsNullOrWhiteSpace(body.GuildId))
+    if (string.IsNullOrWhiteSpace(guildId))
         return Results.Json(new { ok = false, error = "MissingGuildId" });
 
-    await store.UpsertAsync(body);
+    var s = await store.GetAsync(guildId);
 
-    return Results.Json(new { ok = true, saved = true });
+    return Results.Json(new
+    {
+        ok = true,
+        settings = s
+    });
 });
 
         r.MapGet("/vtc/announcements", async (HttpRequest req) =>
