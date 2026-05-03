@@ -48,60 +48,53 @@ public static class DiscordThreadService
         catch { }
     }
 
-    public static async Task<ulong> EnsureDriverThreadAsync(
-        DispatchSettingsStore? dispatchStore,
-        ThreadMapStore? threadStore,
-        SocketGuild guild,
-        ulong discordUserId,
-        string label)
+   public static async Task<ulong> EnsureDriverThreadAsync(
+    GuildSettingsStore? db,
+    ThreadMapStore? threadStore,
+    SocketGuild guild,
+    ulong discordUserId,
+    string label)
+{
+    try
     {
+        if (db == null) return 0;
+
+        var settings = await db.GetAsync(guild.Id.ToString());
+
+        if (!ulong.TryParse(settings.DispatchChannelId, out var dispatchChId) || dispatchChId == 0)
+            return 0;
+
+        var dispatchChannel = guild.GetTextChannel(dispatchChId);
+        if (dispatchChannel == null) return 0;
+
+        var existing = ThreadStoreTryGet(threadStore, guild.Id, discordUserId);
+        if (existing != 0) return existing;
+
+        var starter = await dispatchChannel.SendMessageAsync($"📌 Dispatch thread created for **{label}**.");
+
+        var thread = await dispatchChannel.CreateThreadAsync(
+            name: $"dispatch-{SanitizeThreadName(label)}",
+            autoArchiveDuration: ThreadArchiveDuration.OneWeek,
+            type: ThreadType.PrivateThread,
+            invitable: false,
+            message: starter
+        );
+
         try
         {
-            if (dispatchStore == null) return 0;
-
-            var settings = dispatchStore.Get(guild.Id.ToString());
-            if (!ulong.TryParse(settings.DispatchChannelId, out var dispatchChId) || dispatchChId == 0)
-                return 0;
-
-            var dispatchChannel = guild.GetTextChannel(dispatchChId);
-            if (dispatchChannel == null) return 0;
-
-            var existing = ThreadStoreTryGet(threadStore, guild.Id, discordUserId);
-            if (existing != 0) return existing;
-
-            var starter = await dispatchChannel.SendMessageAsync($"📌 Dispatch thread created for **{label}**.");
-
-            var thread = await dispatchChannel.CreateThreadAsync(
-                name: $"dispatch-{SanitizeThreadName(label)}",
-                autoArchiveDuration: ThreadArchiveDuration.OneWeek,
-                type: ThreadType.PrivateThread,
-                invitable: false,
-                message: starter
-            );
-
-            try
-            {
-                var u = guild.GetUser(discordUserId);
-                if (u != null) await thread.AddUserAsync(u);
-            }
-            catch { }
-
-            ThreadStoreSet(threadStore, guild.Id, discordUserId, thread.Id);
-            return thread.Id;
+            var u = guild.GetUser(discordUserId);
+            if (u != null) await thread.AddUserAsync(u);
         }
-        catch
-        {
-            return 0;
-        }
+        catch { }
+
+        ThreadStoreSet(threadStore, guild.Id, discordUserId, thread.Id);
+        return thread.Id;
     }
-
-    public static string SanitizeThreadName(string s)
+    catch
     {
-        s = (s ?? "driver").Trim().ToLowerInvariant();
-        if (s.Length > 32) s = s[..32];
-        var safe = new string(s.Where(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_').ToArray());
-        return string.IsNullOrWhiteSpace(safe) ? "driver" : safe;
+        return 0;
     }
+}
 
     public static async Task<IMessageChannel?> ResolveChannelAsync(DiscordSocketClient? client, ulong channelId)
     {
