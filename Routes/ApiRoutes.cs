@@ -890,7 +890,7 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
             if (threadId == 0)
             {
                 var created = await DiscordThreadService.EnsureDriverThreadAsync(
-                    services.DispatchStore,
+                    services.GuildSettingsStore,
                     services.ThreadStore,
                     guild,
                     targetUserId,
