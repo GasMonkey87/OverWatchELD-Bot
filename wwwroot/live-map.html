@@ -7,22 +7,161 @@
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <style>
-    html,body{margin:0;height:100%;background:#08152f;color:white;font-family:Segoe UI,Arial,sans-serif}#map{position:absolute;inset:0}.hud{position:absolute;top:12px;left:12px;z-index:10;background:rgba(8,21,47,.94);border:1px solid #334155;border-radius:14px;padding:12px 14px;min-width:280px;box-shadow:0 16px 40px rgba(0,0,0,.35)}.hud h2{margin:0 0 8px;font-size:18px}.muted{opacity:.82;font-size:13px}.tabs{position:absolute;right:12px;top:12px;z-index:11;display:flex;gap:8px;flex-wrap:wrap}.tabs a{background:#0f172a;color:#e5e7eb;border:1px solid #334155;text-decoration:none;padding:9px 11px;border-radius:999px;font-weight:700;font-size:13px}.tabs a:hover{background:#1e293b}.truck-marker{width:18px;height:18px;border-radius:50%;background:#22c55e;border:3px solid white;box-shadow:0 0 0 4px rgba(34,197,94,.25)}.popup{color:#0f172a;font-size:13px}.popup b{font-size:15px}
+    html, body { margin: 0; height: 100%; background: #08152f; color: white; font-family: Arial, sans-serif; }
+    #map { position: absolute; inset: 0; }
+    .hud {
+      position: absolute; top: 12px; left: 12px; z-index: 10;
+      background: rgba(8, 21, 47, 0.92); border: 1px solid rgba(125,211,252,.25);
+      border-radius: 12px; padding: 12px 14px; min-width: 290px;
+      box-shadow: 0 16px 38px rgba(0,0,0,.28);
+    }
+    .hud h2 { margin: 0 0 8px 0; font-size: 18px; }
+    .muted { opacity: 0.8; font-size: 13px; line-height: 1.45; }
+    .pill { display:inline-block; margin-top:8px; padding:4px 8px; border-radius:999px; background:#0f172a; border:1px solid #334155; font-size:12px; color:#bae6fd; }
+    .maplibregl-popup-content { background:#020617; color:#f8fafc; border:1px solid #334155; border-radius:12px; }
+    .maplibregl-popup-tip { border-top-color:#020617 !important; }
   </style>
 </head>
 <body>
   <div id="map"></div>
-  <div class="tabs">
-    <a id="fleetLink">Fleet</a><a id="convoyLink">Convoy</a><a id="garageLink">Garages</a><a id="loadsLink">Loads</a><a id="portalLink">Portal</a>
+
+  <div class="hud">
+    <h2>OverWatch Live Map</h2>
+    <div id="mapStatus" class="muted">Loading…</div>
+    <div id="tileStatus" class="pill">Tiles: local uploaded ATS tiles</div>
   </div>
-  <div class="hud"><h2>OverWatch Live Map</h2><div id="mapStatus" class="muted">Loading telemetry…</div><div id="mapSource" class="muted"></div></div>
-<script>
-const qs=new URLSearchParams(location.search);const guildId=qs.get('guildId')||localStorage.getItem('oweld.guildId')||'';if(guildId)localStorage.setItem('oweld.guildId',guildId);
-['fleet','convoy','garage','loads','portal'].forEach(n=>{const el=document.getElementById(n+'Link');if(el)el.href=`/${n==='garage'?'garages':n}.html?guildId=${encodeURIComponent(guildId)}`});
-const map=new maplibregl.Map({container:'map',style:{version:8,sources:{osm:{type:'raster',tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],tileSize:256,attribution:'© OpenStreetMap contributors'}},layers:[{id:'osm',type:'raster',source:'osm'}]},center:[-98.5795,39.8283],zoom:3});
-let markers=[];function clearMarkers(){for(const m of markers)m.remove();markers=[]}function esc(v){return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[s]))}function ll(p){const lng=Number(p.longitude??p.Longitude??p.lng??p.Lng??p.lon??p.Lon);const lat=Number(p.latitude??p.Latitude??p.lat??p.Lat);return Number.isFinite(lng)&&Number.isFinite(lat)&&Math.abs(lng)<=180&&Math.abs(lat)<=90?[lng,lat]:null}function nameOf(p){return p.driverName||p.DriverName||p.driver||p.Driver||p.discordUsername||p.truck||p.truckName||'Driver'}
-async function loadMapData(){if(!guildId){mapStatus.textContent='Missing guildId. Open live-map.html?guildId=YOUR_SERVER_ID';return}let data;try{const res=await fetch(`/api/map/live?guildId=${encodeURIComponent(guildId)}`,{credentials:'include'});data=await res.json()}catch(e){mapStatus.textContent='Live map request failed.';return}clearMarkers();const points=data.points||data.data||[];let valid=0;let bounds=new maplibregl.LngLatBounds();for(const p of points){const pos=ll(p);if(!pos)continue;valid++;bounds.extend(pos);const el=document.createElement('div');el.className='truck-marker';const marker=new maplibregl.Marker({element:el}).setLngLat(pos).setPopup(new maplibregl.Popup({offset:18}).setHTML(`<div class="popup"><b>${esc(nameOf(p))}</b><br>Status: ${esc(p.dutyStatus||p.status||'Live')}<br>Truck: ${esc(p.truck||p.truckName||'-')}<br>Load: ${esc(p.loadNumber||'-')}<br>Speed: ${Math.round(Number(p.speedMph||0))} mph<br>Location: ${esc(p.location||'')}<br>Pickup: ${esc(p.sourceCompany||'-')} ${esc(p.sourceCity||'')}<br>Drop: ${esc(p.destinationCompany||'-')} ${esc(p.destinationCity||'')}</div>`)).addTo(map);markers.push(marker)}mapStatus.textContent=valid?`${valid} live driver${valid===1?'':'s'} polling from ATS telemetry.`:`No valid driver coordinates. Raw units: ${points.length}`;mapSource.textContent=`Source: ${data.source||'map/live'} · ${new Date().toLocaleTimeString()}`;if(valid&&!bounds.isEmpty())map.fitBounds(bounds,{padding:80,maxZoom:7,duration:800})}
-map.on('load',()=>{loadMapData();setInterval(loadMapData,7000)});
-</script>
+
+  <script>
+    function qs(name) {
+      return new URLSearchParams(window.location.search).get(name) || "";
+    }
+
+    const guildId = qs("guildId");
+
+    // Local uploaded ATS/OverWatch raster tiles.
+    // Upload/copy tiles to the bot as:
+    //   wwwroot/map-tiles/{z}/{x}/{y}.png
+    // Example:
+    //   wwwroot/map-tiles/3/2/4.png
+    // The bot also supports data/map-tiles/{z}/{x}/{y}.png for mounted storage.
+    const localTileUrl = "/map-tiles/{z}/{x}/{y}.png";
+
+    const map = new maplibregl.Map({
+      container: "map",
+      style: {
+        version: 8,
+        sources: {
+          overwatchTiles: {
+            type: "raster",
+            tiles: [localTileUrl],
+            tileSize: 256,
+            minzoom: 0,
+            maxzoom: 8,
+            attribution: "OverWatch ELD uploaded map tiles"
+          }
+        },
+        layers: [
+          {
+            id: "overwatchTiles",
+            type: "raster",
+            source: "overwatchTiles"
+          }
+        ]
+      },
+      center: [-98.5795, 39.8283],
+      zoom: 3,
+      minZoom: 1,
+      maxZoom: 8
+    });
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+
+    let markers = [];
+    let firstFit = true;
+
+    function clearMarkers() {
+      for (const m of markers) m.remove();
+      markers = [];
+    }
+
+    function validPoint(p) {
+      const lat = Number(p.latitude);
+      const lon = Number(p.longitude);
+      return Number.isFinite(lat) && Number.isFinite(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+    }
+
+    function markerElement(p) {
+      const el = document.createElement("div");
+      el.style.width = "18px";
+      el.style.height = "18px";
+      el.style.borderRadius = "50%";
+      el.style.background = (p.dutyStatus || "").toLowerCase().includes("driv") ? "#22c55e" : "#38bdf8";
+      el.style.border = "2px solid white";
+      el.style.boxShadow = "0 0 14px rgba(56,189,248,.8)";
+      return el;
+    }
+
+    async function loadTileStatus() {
+      try {
+        const res = await fetch("/api/map/tile-status");
+        const json = await res.json();
+        const total = (json.roots || []).reduce((n, r) => n + (Number(r.tileCount) || 0), 0);
+        document.getElementById("tileStatus").textContent = total > 0
+          ? `Tiles: ${total.toLocaleString()} uploaded`
+          : "Tiles: waiting for uploaded /map-tiles";
+      } catch {
+        document.getElementById("tileStatus").textContent = "Tiles: local route active";
+      }
+    }
+
+    async function loadMapData() {
+      const url = guildId
+        ? `/api/map/live?guildId=${encodeURIComponent(guildId)}`
+        : `/api/map/live`;
+
+      const res = await fetch(url, { cache: "no-store" });
+      const data = await res.json();
+
+      clearMarkers();
+
+      const points = (data.points || []).filter(validPoint);
+      document.getElementById("mapStatus").textContent =
+        `${points.length} drivers on map` + (guildId ? ` · Guild ${guildId}` : "");
+
+      const bounds = new maplibregl.LngLatBounds();
+
+      for (const p of points) {
+        const popup = new maplibregl.Popup({ offset: 18 }).setHTML(`
+          <strong>${p.driverName || "Driver"}</strong><br>
+          Status: ${p.dutyStatus || "-"}<br>
+          Truck: ${p.truck || "-"}<br>
+          Load: ${p.loadNumber || "-"}<br>
+          Speed: ${Math.round(p.speedMph || 0)} mph<br>
+          Location: ${p.location || "-"}
+        `);
+
+        const lngLat = [Number(p.longitude), Number(p.latitude)];
+        const marker = new maplibregl.Marker({ element: markerElement(p) })
+          .setLngLat(lngLat)
+          .setPopup(popup)
+          .addTo(map);
+
+        markers.push(marker);
+        bounds.extend(lngLat);
+      }
+
+      if (firstFit && points.length > 0) {
+        firstFit = false;
+        map.fitBounds(bounds, { padding: 80, maxZoom: 6, duration: 800 });
+      }
+    }
+
+    map.on("load", async () => {
+      await loadTileStatus();
+      await loadMapData();
+      setInterval(loadMapData, 10000);
+      setInterval(loadTileStatus, 60000);
+    });
+  </script>
 </body>
 </html>
