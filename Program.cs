@@ -198,6 +198,7 @@ public static partial class Program
         builder.Services.AddHttpClient<DiscordOAuthService>();
         builder.Services.AddSingleton<PortalDataStore>();
         builder.Services.AddHttpClient();
+        builder.Services.AddSingleton<GuildSettingsStore>();
 
         var portStr = Environment.GetEnvironmentVariable("PORT") ?? "8080";
         if (!int.TryParse(portStr, out var port))
@@ -205,7 +206,16 @@ public static partial class Program
 
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
         var app = builder.Build();
-
+            try
+{
+    using var scope = app.Services.CreateScope();
+    var store = scope.ServiceProvider.GetRequiredService<GuildSettingsStore>();
+    await store.EnsureCreatedAsync();
+}
+catch (Exception ex)
+{
+    Console.WriteLine("[DB] Guild settings init failed: " + ex.Message);
+}
         app.UseForwardedHeaders(new ForwardedHeadersOptions
         {
             ForwardedHeaders =
