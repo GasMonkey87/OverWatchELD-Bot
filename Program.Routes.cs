@@ -1,138 +1,156 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using OverWatchELD.VtcBot.Services;
+using OverWatchELD.VtcBot.Routes;
 
-var builder = WebApplication.CreateBuilder(args);
-var app = builder.Build();
+namespace OverWatchELD.VtcBot;
 
-app.UseStaticFiles();
-
-var TelemetryStore = new List<TelemetryDto>();
-
-// =============================
-// 📡 TELEMETRY POST (FROM ELD)
-// =============================
-app.MapPost("/api/telemetry", async (HttpContext ctx) =>
+public static partial class Program
 {
-    var body = await new StreamReader(ctx.Request.Body).ReadToEndAsync();
-
-    try
+    /// <summary>
+    /// Extra routes that live beside Program.cs without using top-level statements.
+    /// This keeps the bot's explicit StartupObject/Main and fixes CS8804.
+    /// </summary>
+    private static void RegisterProgramRoutes(WebApplication app, BotServices services, string dataDir)
     {
-        var data = JsonSerializer.Deserialize<TelemetryDto>(body,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-        if (data != null)
+        app.MapGet("/api/map/live", (string? guildId) =>
         {
-            data.Timestamp = DateTime.UtcNow;
+            guildId = (guildId ?? "").Trim();
 
-            // Remove old entries for same driver
-            TelemetryStore.RemoveAll(x =>
-                x.GuildId == data.GuildId &&
-                x.DriverName == data.DriverName);
+            if (string.IsNullOrWhiteSpace(guildId))
+            {
+                return Results.Ok(new
+                {
+                    ok = true,
+                    source = "none",
+                    guildId = "",
+                    telemetryRows = 0,
+                    statusRows = 0,
+                    driverCount = 0,
+                    points = Array.Empty<object>(),
+                    drivers = Array.Empty<object>(),
+                    warning = "MissingGuildId"
+                });
+            }
 
-            TelemetryStore.Add(data);
+            var now = DateTimeOffset.UtcNow;
+            var telemetry = LoadTelemetryUnits(dataDir, guildId)
+                .Where(x => (now - x.UpdatedUtc).TotalMinutes <= 30)
+                .ToList();
 
-            Console.WriteLine($"[TELEMETRY] {data.DriverName} X:{data.WorldX} Z:{data.WorldZ}");
-        }
+            var points = telemetry
+                .Where(x => IsValidLngLat(x.Longitude ?? x.Lng ?? x.Lon, x.Latitude ?? x.Lat))
+                .Select(x =>
+                {
+                    var lng = x.Longitude ?? x.Lng ?? x.Lon ?? 0;
+                    var lat = x.Latitude ?? x.Lat ?? 0;
+                    var driverName = FirstNonBlankRoute(x.DriverName, x.Driver, x.DiscordUserId, x.DriverDiscordUserId, "Driver") ?? "Driver";
+                    var truckName = FirstNonBlankRoute(x.TruckName, x.Truck, x.TruckNumber, "Truck") ?? "Truck";
+                    var location = string.Join(", ", new[] { x.City, x.State }.Where(v => !string.IsNullOrWhiteSpace(v)));
 
-        return Results.Json(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new { ok = false, error = ex.Message });
-    }
-});
+                    return new
+                    {
+                        id = x.DriverDiscordUserId,
+                        driverName,
+                        driver = driverName,
+                        truck = truckName,
+                        truckName,
+                        truckNumber = x.TruckNumber ?? "",
+                        lat,
+                        lng,
+                        latitude = lat,
+                        longitude = lng,
+                        speedMph = x.SpeedMph,
+                        speed = x.SpeedMph,
+                        heading = x.Heading,
+                        dutyStatus = x.Status ?? "Live",
+                        status = x.Status ?? "Live",
+                        location,
+                        city = x.City ?? "",
+                        state = x.State ?? "",
+                        loadNumber = x.LoadNumber ?? "",
+                        cargo = x.CargoName ?? "",
+                        cargoName = x.CargoName ?? "",
+                        sourceCity = x.SourceCity ?? "",
+                        sourceCompany = x.SourceCompany ?? "",
+                        destinationCity = x.DestinationCity ?? "",
+                        destinationCompany = x.DestinationCompany ?? "",
+                        conversionMode = x.ConversionMode ?? "",
+                        updatedUtc = x.UpdatedUtc,
+                        lastSeenUtc = x.UpdatedUtc
+                    };
+                })
+                .Cast<object>()
+                .ToList();
 
-// =============================
-// 📡 TELEMETRY GET (DEBUG)
-// =============================
-app.MapGet("/api/telemetry", (string guildId) =>
-{
-    var data = TelemetryStore
-        .Where(t => t.GuildId == guildId)
-        .ToList();
-
-    return Results.Json(data);
-});
-
-// =============================
-// 🗺️ ATS → LAT/LNG CONVERSION
-// =============================
-static (double lat, double lng)? ConvertAtsWorldToLatLng(double worldX, double worldZ)
-{
-    if (Math.Abs(worldX) < 1 && Math.Abs(worldZ) < 1)
-        return null;
-
-    // USA center
-    const double centerLat = 39.5;
-    const double centerLng = -98.35;
-
-    const double scale = 18000.0;
-
-    double lat = centerLat - (worldZ / scale);
-    double lng = centerLng + (worldX / scale);
-
-    if (lat < 10 || lat > 70 || lng < -170 || lng > -50)
-        return null;
-
-    return (lat, lng);
-}
-
-// =============================
-// 🗺️ LIVE MAP DATA
-// =============================
-app.MapGet("/api/map/live", (string guildId) =>
-{
-    var now = DateTime.UtcNow;
-
-    var telemetry = TelemetryStore
-        .Where(t => t.GuildId == guildId && (now - t.Timestamp).TotalMinutes < 30)
-        .ToList();
-
-    var drivers = new List<object>();
-
-    foreach (var t in telemetry)
-    {
-        var converted = ConvertAtsWorldToLatLng(t.WorldX, t.WorldZ);
-
-        if (converted == null)
-            continue;
-
-        drivers.Add(new
-        {
-            driver = t.DriverName,
-            truck = t.TruckName,
-            lat = converted.Value.lat,
-            lng = converted.Value.lng,
-            speed = t.Speed,
-            status = t.Status ?? "Driving"
+            return Results.Ok(new
+            {
+                ok = true,
+                source = points.Count > 0 ? "telemetry" : "none",
+                guildId,
+                telemetryRows = telemetry.Count,
+                statusRows = 0,
+                driverCount = points.Count,
+                points,
+                drivers = points
+            });
         });
     }
 
-    return Results.Json(new
+    private static List<TelemetryUnit> LoadTelemetryUnits(string dataDir, string guildId)
     {
-        ok = true,
-        source = "telemetry",
-        telemetryRows = telemetry.Count,
-        driverCount = drivers.Count,
-        drivers = drivers
-    });
-});
+        try
+        {
+            var candidates = new[]
+            {
+                Path.Combine(dataDir, "live_telemetry.json"),
+                Path.Combine(AppContext.BaseDirectory, "data", "live_telemetry.json"),
+                Path.Combine(Directory.GetCurrentDirectory(), "data", "live_telemetry.json")
+            };
 
-// =============================
-// 🚀 RUN
-// =============================
-app.Run();
+            var path = candidates.FirstOrDefault(File.Exists);
+            if (path == null)
+                return new List<TelemetryUnit>();
 
-// =============================
-// 📦 MODEL
-// =============================
-public class TelemetryDto
-{
-    public string GuildId { get; set; } = "";
-    public string DriverName { get; set; } = "";
-    public string TruckName { get; set; } = "";
-    public double WorldX { get; set; }
-    public double WorldZ { get; set; }
-    public double Speed { get; set; }
-    public string? Status { get; set; }
-    public DateTime Timestamp { get; set; }
+            var json = File.ReadAllText(path);
+            if (string.IsNullOrWhiteSpace(json))
+                return new List<TelemetryUnit>();
+
+            var dict = JsonSerializer.Deserialize<Dictionary<string, List<TelemetryUnit>>>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (dict == null)
+                return new List<TelemetryUnit>();
+
+            return dict.TryGetValue(guildId, out var units)
+                ? units ?? new List<TelemetryUnit>()
+                : new List<TelemetryUnit>();
+        }
+        catch
+        {
+            return new List<TelemetryUnit>();
+        }
+    }
+
+    private static bool IsValidLngLat(double? lng, double? lat)
+    {
+        return lng.HasValue &&
+               lat.HasValue &&
+               double.IsFinite(lng.Value) &&
+               double.IsFinite(lat.Value) &&
+               Math.Abs(lng.Value) <= 180 &&
+               Math.Abs(lat.Value) <= 90;
+    }
+
+    private static string? FirstNonBlankRoute(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+        }
+
+        return null;
+    }
 }
