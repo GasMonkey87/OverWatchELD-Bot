@@ -283,27 +283,21 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
                 return Results.Json(new { ok = false, error = "RosterBuildFailed", message = ex.Message }, statusCode: 500);
             }
         });
+r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
+{
+    var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
 
+    if (string.IsNullOrWhiteSpace(guildId))
+        return Results.Json(new { ok = false, error = "MissingGuildId" });
 
-        });
+    var s = await store.GetAsync(guildId);
 
-        r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
-        {
-            var guildId = (req.Query["guildId"].ToString() ?? "").Trim();
-
-            if (string.IsNullOrWhiteSpace(guildId))
-                return Results.Json(new { ok = false, error = "MissingGuildId" });
-
-            var s = await store.GetAsync(guildId);
-
-            return Results.Json(new
-            {
-                ok = true,
-                settings = s
-            }, jsonWrite);
-        });
-
-       
+    return Results.Json(new
+    {
+        ok = true,
+        settings = s
+    }, jsonWrite);
+});
 
         r.MapGet("/vtc/announcements", async (HttpRequest req) =>
         {
@@ -879,7 +873,7 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
             if (threadId == 0)
             {
                 var created = await DiscordThreadService.EnsureDriverThreadAsync(
-                    services.GuildSettingsStore,
+                    services.DispatchStore,
                     services.ThreadStore,
                     guild,
                     targetUserId,
