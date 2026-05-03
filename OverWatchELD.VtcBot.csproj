@@ -7,23 +7,26 @@
     <AssemblyName>OverWatchELD.VtcBot</AssemblyName>
     <StartupObject>OverWatchELD.VtcBot.Program</StartupObject>
 
-    <!-- Prevent nested/example projects from being compiled into the VtcBot app on Railway/Linux. -->
-    <DefaultItemExcludes>$(DefaultItemExcludes);OverWatchELD.Hub/**;OverWatchELD.Hub\**;Program_SplitExample.cs</DefaultItemExcludes>
+    <!-- Railway/Linux-safe: prevent nested sample/hub apps with top-level Program.cs from being compiled into this bot project. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);OverWatchELD.Hub/**;OverWatchELD.Hub\**;**/OverWatchELD.Hub/**;**\OverWatchELD.Hub\**;Program_SplitExample.cs;**/Program_SplitExample.cs;**\Program_SplitExample.cs</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Exclude the separate Hub sample project. Its Program.cs uses top-level statements and breaks this app when included. -->
+    <!-- Extra explicit excludes for SDK default globs on Windows and Linux. -->
     <Compile Remove="OverWatchELD.Hub/**/*.cs" />
     <Compile Remove="OverWatchELD.Hub\**\*.cs" />
-    <None Remove="OverWatchELD.Hub/**" />
-    <None Remove="OverWatchELD.Hub\**" />
-    <Content Remove="OverWatchELD.Hub/**" />
-    <Content Remove="OverWatchELD.Hub\**" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Exclude old split/example Program file so only Program.cs + partial Program.* files compile. -->
+    <Compile Remove="**/OverWatchELD.Hub/**/*.cs" />
+    <Compile Remove="**\OverWatchELD.Hub\**\*.cs" />
     <Compile Remove="Program_SplitExample.cs" />
+    <Compile Remove="**/Program_SplitExample.cs" />
+    <Compile Remove="**\Program_SplitExample.cs" />
+
+    <None Remove="OverWatchELD.Hub/**/*" />
+    <None Remove="OverWatchELD.Hub\**\*" />
+    <Content Remove="OverWatchELD.Hub/**/*" />
+    <Content Remove="OverWatchELD.Hub\**\*" />
+    <EmbeddedResource Remove="OverWatchELD.Hub/**/*" />
+    <EmbeddedResource Remove="OverWatchELD.Hub\**\*" />
   </ItemGroup>
 
   <ItemGroup>
