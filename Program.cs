@@ -325,7 +325,7 @@ Message:
             discordReady = services.DiscordReady
         }));
 
-        app.MapMapAssetRoutes();
+        app.MapMapAssetRoutes(); // fine if method exists
 
         app.MapGet("/api/status", () => Results.Ok(new
         {
@@ -683,7 +683,7 @@ Message:
         DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatchMessageStore);
         ManagementRoutes.Register(app, services, dispatchMessageStore, driverDisciplineStore);
 
-        RegisterProgramRoutes(app, services, dataDir);
+        
         app.MapPortalDataRoutes();
 
         Console.WriteLine($"Bot running on :{port}");
