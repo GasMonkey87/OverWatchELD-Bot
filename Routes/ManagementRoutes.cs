@@ -876,7 +876,7 @@ public static class ManagementRoutes
             }
 
             var threadId = await DiscordThreadService.EnsureDriverThreadAsync(
-                services.GuildSettingsStore,
+    services.GuildSettingsStore,
                 services.ThreadStore,
                 guild,
                 driverUserId,
