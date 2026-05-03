@@ -309,7 +309,7 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
     {
         ok = true,
         settings = s
-    });
+    }, jsonWrite);
 });
 
         r.MapGet("/vtc/announcements", async (HttpRequest req) =>
