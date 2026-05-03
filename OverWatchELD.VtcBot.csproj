@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+  <PackageReference Include="Npgsql" Version="8.0.6" />
+</ItemGroup>
+
+  <ItemGroup>
     <Compile Remove="OverWatchELD.Hub/**/*.cs" />
     <Compile Remove="OverWatchELD.Hub\**\*.cs" />
     <Compile Remove="Program_SplitExample.cs" />
