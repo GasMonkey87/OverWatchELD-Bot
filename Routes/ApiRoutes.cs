@@ -873,7 +873,7 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
             if (threadId == 0)
             {
                 var created = await DiscordThreadService.EnsureDriverThreadAsync(
-                    services.DispatchStore,
+    services.GuildSettingsStore,
                     services.ThreadStore,
                     guild,
                     targetUserId,
