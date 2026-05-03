@@ -358,7 +358,14 @@ Message:
 });
         app.MapGet("/", () => Results.Redirect("/index.html"));
 
-        app.MapGet("/auth/login", (HttpContext http) => Results.Redirect("/login"));
+        app.MapGet("/auth/login", (HttpContext http) =>
+        {
+            var returnTo = http.Request.Query["returnTo"].ToString();
+            var target = string.IsNullOrWhiteSpace(returnTo)
+                ? "/login"
+                : $"/login?returnTo={Uri.EscapeDataString(returnTo)}";
+            return Results.Redirect(target);
+        });
 
         app.MapGet("/login", (HttpContext http, DiscordOAuthService oauth) =>
         {
