@@ -180,4 +180,46 @@ public static partial class Program
 
         return null;
     }
+    // =============================
+// 📦 TELEMETRY UNIT MODEL (FIX)
+// =============================
+public class TelemetryUnit
+{
+    public string? DriverName { get; set; }
+    public string? Driver { get; set; }
+    public string? DiscordUserId { get; set; }
+    public string? DriverDiscordUserId { get; set; }
+
+    public string? TruckName { get; set; }
+    public string? Truck { get; set; }
+    public string? TruckNumber { get; set; }
+
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+
+    public double? Lat { get; set; }
+    public double? Lng { get; set; }
+    public double? Lon { get; set; }
+
+    public double? SpeedMph { get; set; }
+    public double? Heading { get; set; }
+
+    public string? Status { get; set; }
+
+    public string? City { get; set; }
+    public string? State { get; set; }
+
+    public string? LoadNumber { get; set; }
+    public string? CargoName { get; set; }
+
+    public string? SourceCity { get; set; }
+    public string? SourceCompany { get; set; }
+
+    public string? DestinationCity { get; set; }
+    public string? DestinationCompany { get; set; }
+
+    public string? ConversionMode { get; set; }
+
+    public DateTimeOffset UpdatedUtc { get; set; }
+}
 }
