@@ -62,6 +62,7 @@ public static class DiscordThreadService
 
    public static async Task<ulong> EnsureDriverThreadAsync(
     GuildSettingsStore? db,
+    DispatchSettingsStore? dispatchStore,
     ThreadMapStore? threadStore,
     SocketGuild guild,
     ulong discordUserId,
@@ -69,11 +70,35 @@ public static class DiscordThreadService
 {
     try
     {
-        if (db == null) return 0;
+        var guildId = guild.Id.ToString();
 
-        var settings = await db.GetAsync(guild.Id.ToString());
+        // Dispatch channel can be saved in either store:
+        // - GuildSettingsStore: Manage VTC / auto setup database path
+        // - DispatchSettingsStore: !setdispatchchannel / local JSON path
+        // Older builds wrote only one of these, which caused
+        // ThreadCreateFailedOrDispatchNotSet even after setup.
+        string? dispatchChannelText = null;
 
-        if (!ulong.TryParse(settings.DispatchChannelId, out var dispatchChId) || dispatchChId == 0)
+        try
+        {
+            if (db != null)
+            {
+                var settings = await db.GetAsync(guildId);
+                dispatchChannelText = settings?.DispatchChannelId;
+            }
+        }
+        catch { }
+
+        if (string.IsNullOrWhiteSpace(dispatchChannelText))
+        {
+            try
+            {
+                dispatchChannelText = dispatchStore?.Get(guildId)?.DispatchChannelId;
+            }
+            catch { }
+        }
+
+        if (!ulong.TryParse(dispatchChannelText, out var dispatchChId) || dispatchChId == 0)
             return 0;
 
         var dispatchChannel = guild.GetTextChannel(dispatchChId);
