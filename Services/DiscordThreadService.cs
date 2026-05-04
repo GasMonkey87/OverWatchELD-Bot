@@ -70,62 +70,76 @@ public static class DiscordThreadService
 {
     try
     {
-        var guildId = guild.Id.ToString();
+        if (guild == null || discordUserId == 0)
+            return 0;
 
-        // Dispatch channel can be saved in either store:
-        // - GuildSettingsStore: Manage VTC / auto setup database path
-        // - DispatchSettingsStore: !setdispatchchannel / local JSON path
-        // Older builds wrote only one of these, which caused
-        // ThreadCreateFailedOrDispatchNotSet even after setup.
-        string? dispatchChannelText = null;
+        string dispatchChannelIdText = "";
 
+        // Primary: database-backed guild settings, used by Manage VTC / Railway persistence.
         try
         {
-            if (db != null)
+            if (db != null && db.Enabled)
             {
-                var settings = await db.GetAsync(guildId);
-                dispatchChannelText = settings?.DispatchChannelId;
+                var settings = await db.GetAsync(guild.Id.ToString());
+                dispatchChannelIdText = (settings.DispatchChannelId ?? "").Trim();
             }
         }
         catch { }
 
-        if (string.IsNullOrWhiteSpace(dispatchChannelText))
+        // Fallback: local JSON dispatch store, used by !setdispatchchannel and auto setup.
+        if (string.IsNullOrWhiteSpace(dispatchChannelIdText))
         {
             try
             {
-                dispatchChannelText = dispatchStore?.Get(guildId)?.DispatchChannelId;
+                dispatchChannelIdText = (dispatchStore?.Get(guild.Id.ToString()).DispatchChannelId ?? "").Trim();
             }
             catch { }
         }
 
-        if (!ulong.TryParse(dispatchChannelText, out var dispatchChId) || dispatchChId == 0)
+        if (!ulong.TryParse(dispatchChannelIdText, out var dispatchChId) || dispatchChId == 0)
             return 0;
 
         var dispatchChannel = guild.GetTextChannel(dispatchChId);
-        if (dispatchChannel == null) return 0;
+        if (dispatchChannel == null)
+            return 0;
 
         var existing = ThreadStoreTryGet(threadStore, guild.Id, discordUserId);
-        if (existing != 0) return existing;
+        if (existing != 0)
+            return existing;
+
+        var botUser = guild.CurrentUser;
+        var perms = botUser.GetPermissions(dispatchChannel);
+
+        // If the bot cannot make threads, still allow dispatch messaging to work
+        // by posting into the dispatch channel instead of hard failing.
+        if (!perms.ViewChannel || !perms.SendMessages)
+            return 0;
 
         var starter = await dispatchChannel.SendMessageAsync($"📌 Dispatch thread created for **{label}**.");
 
-        var thread = await dispatchChannel.CreateThreadAsync(
-            name: $"dispatch-{SanitizeThreadName(label)}",
-            autoArchiveDuration: ThreadArchiveDuration.OneWeek,
-            type: ThreadType.PrivateThread,
-            invitable: false,
-            message: starter
-        );
-
         try
         {
-            var u = guild.GetUser(discordUserId);
-            if (u != null) await thread.AddUserAsync(u);
-        }
-        catch { }
+            if (perms.CreatePublicThreads && perms.SendMessagesInThreads)
+            {
+                var thread = await dispatchChannel.CreateThreadAsync(
+                    name: $"dispatch-{SanitizeThreadName(label)}",
+                    autoArchiveDuration: ThreadArchiveDuration.OneWeek,
+                    type: ThreadType.PublicThread,
+                    message: starter
+                );
 
-        ThreadStoreSet(threadStore, guild.Id, discordUserId, thread.Id);
-        return thread.Id;
+                ThreadStoreSet(threadStore, guild.Id, discordUserId, thread.Id);
+                return thread.Id;
+            }
+        }
+        catch
+        {
+            // Fall through to main dispatch channel fallback below.
+        }
+
+        // Fallback: no thread support/permission, but message delivery still works.
+        ThreadStoreSet(threadStore, guild.Id, discordUserId, dispatchChannel.Id);
+        return dispatchChannel.Id;
     }
     catch
     {
