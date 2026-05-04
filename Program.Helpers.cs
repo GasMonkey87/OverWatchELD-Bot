@@ -52,23 +52,24 @@ public static partial class Program
 
             services.DispatchStore?.SetDispatchChannel(guildId, channelIdToSave);
 
-            // Keep the database-backed Manage VTC settings in sync too.
-            // Dispatch messaging reads from both stores now, but writing both
-            // prevents future route/setup mismatches.
+            // Also save to GuildSettingsStore because dispatch messaging thread creation
+            // reads the persistent guild settings table when DATABASE_URL is enabled.
+            // Without this, !setdispatchchannel appears to work but /api/messages/send
+            // still fails with ThreadCreateFailedOrDispatchNotSet.
             try
             {
                 if (services.GuildSettingsStore != null)
                 {
-                    await services.GuildSettingsStore.PatchAsync(guildId, x =>
+                    await services.GuildSettingsStore.PatchAsync(guildId, g =>
                     {
-                        x.GuildId = guildId;
-                        x.DispatchChannelId = channelIdToSave.ToString();
+                        g.GuildId = guildId;
+                        g.DispatchChannelId = channelIdToSave.ToString();
                     });
                 }
             }
             catch { }
 
-            await msg.Channel.SendMessageAsync($"Dispatch channel saved: <#{channelIdToSave}>");
+            await msg.Channel.SendMessageAsync($"Dispatch channel saved: <#{channelIdToSave}> ✅");
         }
         catch
         {
