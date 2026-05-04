@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Linq;
@@ -741,67 +742,31 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
             if (services.Client == null || !services.DiscordReady)
                 return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
 
-            // Bulletproof parser: read the raw JSON once, then pull values by exact OR case-insensitive key.
-            // This prevents the old BadJson loop when the desktop app posts valid JSON but the typed binder misses it.
+            SendMessageReq? payload = null;
             string rawBody = "";
+
             if (HttpMethods.IsPost(req.Method))
             {
                 try
                 {
-                    using var reader = new System.IO.StreamReader(req.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: false);
+                    req.EnableBuffering();
+                    using var reader = new StreamReader(req.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
                     rawBody = await reader.ReadToEndAsync();
+                    req.Body.Position = 0;
+
+                    if (!string.IsNullOrWhiteSpace(rawBody))
+                        payload = JsonSerializer.Deserialize<SendMessageReq>(rawBody, jsonRead);
                 }
                 catch
                 {
-                    rawBody = "";
+                    payload = null;
                 }
-            }
-
-            using JsonDocument? doc = !string.IsNullOrWhiteSpace(rawBody) ? JsonDocument.Parse(rawBody) : null;
-
-            string BodyVal(params string[] names)
-            {
-                try
-                {
-                    if (doc == null || doc.RootElement.ValueKind != JsonValueKind.Object)
-                        return "";
-
-                    foreach (var name in names)
-                    {
-                        if (doc.RootElement.TryGetProperty(name, out var direct) && direct.ValueKind != JsonValueKind.Null)
-                            return direct.ToString().Trim();
-                    }
-
-                    foreach (var prop in doc.RootElement.EnumerateObject())
-                    {
-                        foreach (var name in names)
-                        {
-                            if (string.Equals(prop.Name, name, StringComparison.OrdinalIgnoreCase) && prop.Value.ValueKind != JsonValueKind.Null)
-                                return prop.Value.ToString().Trim();
-                        }
-                    }
-                }
-                catch
-                {
-                }
-
-                return "";
-            }
-
-            string QueryVal(params string[] names)
-            {
-                foreach (var name in names)
-                {
-                    var v = req.Query[name].ToString();
-                    if (!string.IsNullOrWhiteSpace(v))
-                        return v.Trim();
-                }
-                return "";
             }
 
             var text = FirstNonEmpty(
-                BodyVal("Text", "Body", "Message", "Content", "text", "body", "message", "content"),
-                QueryVal("Text", "Body", "Message", "Content", "text", "body", "message", "content")
+                ReadObjString(payload, "Text", "Body", "Message", "Content"),
+                ReadJsonString(rawBody, "Text", "text", "Body", "body", "Message", "message", "Content", "content"),
+                await ReadRequestValueAsync(req, "text", "message", "body", "content", "Text", "Message", "Body", "Content")
             );
 
             if (string.IsNullOrWhiteSpace(text))
@@ -810,73 +775,64 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
                 {
                     ok = false,
                     error = "BadJson",
-                    hint = "Expected Text, Body, Message, or Content in the JSON body.",
-                    receivedBodyLength = rawBody?.Length ?? 0
+                    hint = "Expected Text, Body, Message, or Content in JSON body, form, or query string."
                 }, statusCode: 400);
             }
 
-            var gidStr = FirstNonEmpty(BodyVal("GuildId", "guildId"), QueryVal("guildId", "GuildId"));
+            var gidStr = FirstNonEmpty(
+                ReadObjString(payload, "GuildId"),
+                ReadJsonString(rawBody, "GuildId", "guildId"),
+                await ReadRequestValueAsync(req, "guildId", "GuildId"));
+
             var guild = DiscordThreadService.ResolveGuild(services.Client, gidStr);
             if (guild == null)
                 return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
 
             var senderName = FirstNonEmpty(
-                DiscordThreadService.NormalizeDisplayName(BodyVal("DisplayName", "displayName"), BodyVal("DiscordUsername", "discordUsername")),
-                BodyVal("UserName", "DriverName", "From", "Sender", "SenderName", "DispatchName", "userName", "driverName", "from", "sender", "senderName", "dispatchName"),
-                QueryVal("displayName", "discordUsername", "userName", "driverName", "from", "sender", "senderName", "dispatchName"),
+                DiscordThreadService.NormalizeDisplayName(
+                    ReadObjString(payload, "DisplayName"),
+                    ReadObjString(payload, "DiscordUsername")),
+                ReadObjString(payload, "UserName", "DriverName", "From", "Sender", "SenderName", "DispatchName"),
+                await ReadRequestValueAsync(req, "displayName", "discordUsername", "userName", "driverName", "from", "sender", "senderName", "dispatchName"),
                 "ELD");
 
             var routeToken = FirstNonEmpty(
-                BodyVal("To", "Recipient", "Route", "Target", "Destination", "to", "recipient", "route", "target", "destination"),
-                QueryVal("to", "recipient", "route", "target", "destination")
+                ReadObjString(payload, "To"),
+                ReadObjString(payload, "Recipient"),
+                ReadObjString(payload, "Route", "Target", "Destination"),
+                await ReadRequestValueAsync(req, "to", "recipient", "route", "target", "destination")
             );
 
             var routeToDispatch =
                 string.Equals(routeToken, "dispatch", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(routeToken, "dispatcher", StringComparison.OrdinalIgnoreCase);
 
-            var payload = new SendMessageReq
-            {
-                GuildId = gidStr,
-                Text = text,
-                Body = BodyVal("Body", "body"),
-                Message = BodyVal("Message", "message"),
-                Content = BodyVal("Content", "content"),
-                UserId = BodyVal("UserId", "userId"),
-                DiscordUserId = BodyVal("DiscordUserId", "discordUserId"),
-                DiscordUsername = BodyVal("DiscordUsername", "discordUsername"),
-                DriverDiscordUserId = BodyVal("DriverDiscordUserId", "driverDiscordUserId"),
-                Recipient = BodyVal("Recipient", "recipient"),
-                To = BodyVal("To", "to"),
-                DriverName = BodyVal("DriverName", "driverName"),
-                DisplayName = BodyVal("DisplayName", "displayName"),
-                Source = FirstNonEmpty(BodyVal("Source", "source"), QueryVal("source", "Source"))
-            };
-
             ulong targetUserId = 0;
 
             if (routeToDispatch)
             {
                 var senderIdStr = FirstNonEmpty(
-                    BodyVal("UserId", "DiscordUserId", "DriverDiscordUserId", "userId", "discordUserId", "driverDiscordUserId"),
-                    QueryVal("userId", "discordUserId", "driverDiscordUserId", "UserId", "DiscordUserId", "DriverDiscordUserId"));
+                    ReadObjString(payload, "UserId", "DiscordUserId"),
+                    await ReadRequestValueAsync(req, "userId", "discordUserId", "UserId", "DiscordUserId"));
 
                 if (!ulong.TryParse(senderIdStr, out targetUserId) || targetUserId == 0)
-                    targetUserId = await DiscordThreadService.ResolveTargetDriverUserIdAsync(guild, payload);
+                    targetUserId = await DiscordThreadService.ResolveTargetDriverUserIdAsync(guild, payload!);
             }
             else
             {
-                if (string.IsNullOrWhiteSpace(payload.DriverDiscordUserId))
-                    payload.DriverDiscordUserId = QueryVal("driverDiscordUserId", "DriverDiscordUserId");
+                payload ??= new SendMessageReq();
 
-                if (string.IsNullOrWhiteSpace(payload.Recipient))
-                    payload.Recipient = QueryVal("recipient", "Recipient");
+                if (string.IsNullOrWhiteSpace(ReadObjString(payload, "DriverDiscordUserId")))
+                    payload.DriverDiscordUserId = await ReadRequestValueAsync(req, "driverDiscordUserId", "DriverDiscordUserId");
 
-                if (string.IsNullOrWhiteSpace(payload.DriverName))
-                    payload.DriverName = QueryVal("driverName", "DriverName");
+                if (string.IsNullOrWhiteSpace(ReadObjString(payload, "Recipient")))
+                    payload.Recipient = await ReadRequestValueAsync(req, "recipient", "Recipient");
 
-                if (string.IsNullOrWhiteSpace(payload.DiscordUsername))
-                    payload.DiscordUsername = QueryVal("discordUsername", "DiscordUsername");
+                if (string.IsNullOrWhiteSpace(ReadObjString(payload, "DriverName")))
+                    payload.DriverName = await ReadRequestValueAsync(req, "driverName", "DriverName");
+
+                if (string.IsNullOrWhiteSpace(ReadObjString(payload, "DiscordUsername")))
+                    payload.DiscordUsername = await ReadRequestValueAsync(req, "discordUsername", "DiscordUsername");
 
                 targetUserId = await DiscordThreadService.ResolveTargetDriverUserIdAsync(guild, payload);
             }
@@ -888,18 +844,18 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
                     ok = false,
                     error = "DriverTargetNotResolved",
                     hint = routeToDispatch
-                        ? "Send UserId, DiscordUserId, or DriverDiscordUserId when routing to dispatch."
-                        : "Send DriverDiscordUserId, recipient, driverName, or discordUsername."
+                        ? "Send userId or discordUserId when routing to dispatch."
+                        : "Send driverDiscordUserId, recipient, driverName, or discordUsername."
                 }, statusCode: 400);
             }
 
-            var targetDisplay = DiscordThreadService.ResolveDriverDisplayName(guild, targetUserId, payload);
+            var targetDisplay = DiscordThreadService.ResolveDriverDisplayName(guild, targetUserId, payload!);
             var threadId = DiscordThreadService.ThreadStoreTryGet(services.ThreadStore, guild.Id, targetUserId);
 
             if (threadId == 0)
             {
                 var created = await DiscordThreadService.EnsureDriverThreadAsync(
-                    services.GuildSettingsStore,
+    services.GuildSettingsStore,
                     services.ThreadStore,
                     guild,
                     targetUserId,
@@ -918,21 +874,27 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
             await DiscordThreadService.EnsureThreadOpenAsync(chan);
 
             var loadNo = FirstNonEmpty(
-                BodyVal("LoadNumber", "LoadNo", "CurrentLoadNumber", "loadNumber", "loadNo", "currentLoadNumber"),
-                QueryVal("loadNumber", "loadNo", "currentLoadNumber", "LoadNumber", "LoadNo", "CurrentLoadNumber"));
+                ReadObjString(payload, "LoadNumber", "LoadNo", "CurrentLoadNumber"),
+                await ReadRequestValueAsync(req, "loadNumber", "loadNo", "currentLoadNumber", "LoadNumber", "LoadNo", "CurrentLoadNumber"));
 
             var truckId = FirstNonEmpty(
-                BodyVal("TruckId", "TruckNumber", "AssignedTruck", "AssignedTruckId", "truckId", "truckNumber", "assignedTruck", "assignedTruckId"),
-                QueryVal("truckId", "truckNumber", "assignedTruck", "assignedTruckId", "TruckId", "TruckNumber", "AssignedTruck", "AssignedTruckId"));
+                ReadObjString(payload, "TruckId", "TruckNumber", "AssignedTruck", "AssignedTruckId"),
+                await ReadRequestValueAsync(req, "truckId", "truckNumber", "assignedTruck", "assignedTruckId", "TruckId", "TruckNumber", "AssignedTruck", "AssignedTruckId"));
 
-            var source = FirstNonEmpty(payload.Source, "eld");
+            var source = FirstNonEmpty(
+                ReadObjString(payload, "Source"),
+                await ReadRequestValueAsync(req, "source", "Source"),
+                "eld");
 
             var prefixParts = new List<string>();
             if (!string.IsNullOrWhiteSpace(loadNo)) prefixParts.Add($"Load {loadNo}");
             if (!string.IsNullOrWhiteSpace(truckId)) prefixParts.Add($"Truck {truckId}");
             if (!string.IsNullOrWhiteSpace(source)) prefixParts.Add(source);
 
-            var prefix = prefixParts.Count == 0 ? "" : $"[{string.Join(" • ", prefixParts)}] ";
+            var prefix = prefixParts.Count == 0
+                ? ""
+                : $"[{string.Join(" • ", prefixParts)}] ";
+
             var finalText = $"**{senderName} → {(routeToDispatch ? "Dispatch" : targetDisplay)}:** {prefix}{text}";
             var sent = await chan.SendMessageAsync(finalText);
 
@@ -1025,6 +987,43 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
                     var v = form[name].ToString();
                     if (!string.IsNullOrWhiteSpace(v))
                         return v.Trim();
+                }
+            }
+        }
+        catch
+        {
+        }
+
+        return "";
+    }
+
+    private static string ReadJsonString(string rawJson, params string[] names)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson)) return "";
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return "";
+
+            foreach (var wanted in names)
+            {
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                {
+                    if (!string.Equals(prop.Name, wanted, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (prop.Value.ValueKind == JsonValueKind.String)
+                    {
+                        var s = prop.Value.GetString();
+                        if (!string.IsNullOrWhiteSpace(s)) return s.Trim();
+                    }
+                    else
+                    {
+                        var s = prop.Value.ToString();
+                        if (!string.IsNullOrWhiteSpace(s)) return s.Trim();
+                    }
                 }
             }
         }
