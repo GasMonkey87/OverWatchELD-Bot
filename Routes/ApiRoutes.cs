@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Linq;
@@ -743,19 +742,12 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
                 return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
 
             SendMessageReq? payload = null;
-            string rawBody = "";
 
             if (HttpMethods.IsPost(req.Method))
             {
                 try
                 {
-                    req.EnableBuffering();
-                    using var reader = new StreamReader(req.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-                    rawBody = await reader.ReadToEndAsync();
-                    req.Body.Position = 0;
-
-                    if (!string.IsNullOrWhiteSpace(rawBody))
-                        payload = JsonSerializer.Deserialize<SendMessageReq>(rawBody, jsonRead);
+                    payload = await JsonSerializer.DeserializeAsync<SendMessageReq>(req.Body, jsonRead);
                 }
                 catch
                 {
@@ -765,7 +757,6 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
 
             var text = FirstNonEmpty(
                 ReadObjString(payload, "Text", "Body", "Message", "Content"),
-                ReadJsonString(rawBody, "Text", "text", "Body", "body", "Message", "message", "Content", "content"),
                 await ReadRequestValueAsync(req, "text", "message", "body", "content", "Text", "Message", "Body", "Content")
             );
 
@@ -775,13 +766,12 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
                 {
                     ok = false,
                     error = "BadJson",
-                    hint = "Expected Text, Body, Message, or Content in JSON body, form, or query string."
+                    hint = "Expected Text, Body, Message, or Content"
                 }, statusCode: 400);
             }
 
             var gidStr = FirstNonEmpty(
                 ReadObjString(payload, "GuildId"),
-                ReadJsonString(rawBody, "GuildId", "guildId"),
                 await ReadRequestValueAsync(req, "guildId", "GuildId"));
 
             var guild = DiscordThreadService.ResolveGuild(services.Client, gidStr);
@@ -855,7 +845,8 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
             if (threadId == 0)
             {
                 var created = await DiscordThreadService.EnsureDriverThreadAsync(
-    services.GuildSettingsStore,
+                    services.GuildSettingsStore,
+                    services.DispatchStore,
                     services.ThreadStore,
                     guild,
                     targetUserId,
@@ -987,43 +978,6 @@ r.MapGet("/vtc/settings", async (HttpRequest req, GuildSettingsStore store) =>
                     var v = form[name].ToString();
                     if (!string.IsNullOrWhiteSpace(v))
                         return v.Trim();
-                }
-            }
-        }
-        catch
-        {
-        }
-
-        return "";
-    }
-
-    private static string ReadJsonString(string rawJson, params string[] names)
-    {
-        if (string.IsNullOrWhiteSpace(rawJson)) return "";
-
-        try
-        {
-            using var doc = JsonDocument.Parse(rawJson);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object)
-                return "";
-
-            foreach (var wanted in names)
-            {
-                foreach (var prop in doc.RootElement.EnumerateObject())
-                {
-                    if (!string.Equals(prop.Name, wanted, StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    if (prop.Value.ValueKind == JsonValueKind.String)
-                    {
-                        var s = prop.Value.GetString();
-                        if (!string.IsNullOrWhiteSpace(s)) return s.Trim();
-                    }
-                    else
-                    {
-                        var s = prop.Value.ToString();
-                        if (!string.IsNullOrWhiteSpace(s)) return s.Trim();
-                    }
                 }
             }
         }
