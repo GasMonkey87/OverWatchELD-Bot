@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 using OverWatchELD.VtcBot.Commands;
 using OverWatchELD.VtcBot.Models;
@@ -201,6 +202,16 @@ public static partial class Program
         builder.Services.AddHttpClient();
         builder.Services.AddSingleton<GuildSettingsStore>();
         builder.Services.AddSignalR();
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("Open", policy =>
+            {
+                policy
+                    .AllowAnyOrigin()
+                    .AllowAnyHeader()
+                    .AllowAnyMethod();
+            });
+        });
         builder.Services.AddSingleton<PersistentDispatchMessageStore>();
 
         var portStr = Environment.GetEnvironmentVariable("PORT") ?? "8080";
@@ -209,6 +220,8 @@ public static partial class Program
 
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
         var app = builder.Build();
+
+        app.UseCors("Open");
 
         await app.Services.GetRequiredService<PersistentDispatchMessageStore>().EnsureCreatedAsync();
         services.GuildSettingsStore = app.Services.GetRequiredService<GuildSettingsStore>();
