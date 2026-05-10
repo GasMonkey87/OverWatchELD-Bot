@@ -163,6 +163,8 @@ public sealed class PortalTruck
 public sealed class PortalGarage
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
+
+    // Legacy portal fields
     public string City { get; set; } = "";
     public string State { get; set; } = "";
     public string Country { get; set; } = "";
@@ -171,4 +173,16 @@ public sealed class PortalGarage
     public string PurchasedBy { get; set; } = "";
     public string PurchasedUtc { get; set; } = "";
     public string Notes { get; set; } = "";
+
+    // VTC Garage / live-map fields
+    public string CityToken { get; set; } = "";
+    public string CityName { get; set; } = "";
+    public string Size { get; set; } = "Small";
+    public int TruckCapacity { get; set; } = 3;
+    public bool IsOwned { get; set; }
+    public double? MapX { get; set; }
+    public double? MapY { get; set; }
+    public double? Latitude { get; set; }
+    public double? Longitude { get; set; }
+    public List<string> AssignedTruckNumbers { get; set; } = new();
 }
