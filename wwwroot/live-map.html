@@ -1,274 +1,1709 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>OverWatch ELD Live Map</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <style>
-    html, body { margin: 0; height: 100%; background: #08152f; color: white; font-family: Arial, sans-serif; }
-    #map { position: absolute; inset: 0; }
-    .hud {
-      position: absolute; top: 12px; left: 12px; z-index: 10;
-      background: rgba(8, 21, 47, 0.94); border: 1px solid rgba(96,165,250,.35);
-      border-radius: 12px; padding: 12px 14px; min-width: 320px; max-width: 520px;
-      box-shadow: 0 16px 35px rgba(0,0,0,.25);
-    }
-    .hud h2 { margin: 0 0 8px 0; font-size: 18px; }
-    .muted { opacity: 0.85; font-size: 13px; line-height: 1.45; }
-    .pill { display: inline-block; margin-top: 7px; padding: 4px 8px; border: 1px solid rgba(125,211,252,.55); color:#bfdbfe; border-radius: 999px; font-size: 12px; }
-    .warn { color:#fde68a; }
-    .error { color:#fecaca; }
-    .driver-marker {
-      width: 18px; height: 18px; border-radius: 50%; background: #38bdf8;
-      border: 3px solid #e0f2fe; box-shadow: 0 0 0 5px rgba(56,189,248,.25), 0 0 22px rgba(56,189,248,.9);
-    }
-    .driver-marker.stale { background:#f59e0b; border-color:#fff7ed; box-shadow:0 0 0 5px rgba(245,158,11,.22); }
-    .garage-marker {
-      width: 22px; height: 22px; border-radius: 8px;
-      display:flex; align-items:center; justify-content:center;
-      background:rgba(15,23,42,.82); border:2px solid rgba(148,163,184,.65);
-      color:#cbd5e1; font-size:14px; opacity:.55;
-      box-shadow:0 0 0 4px rgba(15,23,42,.25);
-    }
-    .garage-marker.owned {
-      width: 30px; height: 30px; font-size:19px; opacity:1;
-      background:#1d4ed8; color:#fff; border-color:#bfdbfe;
-      box-shadow:0 0 0 5px rgba(96,165,250,.28), 0 0 24px rgba(96,165,250,.95);
-      font-weight:900;
-    }
-    .garage-popup { min-width: 180px; line-height:1.5; }
-    .garage-popup .owned { color:#93c5fd; font-weight:800; }
-    .maplibregl-popup-content { background:#020617; color:#f8fafc; border:1px solid #334155; border-radius:12px; }
-    .maplibregl-popup-tip { border-top-color:#020617!important; }
-  </style>
+    <meta charset="utf-8" />
+    <title>OverWatch ELD Live Map</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+    <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+    <style>
+        :root {
+            --bg: #070b10;
+            --panel: rgba(12, 18, 26, 0.88);
+            --panelBorder: rgba(255,255,255,0.08);
+            --text: #e8eef7;
+            --muted: #a8b6c9;
+            --truckStop: #ffb24d;
+            --depot: #58d68d;
+            --rest: #c084fc;
+            --weigh: #ff6b6b;
+            --garage: #65b9ff;
+            --company: #36d399;
+            --drive: #4da3ff;
+            --onduty: #ffcf66;
+            --sleeper: #b388ff;
+            --offduty: #a7b0bf;
+            --stale: #5f6b7a;
+        }
+
+        html, body {
+            height: 100%;
+            margin: 0;
+            background: var(--bg);
+            overflow: hidden;
+            font-family: Segoe UI, system-ui, sans-serif;
+        }
+
+        #map {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 18% 18%, rgba(52,86,132,.18), transparent 32%), radial-gradient(circle at 82% 72%, rgba(30,54,92,.12), transparent 38%), linear-gradient(180deg, #080d13 0%, #0d131c 100%);
+        }
+
+        .panelShell {
+            pointer-events: auto;
+        }
+
+        .collapseBtn {
+            border: 1px solid rgba(255,255,255,.12);
+            background: rgba(255,255,255,.07);
+            color: var(--text);
+            border-radius: 10px;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+            .collapseBtn:hover {
+                background: rgba(255,255,255,.12);
+            }
+
+        .topWrap {
+            position: absolute;
+            left: 14px;
+            top: 14px;
+            right: 14px;
+            display: flex;
+            justify-content: flex-start;
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        .topBar {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        .topBarHeader {
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .hud {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            background: var(--panel);
+            border: 1px solid var(--panelBorder);
+            border-radius: 16px;
+            padding: 10px 12px;
+            color: var(--text);
+            box-shadow: 0 16px 40px rgba(0,0,0,.42);
+            backdrop-filter: blur(12px);
+            max-width: min(1180px, calc(100vw - 28px));
+            pointer-events: auto;
+        }
+
+            .hud.collapsed {
+                display: none;
+            }
+
+        .pill {
+            padding: 6px 10px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.055);
+            border: 1px solid rgba(255,255,255,.085);
+            font-size: 12px;
+            color: var(--text);
+            white-space: nowrap;
+        }
+
+            .pill.good {
+                color: #dff8e8;
+                border-color: rgba(75,211,138,.3);
+                background: rgba(75,211,138,.12);
+            }
+
+            .pill.warn {
+                color: #fff3d2;
+                border-color: rgba(255,207,102,.28);
+                background: rgba(255,207,102,.10);
+            }
+
+            .pill.bad {
+                color: #ffe0e0;
+                border-color: rgba(255,123,123,.28);
+                background: rgba(255,123,123,.10);
+            }
+
+        .hud button {
+            border: 1px solid rgba(255,255,255,.12);
+            background: rgba(255,255,255,.07);
+            color: var(--text);
+            border-radius: 12px;
+            padding: 7px 10px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+            .hud button:hover {
+                background: rgba(255,255,255,.12);
+            }
+
+            .hud button.active {
+                background: rgba(77,163,255,.18);
+                border-color: rgba(77,163,255,.45);
+            }
+
+        .legendWrap {
+            position: absolute;
+            left: 14px;
+            bottom: 14px;
+            z-index: 18;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            pointer-events: auto;
+        }
+
+        .legendPanel {
+            background: rgba(10,16,24,.78);
+            border: 1px solid rgba(255,255,255,.08);
+            border-radius: 14px;
+            padding: 8px 10px;
+            box-shadow: 0 12px 32px rgba(0,0,0,.32);
+            backdrop-filter: blur(10px);
+            color: var(--muted);
+            font-size: 11px;
+            max-width: 350px;
+        }
+
+            .legendPanel.collapsed {
+                display: none;
+            }
+
+        .legendTitle {
+            color: var(--text);
+            font-size: 11px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            letter-spacing: .03em;
+        }
+
+        .legendGrid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px 12px;
+        }
+
+        .legendItem {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            white-space: nowrap;
+        }
+
+        .dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 999px;
+            display: inline-block;
+            flex: 0 0 auto;
+        }
+
+        .statusMini {
+            position: absolute;
+            right: 14px;
+            bottom: 14px;
+            z-index: 20;
+            min-width: 180px;
+            max-width: 260px;
+            background: rgba(10,16,24,.72);
+            border: 1px solid rgba(255,255,255,.08);
+            color: var(--text);
+            border-radius: 14px;
+            box-shadow: 0 12px 28px rgba(0,0,0,.28);
+            backdrop-filter: blur(10px);
+            padding: 10px 12px;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+
+            .statusMini .row {
+                display: flex;
+                justify-content: space-between;
+                gap: 10px;
+                margin: 2px 0;
+            }
+
+            .statusMini .label {
+                color: var(--muted);
+            }
+
+            .statusMini .value {
+                color: var(--text);
+                text-align: right;
+            }
+
+        .driverLabel {
+            color: #fff;
+            font-size: 12px;
+            font-weight: 700;
+            text-shadow: 0 2px 6px rgba(0,0,0,.95);
+            white-space: nowrap;
+            pointer-events: none;
+        }
+
+        .truckSubLabel {
+            color: #d7e6f7;
+            font-size: 10px;
+            font-weight: 600;
+            text-shadow: 0 2px 6px rgba(0,0,0,.95);
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: .95;
+        }
+
+        .truckMarkerWrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            transform-origin: center center;
+        }
+
+        .truckMarker {
+            width: 24px;
+            height: 24px;
+            border-radius: 999px;
+            border: 2px solid rgba(255,255,255,.9);
+            box-shadow: 0 0 0 2px rgba(34,197,94,.18), 0 8px 18px rgba(0,0,0,.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, #34d399, #10b981);
+            color: #03140f;
+            font-size: 13px;
+            font-weight: 800;
+        }
+
+            .truckMarker.stale {
+                background: linear-gradient(180deg, #8a96a8, #64748b);
+                box-shadow: 0 0 0 2px rgba(148,163,184,.16), 0 8px 18px rgba(0,0,0,.45);
+            }
+
+            .truckMarker.offduty {
+                background: linear-gradient(180deg, #cbd5e1, #94a3b8);
+            }
+
+            .truckMarker.onduty {
+                background: linear-gradient(180deg, #ffd77a, #ffb84d);
+            }
+
+            .truckMarker.sleeper {
+                background: linear-gradient(180deg, #c4a4ff, #9b7cff);
+            }
+
+        .stateTextLabel {
+            color: #7ea4c8;
+            font-size: 13px;
+            font-weight: 700;
+            text-shadow: 0 1px 4px rgba(0,0,0,.95);
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0.80;
+        }
+
+        .cityTextLabel {
+            color: #f3f7fd;
+            font-size: 12px;
+            font-weight: 700;
+            text-shadow: 0 1px 4px rgba(0,0,0,.95);
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0.95;
+        }
+
+        .poiIconWrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 3px;
+            pointer-events: none;
+        }
+
+        .poiIcon {
+            width: 18px;
+            height: 18px;
+            border-radius: 999px;
+            border: 1.5px solid rgba(255,255,255,.92);
+            box-shadow: 0 4px 12px rgba(0,0,0,.38);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 700;
+            color: #081018;
+            background: #9fb3c8;
+        }
+
+            .poiIcon.truck_stop {
+                background: var(--truckStop);
+            }
+
+            .poiIcon.depot {
+                background: var(--depot);
+            }
+
+            .poiIcon.company {
+                background: var(--company);
+            }
+
+            .poiIcon.weigh_station {
+                background: var(--weigh);
+                color: #fff;
+            }
+
+            .poiIcon.garage {
+                background: var(--garage);
+                color: #06223c;
+            }
+
+        .vtcGarageMarker {
+            width: 34px;
+            height: 34px;
+            border-radius: 999px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, #3b82f6, #2563eb);
+            border: 2px solid rgba(255,255,255,.92);
+            color: white;
+            font-weight: 900;
+            font-size: 14px;
+            box-shadow: 0 0 16px rgba(37,99,235,.65);
+        }
+
+            .vtcGarageMarker.home {
+                background: linear-gradient(180deg, #fbbf24, #f59e0b);
+                box-shadow: 0 0 18px rgba(245,158,11,.95);
+                color: #1f2937;
+            }
+
+        .vtcGaragePopupTitle {
+            font-size: 15px;
+            font-weight: 800;
+            margin-bottom: 8px;
+        }
+
+            .poiIcon.rest_area {
+                background: var(--rest);
+                color: #fff;
+            }
+
+        .poiLabel {
+            font-size: 10px;
+            color: #dce6f3;
+            text-shadow: 0 1px 4px rgba(0,0,0,.95);
+            white-space: nowrap;
+            opacity: .92;
+            display: none;
+        }
+
+        .maplibregl-popup-content {
+            background: rgba(11,17,25,.96);
+            color: var(--text);
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,.08);
+            box-shadow: 0 16px 40px rgba(0,0,0,.38);
+            min-width: 240px;
+        }
+
+        .maplibregl-popup-close-button {
+            color: #d5deea;
+            font-size: 18px;
+        }
+
+        .popupTitle {
+            font-weight: 700;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+
+        .popupRow {
+            color: var(--muted);
+            font-size: 12px;
+            margin-top: 2px;
+        }
+    </style>
 </head>
 <body>
-  <div id="map"></div>
+    <div id="map"></div>
 
-  <div class="hud">
-    <h2>OverWatch Live Map</h2>
-    <div id="mapStatus" class="muted">Loading…</div>
-    <div id="tileStatus" class="pill">Tiles: checking…</div>
-    <div id="debugStatus" class="muted" style="margin-top:8px"></div>
-  </div>
-
-  <script>
-    function qs(name) { return new URLSearchParams(window.location.search).get(name) || ""; }
-    const guildId = qs("guildId");
-    const statusEl = document.getElementById("mapStatus");
-    const tileEl = document.getElementById("tileStatus");
-    const debugEl = document.getElementById("debugStatus");
-
-    let markers = [];
-    let garageMarkers = [];
-    let map;
-    let fitOnce = false;
-
-    function esc(v){
-      return String(v ?? "").replace(/[&<>\"']/g, s => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[s]));
-    }
-
-    async function safeJsonResponse(res){
-      const text = await res.text();
-      if(!text || !text.trim()){
-        return { ok:false, source:"empty", points:[], drivers:[], error:`Empty response HTTP ${res.status}` };
-      }
-
-      try{
-        return JSON.parse(text);
-      }catch(e){
-        return { ok:false, source:"bad-json", points:[], drivers:[], error:`Bad JSON HTTP ${res.status}: ${text.slice(0,180)}` };
-      }
-    }
-
-    async function getTileSource(){
-      try{
-        const res = await fetch('/api/map/tiles/status', { cache:'no-store' });
-        const data = await safeJsonResponse(res);
-        if(data && data.hasTiles){
-          tileEl.textContent = 'Tiles: uploaded /map-tiles';
-          tileEl.classList.remove('warn');
-          return {
-            id: 'uploaded-tiles',
-            source: {
-              type: 'raster',
-              tiles: [`${location.origin}/map-tiles/{z}/{x}/{y}.png`],
-              tileSize: 256,
-              attribution: 'OverWatch ELD uploaded map tiles'
-            }
-          };
-        }
-      }catch(e){ }
-
-      tileEl.textContent = 'Tiles: fallback OpenStreetMap';
-      tileEl.classList.add('warn');
-      return {
-        id: 'osm',
-        source: {
-          type: 'raster',
-          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-          tileSize: 256,
-          attribution: '© OpenStreetMap contributors'
-        }
-      };
-    }
-
-    async function bootMap(){
-      const tile = await getTileSource();
-      map = new maplibregl.Map({
-        container: 'map',
-        style: {
-          version: 8,
-          sources: { [tile.id]: tile.source },
-          layers: [{ id: tile.id, type: 'raster', source: tile.id }]
-        },
-        center: [-98.5795, 39.8283],
-        zoom: 3
-      });
-
-      map.addControl(new maplibregl.NavigationControl(), 'top-right');
-
-      map.on('load', async () => {
-        await loadMapData();
-        setInterval(loadMapData, 5000);
-      });
-    }
-
-    function clearMarkers(){
-      for(const m of markers) m.remove();
-      markers = [];
-    }
-
-    function clearGarageMarkers(){
-      for(const m of garageMarkers) m.remove();
-      garageMarkers = [];
-    }
-
-    function ageText(lastSeenUtc){
-      const d = new Date(lastSeenUtc);
-      if(isNaN(d.getTime())) return '';
-      const sec = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
-      if(sec < 60) return `${sec}s ago`;
-      return `${Math.round(sec / 60)}m ago`;
-    }
-
-    async function loadMapData(){
-      try{
-        const url = guildId ? `/api/map/live?guildId=${encodeURIComponent(guildId)}` : '/api/map/live';
-        const res = await fetch(url, { cache:'no-store' });
-        const data = await safeJsonResponse(res);
-
-        if(data.ok === false && data.source !== 'none'){
-          statusEl.innerHTML = `<span class="error">Map polling error: ${esc(data.error || 'Unknown API error')}</span>`;
-          debugEl.innerHTML = `Source: ${esc(data.source || 'error')} · HTTP ${esc(res.status)}`;
-          return;
-        }
-
-        const points = Array.isArray(data.points)
-          ? data.points
-          : (Array.isArray(data.drivers) ? data.drivers : []);
-
-        clearMarkers();
-
-        statusEl.textContent = `${points.length} drivers on map · Guild ${data.guildId || guildId || '-'}`;
-        debugEl.innerHTML = `Source: ${esc(data.source || 'none')} · Telemetry rows: ${esc(data.telemetryRows ?? data.telemetryCount ?? 0)} · Status rows: ${esc(data.statusRows ?? data.statusCount ?? 0)}`;
-
-        const bounds = new maplibregl.LngLatBounds();
-        let validCount = 0;
-
-        await loadGarages(bounds);
-
-        for(const p of points){
-          const lat = Number(p.latitude ?? p.lat);
-          const lng = Number(p.longitude ?? p.lng ?? p.lon);
-          if(!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
-
-          const age = ageText(p.lastSeenUtc || p.updatedUtc);
-          const stale = age.includes('m ago') && parseInt(age) >= 10;
-          const el = document.createElement('div');
-          el.className = 'driver-marker' + (stale ? ' stale' : '');
-
-          const popup = new maplibregl.Popup({ offset: 18 }).setHTML(`
-            <strong>${esc(p.driverName || p.driver || 'Driver')}</strong><br>
-            Status: ${esc(p.dutyStatus || p.status || '-')}<br>
-            Truck: ${esc(p.truck || p.truckName || p.truckNumber || '-')}<br>
-            Load: ${esc(p.loadNumber || '-')}<br>
-            Cargo: ${esc(p.cargoName || p.cargo || '-')}<br>
-            Speed: ${Math.round(Number(p.speedMph ?? p.speed ?? 0))} mph<br>
-            Location: ${esc(p.location || '-')}<br>
-            Converted: ${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}<br>
-            Source: ${esc(p.source || data.source || '-')}<br>
-            Seen: ${esc(age || '-')}
-          `);
-
-          const marker = new maplibregl.Marker({ element: el })
-            .setLngLat([lng, lat])
-            .setPopup(popup)
-            .addTo(map);
-
-          markers.push(marker);
-          bounds.extend([lng, lat]);
-          validCount++;
-        }
-
-        if(validCount > 0 && !fitOnce){
-          map.fitBounds(bounds, { padding: 80, maxZoom: 7, duration: 800 });
-          fitOnce = true;
-        }
-      }catch(e){
-        statusEl.innerHTML = `<span class="error">Map polling error: ${esc(e.message)}</span>`;
-        debugEl.textContent = '';
-      }
-    }
-
-    async function loadGarages(bounds){
-      try{
-        const url = guildId ? `/api/vtc/garages?guildId=${encodeURIComponent(guildId)}` : '/api/vtc/garages';
-        const res = await fetch(url, { cache:'no-store' });
-        const data = await safeJsonResponse(res);
-        const garages = Array.isArray(data.garages) ? data.garages : (Array.isArray(data.data) ? data.data : []);
-
-        clearGarageMarkers();
-
-        for(const g of garages){
-          const lat = Number(g.latitude ?? g.mapY ?? g.lat);
-          const lng = Number(g.longitude ?? g.mapX ?? g.lng ?? g.lon);
-          if(!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
-
-          const owned = g.owned === true || g.isOwned === true;
-          const el = document.createElement('div');
-          el.className = 'garage-marker' + (owned ? ' owned' : '');
-          el.title = `${g.cityName || g.city || 'Garage'} ${owned ? '(Owned)' : ''}`;
-          el.innerHTML = '🏢';
-
-          const popup = new maplibregl.Popup({ offset: 22 }).setHTML(`
-            <div class="garage-popup">
-              <strong>${esc(g.cityName || g.city || 'Garage')}${g.state ? ', ' + esc(g.state) : ''}</strong><br>
-              <span class="${owned ? 'owned' : ''}">${owned ? 'Owned VTC Garage' : 'ATS Garage'}</span><br>
-              Size: ${esc(g.size || 'Small')}<br>
-              Trucks: ${esc(g.assigned ?? 0)}/${esc(g.capacity ?? g.truckCapacity ?? g.slots ?? 3)}<br>
-              ${(g.trucks || g.assignedTruckNumbers || []).length ? 'Units: ' + esc((g.trucks || g.assignedTruckNumbers).join(', ')) + '<br>' : ''}
-              ${g.notes ? '<span class="muted">' + esc(g.notes) + '</span>' : ''}
+    <div class="topWrap">
+        <div class="topBar panelShell">
+            <div class="topBarHeader">
+                <button id="btnToggleTopPanel" class="collapseBtn">Hide Top Panel</button>
             </div>
-          `);
+            <div id="topHud" class="hud">
+                <div id="pillBot" class="pill bad">BOT: waiting</div>
+                <div id="pillServer" class="pill bad">SERVER: waiting</div>
+                <div id="pillDrivers" class="pill">DRIVERS: 0</div>
+                <div id="pillFleet" class="pill">FLEET MATCHED: 0</div>
+                <div id="pillMap" class="pill warn">MAP: Fallback</div>
 
-          const marker = new maplibregl.Marker({ element: el })
-            .setLngLat([lng, lat])
-            .setPopup(popup)
-            .addTo(map);
+                <button id="btnRecenter">Recenter USA</button>
+                <button id="btnFollow">Follow Truck</button>
+                <button id="btnTogglePois" class="active">POIs: ON</button>
+                <button id="btnToggleRoads" class="active">Roads: ON</button>
+                <button id="btnToggleStates" class="active">States: ON</button>
+            </div>
+        </div>
+    </div>
 
-          garageMarkers.push(marker);
+    <div class="legendWrap panelShell">
+        <button id="btnToggleLegendPanel" class="collapseBtn">Hide Legend</button>
+        <div id="legendPanel" class="legendPanel">
+            <div class="legendTitle">MAP LEGEND</div>
+            <div class="legendGrid">
+                <span class="legendItem"><span class="dot" style="background: var(--drive)"></span>Driving</span>
+                <span class="legendItem"><span class="dot" style="background: var(--onduty)"></span>On Duty</span>
+                <span class="legendItem"><span class="dot" style="background: var(--sleeper)"></span>Sleeper</span>
+                <span class="legendItem"><span class="dot" style="background: var(--offduty)"></span>Off Duty</span>
+                <span class="legendItem"><span class="dot" style="background: var(--truckStop)"></span>Truck Stop</span>
+                <span class="legendItem"><span class="dot" style="background: var(--depot)"></span>Depot</span>
+                <span class="legendItem"><span class="dot" style="background: var(--company)"></span>Company</span>
+                <span class="legendItem"><span class="dot" style="background: var(--garage)"></span>Garage</span>
+            </div>
+        </div>
+    </div>
 
-          if(owned && bounds){
-            bounds.extend([lng, lat]);
-          }
+    <div class="statusMini">
+        <div class="row"><span class="label">Guild</span><span id="miniGuild" class="value">0</span></div>
+        <div class="row"><span class="label">Drivers</span><span id="miniDrivers" class="value">0</span></div>
+        <div class="row"><span class="label">Fleet Matched</span><span id="miniFleet" class="value">0</span></div>
+        <div class="row"><span class="label">Map</span><span id="miniMap" class="value">Fallback</span></div>
+        <div class="row"><span class="label">Server</span><span id="miniServer" class="value">Waiting</span></div>
+        <div class="row"><span class="label">Source</span><span id="miniSource" class="value">--</span></div>
+    </div>
+
+    <script type="module">
+        import { PMTiles, Protocol } from "https://cdn.jsdelivr.net/npm/pmtiles@3.2.0/+esm";
+
+        const DEFAULT_CENTER = [-98.5795, 39.8283];
+                const DEFAULT_ZOOM = 4.8;
+
+        // Shared API routing:
+        // - ELD desktop / Companion phone mirror use the local 5234 host endpoints.
+        // - Website / Railway uses the public bot endpoints.
+        const RAILWAY_API_BASE = "https://overwatcheld.up.railway.app";
+
+        function isLocalMapHost() {
+            const h = (location.hostname || "").toLowerCase();
+            return h === "localhost" ||
+                   h === "127.0.0.1" ||
+                   h.startsWith("192.168.") ||
+                   h.startsWith("10.") ||
+                   h.startsWith("172.16.") ||
+                   h.startsWith("172.17.") ||
+                   h.startsWith("172.18.") ||
+                   h.startsWith("172.19.") ||
+                   h.startsWith("172.20.") ||
+                   h.startsWith("172.21.") ||
+                   h.startsWith("172.22.") ||
+                   h.startsWith("172.23.") ||
+                   h.startsWith("172.24.") ||
+                   h.startsWith("172.25.") ||
+                   h.startsWith("172.26.") ||
+                   h.startsWith("172.27.") ||
+                   h.startsWith("172.28.") ||
+                   h.startsWith("172.29.") ||
+                   h.startsWith("172.30.") ||
+                   h.startsWith("172.31.");
         }
-      }catch(e){ }
-    }
 
-    bootMap();
-  </script>
+        function getRemoteApiBase() {
+            return String(window.__OWELD_API_BASE || state.cfg?.botBaseUrl || RAILWAY_API_BASE).replace(/\/$/, "");
+        }
+
+        function getApiBase() {
+            return isLocalMapHost() ? "" : getRemoteApiBase();
+        }
+
+        function getQueryValue(name) {
+            return new URLSearchParams(location.search).get(name) || "";
+        }
+        const STATES_GEOJSON_URL = "https://appassets.overwatcheld/data/us_states.geojson";
+
+        const STATE_LABEL_POINTS = [
+        { name: "California", coords: [-119.5, 37.2] },
+        { name: "Nevada", coords: [-116.8, 39.4] },
+        { name: "Arizona", coords: [-111.7, 34.2] },
+        { name: "Utah", coords: [-111.6, 39.3] },
+        { name: "New Mexico", coords: [-106.1, 34.4] },
+        { name: "Colorado", coords: [-105.5, 39.0] },
+        { name: "Texas", coords: [-99.3, 31.0] },
+        { name: "Oklahoma", coords: [-97.5, 35.5] },
+        { name: "Kansas", coords: [-98.2, 38.5] },
+        { name: "Nebraska", coords: [-99.7, 41.5] },
+        { name: "Wyoming", coords: [-107.6, 43.0] },
+        { name: "Idaho", coords: [-114.5, 44.2] },
+        { name: "Oregon", coords: [-120.6, 43.9] },
+        { name: "Washington", coords: [-120.5, 47.4] },
+        { name: "South Dakota", coords: [-100.2, 44.4] },
+        { name: "North Dakota", coords: [-100.5, 47.5] },
+        { name: "Minnesota", coords: [-94.5, 46.1] },
+        { name: "Iowa", coords: [-93.5, 42.1] },
+        { name: "Missouri", coords: [-92.7, 38.4] },
+        { name: "Arkansas", coords: [-92.4, 34.9] },
+        { name: "Louisiana", coords: [-91.9, 31.1] }
+        ];
+
+        const CITY_LABEL_POINTS = [
+        { name: "Bellingham", coords: [-122.4787, 48.7519] },
+        { name: "Seattle", coords: [-122.3321, 47.6062] },
+        { name: "Tacoma", coords: [-122.4443, 47.2529] },
+        { name: "Olympia", coords: [-122.9007, 47.0379] },
+        { name: "Spokane", coords: [-117.4260, 47.6588] },
+        { name: "Portland", coords: [-122.6765, 45.5231] },
+        { name: "Eugene", coords: [-123.0868, 44.0521] },
+        { name: "Salem", coords: [-123.0351, 44.9429] },
+        { name: "Medford", coords: [-122.8719, 42.3265] },
+        { name: "Boise", coords: [-116.2023, 43.6150] },
+        { name: "Twin Falls", coords: [-114.4609, 42.5629] },
+        { name: "Pocatello", coords: [-112.4455, 42.8713] },
+        { name: "Idaho Falls", coords: [-112.0339, 43.4917] },
+        { name: "Missoula", coords: [-113.9940, 46.8721] },
+        { name: "Butte", coords: [-112.5347, 46.0038] },
+        { name: "Billings", coords: [-108.5007, 45.7833] },
+        { name: "Helena", coords: [-112.0361, 46.5884] },
+        { name: "Great Falls", coords: [-111.3008, 47.5053] },
+        { name: "Las Vegas", coords: [-115.1398, 36.1699] },
+        { name: "Reno", coords: [-119.8138, 39.5296] },
+        { name: "Elko", coords: [-115.7631, 40.8324] },
+        { name: "Sacramento", coords: [-121.4944, 38.5816] },
+        { name: "San Francisco", coords: [-122.4194, 37.7749] },
+        { name: "San Jose", coords: [-121.8863, 37.3382] },
+        { name: "Fresno", coords: [-119.7871, 36.7378] },
+        { name: "Bakersfield", coords: [-119.0187, 35.3733] },
+        { name: "Los Angeles", coords: [-118.2437, 34.0522] },
+        { name: "San Diego", coords: [-117.1611, 32.7157] },
+        { name: "Flagstaff", coords: [-111.6513, 35.1983] },
+        { name: "Phoenix", coords: [-112.0740, 33.4484] },
+        { name: "Tucson", coords: [-110.9747, 32.2226] },
+        { name: "Yuma", coords: [-114.6277, 32.6927] },
+        { name: "Salt Lake City", coords: [-111.8910, 40.7608] },
+        { name: "Ogden", coords: [-111.9738, 41.2230] },
+        { name: "Provo", coords: [-111.6585, 40.2338] },
+        { name: "Moab", coords: [-109.5498, 38.5733] },
+        { name: "Denver", coords: [-104.9903, 39.7392] },
+        { name: "Colorado Springs", coords: [-104.8214, 38.8339] },
+        { name: "Pueblo", coords: [-104.6091, 38.2544] },
+        { name: "Grand Junction", coords: [-108.5506, 39.0639] },
+        { name: "Fort Collins", coords: [-105.0844, 40.5853] },
+        { name: "Cheyenne", coords: [-104.8202, 41.1400] },
+        { name: "Casper", coords: [-106.3131, 42.8501] },
+        { name: "Rock Springs", coords: [-109.2207, 41.5875] },
+        { name: "Albuquerque", coords: [-106.6504, 35.0844] },
+        { name: "Santa Fe", coords: [-105.9378, 35.6870] },
+        { name: "Roswell", coords: [-104.5230, 33.3943] },
+        { name: "Farmington", coords: [-108.2187, 36.7281] },
+        { name: "El Paso", coords: [-106.4850, 31.7619] },
+        { name: "Lubbock", coords: [-101.8552, 33.5779] },
+        { name: "Amarillo", coords: [-101.8313, 35.2219] },
+        { name: "Dallas", coords: [-96.7970, 32.7767] },
+        { name: "Fort Worth", coords: [-97.3308, 32.7555] },
+        { name: "Austin", coords: [-97.7431, 30.2672] },
+        { name: "San Antonio", coords: [-98.4936, 29.4241] },
+        { name: "Houston", coords: [-95.3698, 29.7604] },
+        { name: "Corpus Christi", coords: [-97.3964, 27.8006] },
+        { name: "Laredo", coords: [-99.5075, 27.5306] },
+        { name: "McAllen", coords: [-98.2300, 26.2034] },
+        { name: "Wichita Falls", coords: [-98.4934, 33.9137] },
+        { name: "Oklahoma City", coords: [-97.5164, 35.4676] },
+        { name: "Tulsa", coords: [-95.9928, 36.1540] },
+        { name: "Lawton", coords: [-98.3903, 34.6036] },
+        { name: "Kansas City", coords: [-94.5786, 39.0997] },
+        { name: "Wichita", coords: [-97.3301, 37.6872] },
+        { name: "Topeka", coords: [-95.6890, 39.0473] },
+        { name: "Dodge City", coords: [-100.0171, 37.7528] },
+        { name: "Omaha", coords: [-95.9345, 41.2565] },
+        { name: "Lincoln", coords: [-96.6852, 40.8136] },
+        { name: "North Platte", coords: [-100.7601, 41.1403] },
+        { name: "Sioux Falls", coords: [-96.7311, 43.5446] },
+        { name: "Rapid City", coords: [-103.2310, 44.0805] },
+        { name: "Bismarck", coords: [-100.7837, 46.8083] },
+        { name: "Fargo", coords: [-96.7898, 46.8772] },
+        { name: "Minneapolis", coords: [-93.2650, 44.9778] },
+        { name: "St Paul", coords: [-93.0899, 44.9537] },
+        { name: "Duluth", coords: [-92.1005, 46.7867] },
+        { name: "Des Moines", coords: [-93.6091, 41.6005] },
+        { name: "Cedar Rapids", coords: [-91.6656, 41.9779] },
+        { name: "Davenport", coords: [-90.5776, 41.5236] },
+        { name: "St Louis", coords: [-90.1994, 38.6270] },
+        { name: "Springfield", coords: [-93.2923, 37.2089] },
+        { name: "Kansas City MO", coords: [-94.5786, 39.0997] },
+        { name: "Little Rock", coords: [-92.2896, 34.7465] },
+        { name: "Fayetteville", coords: [-94.1574, 36.0822] },
+        { name: "Shreveport", coords: [-93.7502, 32.5252] },
+        { name: "Baton Rouge", coords: [-91.1403, 30.4515] },
+        { name: "New Orleans", coords: [-90.0715, 29.9511] }
+        ];
+
+        const POI_MARKERS = [
+        { name: "Truck Stop", coords: [-118.25, 34.00], type: "truck_stop", short: "TS" },
+        { name: "Depot", coords: [-117.90, 33.95], type: "depot", short: "D" },
+        { name: "Garage", coords: [-115.17, 36.12], type: "garage", short: "G" },
+        { name: "Weigh Station", coords: [-112.10, 33.46], type: "weigh_station", short: "W" },
+        { name: "Rest Area", coords: [-111.95, 40.75], type: "rest_area", short: "R" },
+        { name: "Depot", coords: [-104.98, 39.73], type: "depot", short: "D" },
+        { name: "Truck Stop", coords: [-96.82, 32.79], type: "truck_stop", short: "TS" },
+        { name: "Garage", coords: [-95.37, 29.77], type: "garage", short: "G" },
+        { name: "Depot", coords: [-90.20, 38.63], type: "depot", short: "D" },
+        { name: "Truck Stop", coords: [-122.33, 47.61], type: "truck_stop", short: "TS" }
+        ];
+
+        const COMPANY_MARKERS = [
+        { name: "Walbert", coords: [-118.20, 34.03], type: "company", short: "W" },
+        { name: "Charged", coords: [-117.88, 33.90], type: "company", short: "C" },
+        { name: "SellGoods", coords: [-115.14, 36.11], type: "company", short: "S" },
+        { name: "Bitumen", coords: [-112.06, 33.43], type: "company", short: "B" },
+        { name: "Plaster & Sons", coords: [-111.88, 40.77], type: "company", short: "P" },
+        { name: "Bushnell Farms", coords: [-104.96, 39.74], type: "company", short: "F" },
+        { name: "Deepgrove", coords: [-96.80, 32.77], type: "company", short: "D" },
+        { name: "NAMIQ", coords: [-95.34, 29.74], type: "company", short: "N" },
+        { name: "Rail Export", coords: [-90.21, 38.61], type: "company", short: "R" },
+        { name: "Drake Car Dealer", coords: [-122.30, 47.60], type: "company", short: "D" }
+        ];
+
+        const GARAGE_MARKERS = [
+        { name: "Garage", coords: [-118.29, 34.01], type: "garage", short: "G" },
+        { name: "Garage", coords: [-115.18, 36.17], type: "garage", short: "G" },
+        { name: "Garage", coords: [-112.09, 33.47], type: "garage", short: "G" },
+        { name: "Garage", coords: [-104.99, 39.75], type: "garage", short: "G" },
+        { name: "Garage", coords: [-96.81, 32.81], type: "garage", short: "G" },
+        { name: "Garage", coords: [-122.31, 47.62], type: "garage", short: "G" }
+        ];
+
+        const state = {
+        cfg: null,
+        map: null,
+        markers: new Map(),
+        stateLabelMarkers: [],
+        cityLabelMarkers: [],
+        poiHtmlMarkers: [],
+        companyHtmlMarkers: [],
+        garageHtmlMarkers: [],
+        vtcGarageMarkers: [],
+        followTruck: false,
+        showPois: true,
+        showRoads: true,
+        showStates: true,
+        topPanelCollapsed: false,
+        legendPanelCollapsed: false,
+        lastDrivers: [],
+        fleetRoster: [],
+        mapMode: "fallback",
+        roadsMode: "fallback",
+        poisMode: "fallback",
+        stateMode: "unavailable",
+        sourceLayerName: null,
+        resolvedGuildId: "0",
+        lastDriverUrl: "",
+        hasAutoFitDrivers: false
+        };
+
+        const els = {
+        pillBot: document.getElementById("pillBot"),
+        pillServer: document.getElementById("pillServer"),
+        pillDrivers: document.getElementById("pillDrivers"),
+        pillFleet: document.getElementById("pillFleet"),
+        pillMap: document.getElementById("pillMap"),
+        btnRecenter: document.getElementById("btnRecenter"),
+        btnFollow: document.getElementById("btnFollow"),
+        btnTogglePois: document.getElementById("btnTogglePois"),
+        btnToggleRoads: document.getElementById("btnToggleRoads"),
+        btnToggleStates: document.getElementById("btnToggleStates"),
+        btnToggleTopPanel: document.getElementById("btnToggleTopPanel"),
+        btnToggleLegendPanel: document.getElementById("btnToggleLegendPanel"),
+        topHud: document.getElementById("topHud"),
+        legendPanel: document.getElementById("legendPanel"),
+        miniGuild: document.getElementById("miniGuild"),
+        miniDrivers: document.getElementById("miniDrivers"),
+        miniFleet: document.getElementById("miniFleet"),
+        miniMap: document.getElementById("miniMap"),
+        miniServer: document.getElementById("miniServer"),
+        miniSource: document.getElementById("miniSource")
+        };
+
+        function setPill(el, text, kind) {
+        el.textContent = text;
+        el.className = `pill ${kind || ""}`.trim();
+        }
+
+        function safe(v, fallback = "") {
+        return v == null ? fallback : String(v);
+        }
+
+        function escapeHtml(v) {
+        return safe(v)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+        }
+
+        function normalizeKey(v) {
+        return safe(v).trim().toLowerCase();
+        }
+
+        function dutyClass(duty) {
+        const s = safe(duty).toLowerCase();
+        if (s.includes("drive")) return "";
+        if (s.includes("on")) return "onduty";
+        if (s.includes("sleep")) return "sleeper";
+        if (s.includes("off")) return "offduty";
+        return "";
+        }
+
+        function getDriverId(d) {
+        return safe(d.driverId || d.discordUserId || d.userId || d.driverName || d.name || Math.random());
+        }
+
+        function getDriverName(d) {
+        return safe(d.driverName || d.name || d.username || d.driverId || "Driver");
+        }
+
+        function getFleetMatch(d) {
+        const driverId = normalizeKey(d.discordUserId || d.userId || d.driverId);
+        const driverName = normalizeKey(d.driverName || d.name || d.username);
+
+        for (const f of state.fleetRoster || []) {
+        const fleetDiscordId = normalizeKey(f.discordUserId);
+        const fleetDiscordUser = normalizeKey(f.discordUsername);
+        const fleetDriverName = normalizeKey(f.driverName);
+
+        if (driverId && fleetDiscordId && driverId === fleetDiscordId)
+        return f;
+
+        if (driverName && fleetDiscordUser && driverName === fleetDiscordUser)
+        return f;
+
+        if (driverName && fleetDriverName && driverName === fleetDriverName)
+        return f;
+        }
+
+        return null;
+        }
+
+        function getTruckDisplay(d) {
+        const fleet = getFleetMatch(d);
+        if (!fleet) return "";
+        const truck = safe(fleet.truckName || fleet.model || "Truck");
+        const plate = safe(fleet.plateNumber);
+        return plate ? `${truck} • ${plate}` : truck;
+        }
+
+        function getHeading(d) {
+        const n = Number(d.headingDeg ?? d.heading ?? 0);
+        return Number.isFinite(n) ? n : 0;
+        }
+
+        function getSpeed(d) {
+        const n = Number(d.speedMph ?? d.speed ?? 0);
+        return Number.isFinite(n) ? n : 0;
+        }
+
+        function getLngLat(d) {
+        const lon = Number(d.longitude ?? d.lng ?? d.lon);
+        const lat = Number(d.latitude ?? d.lat);
+
+        if (
+        Number.isFinite(lon) &&
+        Number.isFinite(lat) &&
+        Math.abs(lon) > 0.01 &&
+        Math.abs(lat) > 0.01
+        ) {
+        return [lon, lat];
+        }
+
+        const x = Number(d.worldX ?? d.markerX ?? d.x);
+        const z = Number(d.worldZ ?? d.markerY ?? d.y ?? d.z);
+
+        if (
+        Number.isFinite(x) &&
+        Number.isFinite(z) &&
+        (Math.abs(x) > 0.01 || Math.abs(z) > 0.01)
+        ) {
+        return [x, z];
+        }
+
+        return null;
+        }
+
+        function isFresh(d) {
+        const ts = d.serverTsUtc || d.timestampUtc || d.updatedAtUtc || d.updatedUtc || null;
+        if (!ts) return true;
+        const ms = Date.now() - new Date(ts).getTime();
+        return Number.isFinite(ms) ? ms < 120000 : true;
+        }
+
+        function buildMarker(d) {
+        const wrap = document.createElement("div");
+        wrap.className = "truckMarkerWrap";
+
+        const label = document.createElement("div");
+        label.className = "driverLabel";
+        label.textContent = getDriverName(d);
+
+        const subLabel = document.createElement("div");
+        subLabel.className = "truckSubLabel";
+        subLabel.textContent = getTruckDisplay(d);
+
+        const icon = document.createElement("div");
+        icon.className = `truckMarker ${dutyClass(d)} ${isFresh(d) ? "" : "stale"}`.trim();
+        icon.textContent = "🚛";
+        icon.style.transform = `rotate(${getHeading(d)}deg)`;
+
+        wrap.appendChild(label);
+        wrap.appendChild(subLabel);
+        wrap.appendChild(icon);
+
+        const marker = new maplibregl.Marker({ element: wrap, anchor: "center" })
+        .setLngLat(getLngLat(d))
+        .setPopup(new maplibregl.Popup({ offset: 18 }).setHTML(makePopupHtml(d)));
+
+        return {
+        marker,
+        icon,
+        label,
+        subLabel,
+        currentLngLat: getLngLat(d)
+        };
+        }
+
+        function makePopupHtml(d) {
+        const fleet = getFleetMatch(d);
+        return `
+        <div class="popupTitle">${escapeHtml(getDriverName(d))}</div>
+        <div class="popupRow">Truck: ${escapeHtml(fleet?.truckName || fleet?.model || "Unassigned")}</div>
+        <div class="popupRow">Model: ${escapeHtml(fleet?.model || "Unknown")}</div>
+        <div class="popupRow">Plate: ${escapeHtml(fleet?.plateNumber || "--")}</div>
+        <div class="popupRow">Speed: ${getSpeed(d).toFixed(1)} mph</div>
+        <div class="popupRow">Duty: ${escapeHtml(d.dutyStatus || "Unknown")}</div>
+        <div class="popupRow">Heading: ${getHeading(d).toFixed(0)}°</div>
+        <div class="popupRow">Driver ID: ${escapeHtml(getDriverId(d))}</div>
+        `;
+        }
+
+        function clearMarkerList(list) {
+        for (const m of list) {
+        try { m.remove(); } catch {}
+        }
+        list.length = 0;
+        }
+
+        function addTextLabelMarkers() {
+        if (!state.map) return;
+
+        clearMarkerList(state.stateLabelMarkers);
+        clearMarkerList(state.cityLabelMarkers);
+
+        for (const s of STATE_LABEL_POINTS) {
+        const el = document.createElement("div");
+        el.className = "stateTextLabel";
+        el.textContent = s.name;
+        el.style.display = state.showStates ? "" : "none";
+
+        const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat(s.coords)
+        .addTo(state.map);
+
+        state.stateLabelMarkers.push(marker);
+        }
+
+        for (const c of CITY_LABEL_POINTS) {
+        const el = document.createElement("div");
+        el.className = "cityTextLabel";
+        el.textContent = c.name;
+        el.style.display = state.showPois ? "" : "none";
+
+        const marker = new maplibregl.Marker({ element: el, anchor: "center" })
+        .setLngLat(c.coords)
+        .addTo(state.map);
+
+        state.cityLabelMarkers.push(marker);
+        }
+        }
+
+        function addTypedHtmlMarkers(targetList, items) {
+        if (!state.map) return;
+
+        clearMarkerList(targetList);
+
+        for (const p of items) {
+        const wrap = document.createElement("div");
+        wrap.className = "poiIconWrap";
+        wrap.style.display = state.showPois ? "" : "none";
+
+        const icon = document.createElement("div");
+        icon.className = `poiIcon ${p.type}`;
+        icon.textContent = p.short;
+
+        const label = document.createElement("div");
+        label.className = "poiLabel";
+        label.textContent = p.name;
+
+        wrap.appendChild(icon);
+        wrap.appendChild(label);
+
+        const marker = new maplibregl.Marker({ element: wrap, anchor: "center" })
+        .setLngLat(p.coords)
+        .addTo(state.map);
+
+        targetList.push(marker);
+        }
+        }
+
+        function addPoiAndFacilityMarkers() {
+        addTypedHtmlMarkers(state.poiHtmlMarkers, POI_MARKERS);
+        addTypedHtmlMarkers(state.companyHtmlMarkers, COMPANY_MARKERS);
+        addTypedHtmlMarkers(state.garageHtmlMarkers, GARAGE_MARKERS);
+        }
+
+        async function loadVtcGarageMarkers() {
+    if (!state.map)
+        return;
+
+    clearMarkerList(state.vtcGarageMarkers);
+
+    try {
+        const guildId = await resolveGuildId();
+        const garageUrl = isLocalMapHost()
+            ? "/api/local/vtc/garages"
+            : `${getRemoteApiBase()}/api/vtc/garages?guildId=${encodeURIComponent(guildId)}`;
+
+        const res = await fetch(garageUrl, {
+            cache: "no-store"
+        });
+
+        if (!res.ok)
+            return;
+
+        const json = await res.json();
+
+        const garages = json?.garages || [];
+
+        for (const g of garages) {
+
+            if (!g.owned)
+                continue;
+
+            if (!Number.isFinite(g.mapX) || !Number.isFinite(g.mapY))
+                continue;
+
+            const el = document.createElement("div");
+
+            el.className =
+                g.homeGarage
+                    ? "vtcGarageMarker home"
+                    : "vtcGarageMarker";
+
+            el.textContent =
+                g.homeGarage
+                    ? "HQ"
+                    : "G";
+
+            const popupHtml = `
+                <div>
+                    <div class="vtcGaragePopupTitle">
+                        ${escapeHtml(g.city)}
+                        ${g.homeGarage ? " HQ" : ""}
+                    </div>
+
+                    <div class="popupRow">
+                        State: ${escapeHtml(g.state || "")}
+                    </div>
+
+                    <div class="popupRow">
+                        Garage Size: ${escapeHtml(g.size || "")}
+                    </div>
+
+                    <div class="popupRow">
+                        Capacity: ${g.assigned || 0}/${g.capacity || 0}
+                    </div>
+
+                    <div class="popupRow">
+                        Fuel Station:
+                        ${g.hasFuelStation ? "Yes" : "No"}
+                    </div>
+
+                    <div class="popupRow">
+                        Repair Bays:
+                        ${g.repairBays || 0}
+                    </div>
+
+                    <div class="popupRow">
+                        Income Bonus:
+                        +${g.incomeBonus || 0}%
+                    </div>
+                </div>
+            `;
+
+            const marker =
+                new maplibregl.Marker({
+                    element: el,
+                    anchor: "center"
+                })
+                .setLngLat([
+                    Number(g.mapX),
+                    Number(g.mapY)
+                ])
+                .setPopup(
+                    new maplibregl.Popup({
+                        offset: 20
+                    }).setHTML(popupHtml)
+                )
+                .addTo(state.map);
+
+            state.vtcGarageMarkers.push(marker);
+        }
+    }
+    catch (err) {
+        console.error("loadVtcGarageMarkers failed:", err);
+    }
+}
+
+        function refreshTextLabelVisibility() {
+        for (const m of state.stateLabelMarkers) {
+        const el = m.getElement();
+        if (el) el.style.display = state.showStates ? "" : "none";
+        }
+
+        for (const m of state.cityLabelMarkers) {
+        const el = m.getElement();
+        if (el) el.style.display = state.showPois ? "" : "none";
+        }
+
+        for (const group of [state.poiHtmlMarkers, state.companyHtmlMarkers, state.garageHtmlMarkers]) {
+        for (const m of group) {
+        const el = m.getElement();
+        if (el) el.style.display = state.showPois ? "" : "none";
+        }
+        }
+        }
+
+        function refreshPanelVisibility() {
+        els.topHud.classList.toggle("collapsed", state.topPanelCollapsed);
+        els.legendPanel.classList.toggle("collapsed", state.legendPanelCollapsed);
+        els.btnToggleTopPanel.textContent = state.topPanelCollapsed ? "Show Top Panel" : "Hide Top Panel";
+        els.btnToggleLegendPanel.textContent = state.legendPanelCollapsed ? "Show Legend" : "Hide Legend";
+        }
+
+        function refreshMiniStatus(serverText = "Waiting") {
+        const matched = (state.lastDrivers || []).filter(d => !!getFleetMatch(d)).length;
+
+        els.miniGuild.textContent = safe(state.resolvedGuildId || "0");
+        els.miniDrivers.textContent = String(Array.isArray(state.lastDrivers) ? state.lastDrivers.length : 0);
+        els.miniFleet.textContent = String(matched);
+        els.miniMap.textContent = state.mapMode === "ats" ? "ATS" : "Fallback";
+        els.miniServer.textContent = serverText;
+        if (els.miniSource) els.miniSource.textContent = safe(state.lastDriverUrl || "--").replace(/^https?:\/\/[^/]+/i, "");
+
+        setPill(els.pillFleet, `FLEET MATCHED: ${matched}`, matched > 0 ? "good" : "warn");
+        }
+
+        function animateMarkerTo(entry, nextLngLat, duration = 1200) {
+        if (!entry || !nextLngLat) return;
+
+        const start = performance.now();
+        const from = entry.currentLngLat || nextLngLat;
+        const to = nextLngLat;
+        entry.targetLngLat = nextLngLat;
+
+        function step(now) {
+        const t = Math.min(1, (now - start) / duration);
+        const eased = 1 - Math.pow(1 - t, 3);
+
+        const lng = from[0] + (to[0] - from[0]) * eased;
+        const lat = from[1] + (to[1] - from[1]) * eased;
+
+        entry.currentLngLat = [lng, lat];
+        entry.marker.setLngLat(entry.currentLngLat);
+
+        if (t < 1) requestAnimationFrame(step);
+        else {
+        entry.currentLngLat = to;
+        entry.marker.setLngLat(to);
+        }
+        }
+
+        requestAnimationFrame(step);
+        }
+
+        function recenterUsa() {
+        if (!state.map) return;
+        state.map.flyTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, speed: 0.85 });
+        }
+
+        function updateButtons() {
+        els.btnFollow.classList.toggle("active", state.followTruck);
+        els.btnTogglePois.classList.toggle("active", state.showPois);
+        els.btnToggleRoads.classList.toggle("active", state.showRoads);
+        els.btnToggleStates.classList.toggle("active", state.showStates);
+
+        els.btnFollow.textContent = state.followTruck ? "Follow Truck: ON" : "Follow Truck";
+        els.btnTogglePois.textContent = state.showPois ? "POIs: ON" : "POIs: OFF";
+        els.btnToggleRoads.textContent = state.showRoads ? "Roads: ON" : "Roads: OFF";
+        els.btnToggleStates.textContent = state.showStates ? "States: ON" : "States: OFF";
+
+        if (!state.map) return;
+
+        const roadsVisible = state.showRoads ? "visible" : "none";
+        const statesVisible = state.showStates ? "visible" : "none";
+
+        ["ats-roads-glow", "ats-roads-casing", "ats-roads"].forEach(id => {
+        if (state.map.getLayer(id)) state.map.setLayoutProperty(id, "visibility", roadsVisible);
+        });
+
+        ["ats-poi-circles"].forEach(id => {
+        if (state.map.getLayer(id)) state.map.setLayoutProperty(id, "visibility", "none");
+        });
+
+        ["us-state-borders"].forEach(id => {
+        if (state.map.getLayer(id)) state.map.setLayoutProperty(id, "visibility", statesVisible);
+        });
+
+        refreshTextLabelVisibility();
+        }
+
+        async function resolveGuildId() {
+        const queryGuild = safe(getQueryValue("guildId") || getQueryValue("serverId") || "").trim();
+        if (queryGuild && queryGuild !== "0") {
+        state.resolvedGuildId = queryGuild;
+        return queryGuild;
+        }
+
+        const cfgGuild = safe(state.cfg?.guildId || "0").trim();
+        if (cfgGuild && cfgGuild !== "0") {
+        state.resolvedGuildId = cfgGuild;
+        return cfgGuild;
+        }
+
+        if (isLocalMapHost()) {
+        state.resolvedGuildId = "local";
+        return "local";
+        }
+
+        const base = getRemoteApiBase();
+        if (!base) {
+        state.resolvedGuildId = "0";
+        return "0";
+        }
+
+        try {
+        const res = await fetch(`${base}/api/vtc/servers`, { cache: "no-store" });
+        if (!res.ok) {
+        state.resolvedGuildId = "0";
+        return "0";
+        }
+
+        const json = await res.json();
+        const servers = Array.isArray(json) ? json : (Array.isArray(json?.servers) ? json.servers : []);
+        const first = servers.length > 0 ? servers[0] : null;
+        const id = safe(first?.id || first?.guildId || first?.serverId || "0").trim();
+
+        state.resolvedGuildId = id || "0";
+        return state.resolvedGuildId;
+        } catch {
+        state.resolvedGuildId = "0";
+        return "0";
+        }
+        }
+
+        function normalizeDrivers(json) {
+        if (Array.isArray(json)) return json;
+        if (Array.isArray(json?.drivers)) return json.drivers;
+        if (Array.isArray(json?.locations)) return json.locations;
+        if (Array.isArray(json?.data)) return json.data;
+        if (Array.isArray(json?.items)) return json.items;
+
+        const single = json?.telemetry || json?.driver || json?.location || json?.current || json?.snapshot;
+        if (single && typeof single === "object" && !Array.isArray(single)) return [single];
+
+        if (json?.data && typeof json.data === "object" && !Array.isArray(json.data)) {
+        return Object.entries(json.data).map(([key, value]) => ({
+        ...(value || {}),
+        driverId: safe(value?.driverId || value?.discordUserId || value?.userId || value?.driverDiscordUserId || key),
+        discordUserId: safe(value?.discordUserId || value?.userId || value?.driverDiscordUserId || value?.driverId || key),
+        userId: safe(value?.userId || value?.discordUserId || value?.driverDiscordUserId || value?.driverId || key)
+        }));
+        }
+
+        return [];
+        }
+
+        async function fetchDriverPayload(base, guildId) {
+        const urls = isLocalMapHost()
+        ? [
+        `${base}/api/telemetry`,
+        `${base}/api/dashboard`,
+        `${base}/api/sync/state`
+        ]
+        : [
+        `${base}/api/telemetry?guildId=${encodeURIComponent(guildId)}`,
+        `${base}/api/location/latest?guildId=${encodeURIComponent(guildId)}`,
+        `${base}/api/location?guildId=${encodeURIComponent(guildId)}`,
+        `${base}/api/locations?guildId=${encodeURIComponent(guildId)}`,
+        `${base}/api/live/locations?guildId=${encodeURIComponent(guildId)}`
+        ];
+
+        for (const url of urls) {
+        try {
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok) continue;
+
+        const json = await res.json();
+        let drivers = normalizeDrivers(json);
+
+        drivers = drivers.filter(d => !!getLngLat(d));
+
+        if (drivers.length > 0) {
+        return { url, drivers };
+        }
+
+        if (Array.isArray(json) || json?.drivers || json?.locations || json?.data || json?.items || json?.telemetry) {
+        return { url, drivers };
+        }
+        } catch {
+        }
+        }
+
+        return { url: urls[0], drivers: [] };
+        }
+
+        function fitMapToDrivers(drivers) {
+        if (!state.map || !Array.isArray(drivers) || drivers.length === 0) return;
+
+        const points = drivers
+        .map(getLngLat)
+        .filter(p => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1]));
+
+        if (points.length === 0) return;
+
+        if (points.length === 1) {
+        state.map.easeTo({
+        center: points[0],
+        zoom: Math.max(state.map.getZoom(), 7),
+        duration: 1200
+        });
+        return;
+        }
+
+        const bounds = new maplibregl.LngLatBounds(points[0], points[0]);
+        for (const p of points) bounds.extend(p);
+
+        state.map.fitBounds(bounds, {
+        padding: 80,
+        duration: 1200,
+        maxZoom: 9
+        });
+        }
+
+        function colorExpr() {
+        return [
+        "match",
+        ["coalesce", ["get", "color"], -1],
+        0, "#0f1822",
+        1, "#142231",
+        2, "#173042",
+        3, "#112131",
+        4, "#193449",
+        5, "#142838",
+        "#13202c"
+        ];
+        }
+
+        async function addOverlays() {
+        try {
+        const statesRes = await fetch(STATES_GEOJSON_URL, { cache: "no-store" });
+        if (statesRes.ok) {
+        const geojson = await statesRes.json();
+
+        if (!state.map.getSource("us-states")) {
+        state.map.addSource("us-states", { type: "geojson", data: geojson });
+        }
+
+        if (!state.map.getLayer("us-state-borders")) {
+        state.map.addLayer({
+        id: "us-state-borders",
+        type: "line",
+        source: "us-states",
+        layout: {
+        visibility: state.showStates ? "visible" : "none",
+        "line-join": "round",
+        "line-cap": "round"
+        },
+        paint: {
+        "line-color": "#8fb6dd",
+        "line-width": [
+        "interpolate", ["linear"], ["zoom"],
+        4, 0.55, 6, 0.95, 8, 1.25, 10, 1.7, 12, 2.2
+        ],
+        "line-opacity": 0.42
+        }
+        });
+        }
+        }
+
+        addTextLabelMarkers();
+        addPoiAndFacilityMarkers();
+        state.stateMode = "embedded";
+        } catch (err) {
+        console.error("Overlays failed:", err);
+        state.stateMode = "unavailable";
+        }
+        }
+
+        function addFallbackSourcesAndLayers() {
+        const style = {
+        version: 8,
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+        sources: {},
+        layers: [{
+        id: "bg",
+        type: "background",
+        paint: { "background-color": "#081018" }
+        }]
+        };
+
+        state.map.setStyle(style);
+
+        state.map.once("styledata", async () => {
+        state.mapMode = "fallback";
+        state.roadsMode = "fallback";
+        state.poisMode = "html";
+        setPill(els.pillMap, "MAP: Fallback", "warn");
+        refreshMiniStatus("Fallback");
+        await addOverlays();
+        updateButtons();
+        });
+        }
+
+        async function detectSourceLayer(pmtilesUrl) {
+        const p = new PMTiles(pmtilesUrl);
+        const header = await p.getHeader();
+        const metadata = await p.getMetadata();
+        const vectorLayers = metadata?.vector_layers || [];
+
+        if (vectorLayers.length > 0 && vectorLayers[0]?.id)
+        return vectorLayers[0].id;
+
+        return header?.json_metadata?.vector_layers?.[0]?.id || "default";
+        }
+
+        async function addAtsPmtilesStyle() {
+        const cfg = state.cfg || {};
+        if (!cfg.hasAtsPmtiles || !cfg.atsPmtilesUrl) {
+        addFallbackSourcesAndLayers();
+        return;
+        }
+
+        try {
+        maplibregl.addProtocol("pmtiles", new Protocol().tile);
+        const sourceLayer = await detectSourceLayer(cfg.atsPmtilesUrl);
+        state.sourceLayerName = sourceLayer;
+
+        const atsStyle = {
+        version: 8,
+        glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+        sources: {
+        ats: {
+        type: "vector",
+        url: `pmtiles://${cfg.atsPmtilesUrl}`
+        }
+        },
+        layers: [
+        {
+        id: "bg",
+        type: "background",
+        paint: { "background-color": "#081018" }
+        },
+        {
+        id: "ats-polygons",
+        type: "fill",
+        source: "ats",
+        "source-layer": sourceLayer,
+        minzoom: 4,
+        paint: {
+        "fill-color": colorExpr(),
+        "fill-opacity": 0.76
+        }
+        },
+        {
+        id: "ats-roads-glow",
+        type: "line",
+        source: "ats",
+        "source-layer": sourceLayer,
+        minzoom: 4,
+        filter: ["has", "roadType"],
+        layout: {
+        visibility: state.showRoads ? "visible" : "none",
+        "line-join": "round",
+        "line-cap": "round"
+        },
+        paint: {
+        "line-color": [
+        "match",
+        ["get", "roadType"],
+        "freeway", "#4fc3ff",
+        "highway", "#4fc3ff",
+        "#295d86"
+        ],
+        "line-width": [
+        "interpolate", ["linear"], ["zoom"],
+        4, 2.5, 6, 4.2, 8, 6.4, 10, 8.2, 13, 11
+        ],
+        "line-opacity": 0.16,
+        "line-blur": 1.2
+        }
+        },
+        {
+        id: "ats-roads-casing",
+        type: "line",
+        source: "ats",
+        "source-layer": sourceLayer,
+        minzoom: 4,
+        filter: ["has", "roadType"],
+        layout: {
+        visibility: state.showRoads ? "visible" : "none",
+        "line-join": "round",
+        "line-cap": "round"
+        },
+        paint: {
+        "line-color": "#13263b",
+        "line-width": [
+        "interpolate", ["linear"], ["zoom"],
+        4, 1.8, 6, 3.1, 8, 4.6, 10, 6.2, 13, 8.6
+        ],
+        "line-opacity": 0.96
+        }
+        },
+        {
+        id: "ats-roads",
+        type: "line",
+        source: "ats",
+        "source-layer": sourceLayer,
+        minzoom: 4,
+        filter: ["has", "roadType"],
+        layout: {
+        visibility: state.showRoads ? "visible" : "none",
+        "line-join": "round",
+        "line-cap": "round"
+        },
+        paint: {
+        "line-color": [
+        "match",
+        ["get", "roadType"],
+        "freeway", "#6cc7ff",
+        "highway", "#5fb7f4",
+        "local", "#4d7ea8",
+        "small", "#395d7b",
+        "ferry", "#4fd1ff",
+        "#5a89b7"
+        ],
+        "line-width": [
+        "interpolate", ["linear"], ["zoom"],
+        4, 0.8, 6, 1.5, 8, 2.4, 10, 3.6, 13, 5.2
+        ],
+        "line-opacity": 0.98
+        }
+        },
+        {
+        id: "ats-poi-circles",
+        type: "circle",
+        source: "ats",
+        "source-layer": sourceLayer,
+        minzoom: 5,
+        filter: ["all", ["==", ["geometry-type"], "Point"], ["has", "poiType"]],
+        layout: { visibility: "none" },
+        paint: { "circle-radius": 1, "circle-opacity": 0 }
+        }
+        ]
+        };
+
+        state.map.setStyle(atsStyle);
+
+        state.map.once("styledata", async () => {
+        state.mapMode = "ats";
+        state.roadsMode = "ats";
+        state.poisMode = "html";
+        setPill(els.pillMap, "MAP: ATS", "good");
+        refreshMiniStatus("ATS");
+        await addOverlays();
+        updateButtons();
+        });
+        } catch (err) {
+        console.error("ATS PMTiles load failed:", err);
+        addFallbackSourcesAndLayers();
+        }
+        }
+
+        async function pollDrivers() {
+        const base = getApiBase();
+        const guildId = await resolveGuildId();
+
+        try {
+        setPill(els.pillBot, isLocalMapHost() ? "LOCAL: companion" : "BOT: configured", "good");
+
+        const serverText = isLocalMapHost() ? "Local" : (guildId !== "0" ? "Linked" : "No Guild");
+        setPill(
+        els.pillServer,
+        isLocalMapHost() ? "SERVER: local" : (guildId !== "0" ? "SERVER: linked" : "SERVER: no guild"),
+        isLocalMapHost() || guildId !== "0" ? "good" : "warn"
+        );
+
+        const result = await fetchDriverPayload(base, guildId);
+        const drivers = result.drivers || [];
+        state.lastDriverUrl = result.url || "";
+        state.lastDrivers = drivers;
+
+        let placed = 0;
+        const seen = new Set();
+
+        for (const d of drivers) {
+        const id = getDriverId(d);
+        const lngLat = getLngLat(d);
+
+        if (!lngLat) continue;
+
+        seen.add(id);
+
+        if (!state.markers.has(id)) {
+        const built = buildMarker(d);
+        built.marker.addTo(state.map);
+        state.markers.set(id, built);
+        }
+
+        const entry = state.markers.get(id);
+        animateMarkerTo(entry, lngLat, 1400);
+        entry.label.textContent = getDriverName(d);
+        entry.subLabel.textContent = getTruckDisplay(d);
+        entry.icon.className = `truckMarker ${dutyClass(d)} ${isFresh(d) ? "" : "stale"}`.trim();
+        entry.icon.style.transform = `rotate(${getHeading(d)}deg)`;
+        entry.marker.getPopup().setHTML(makePopupHtml(d));
+        placed++;
+        }
+
+        for (const [id, entry] of state.markers.entries()) {
+        if (!seen.has(id)) {
+        entry.marker.remove();
+        state.markers.delete(id);
+        }
+        }
+
+        setPill(els.pillDrivers, `DRIVERS: ${drivers.length}`, drivers.length > 0 ? "good" : "");
+
+        if (!state.hasAutoFitDrivers && drivers.length > 0) {
+        fitMapToDrivers(drivers);
+        state.hasAutoFitDrivers = true;
+        }
+
+        if (state.followTruck && drivers.length > 0) {
+        const first = getLngLat(drivers[0]);
+        if (first) {
+        state.map.easeTo({
+        center: first,
+        duration: 1400,
+        essential: true
+        });
+        }
+        }
+
+        refreshMiniStatus(serverText);
+        } catch (err) {
+        console.error("pollDrivers failed:", err);
+        setPill(els.pillServer, "SERVER: error", "bad");
+        refreshMiniStatus("Error");
+        }
+        }
+
+        let __oweldMapStarted = false;
+
+        async function bootstrap(cfg) {
+        if (__oweldMapStarted) return;
+        __oweldMapStarted = true;
+
+        state.cfg = Object.assign({ botBaseUrl: RAILWAY_API_BASE, guildId: getQueryValue("guildId") }, cfg || {});
+        state.fleetRoster = Array.isArray(window.__OWELD_FLEET) ? window.__OWELD_FLEET : [];
+
+        state.map = new maplibregl.Map({
+        container: "map",
+        style: {
+        version: 8,
+        sources: {},
+        layers: [{
+        id: "bg",
+        type: "background",
+        paint: { "background-color": "#081018" }
+        }]
+        },
+        center: DEFAULT_CENTER,
+        zoom: DEFAULT_ZOOM,
+        attributionControl: false
+        });
+
+        state.map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
+
+        els.btnRecenter.addEventListener("click", recenterUsa);
+        els.btnFollow.addEventListener("click", () => {
+        state.followTruck = !state.followTruck;
+        updateButtons();
+        });
+        els.btnTogglePois.addEventListener("click", () => {
+        state.showPois = !state.showPois;
+        updateButtons();
+        });
+        els.btnToggleRoads.addEventListener("click", () => {
+        state.showRoads = !state.showRoads;
+        updateButtons();
+        });
+        els.btnToggleStates.addEventListener("click", () => {
+        state.showStates = !state.showStates;
+        updateButtons();
+        });
+        els.btnToggleTopPanel.addEventListener("click", () => {
+        state.topPanelCollapsed = !state.topPanelCollapsed;
+        refreshPanelVisibility();
+        });
+        els.btnToggleLegendPanel.addEventListener("click", () => {
+        state.legendPanelCollapsed = !state.legendPanelCollapsed;
+        refreshPanelVisibility();
+        });
+
+        refreshPanelVisibility();
+        updateButtons();
+        refreshMiniStatus("Starting");
+
+        state.map.once("load", async () => {
+        await addAtsPmtilesStyle();
+        await pollDrivers();
+        await loadVtcGarageMarkers();
+        setInterval(async () => {
+    await pollDrivers();
+    await loadVtcGarageMarkers();
+}, 5000);
+        });
+        }
+
+        window.initializeOverwatchELD = bootstrap;
+
+        // Website/GitHub Pages fallback: if the ELD shell does not call initializeOverwatchELD,
+        // start the same map automatically using query string config.
+        setTimeout(() => {
+            if (!__oweldMapStarted) {
+                bootstrap({
+                    botBaseUrl: getQueryValue("apiBase") || RAILWAY_API_BASE,
+                    guildId: getQueryValue("guildId") || "0"
+                });
+            }
+        }, 150);
+    </script>
 </body>
 </html>
