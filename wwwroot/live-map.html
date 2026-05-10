@@ -25,6 +25,21 @@
       border: 3px solid #e0f2fe; box-shadow: 0 0 0 5px rgba(56,189,248,.25), 0 0 22px rgba(56,189,248,.9);
     }
     .driver-marker.stale { background:#f59e0b; border-color:#fff7ed; box-shadow:0 0 0 5px rgba(245,158,11,.22); }
+    .garage-marker {
+      width: 22px; height: 22px; border-radius: 8px;
+      display:flex; align-items:center; justify-content:center;
+      background:rgba(15,23,42,.82); border:2px solid rgba(148,163,184,.65);
+      color:#cbd5e1; font-size:14px; opacity:.55;
+      box-shadow:0 0 0 4px rgba(15,23,42,.25);
+    }
+    .garage-marker.owned {
+      width: 30px; height: 30px; font-size:19px; opacity:1;
+      background:#1d4ed8; color:#fff; border-color:#bfdbfe;
+      box-shadow:0 0 0 5px rgba(96,165,250,.28), 0 0 24px rgba(96,165,250,.95);
+      font-weight:900;
+    }
+    .garage-popup { min-width: 180px; line-height:1.5; }
+    .garage-popup .owned { color:#93c5fd; font-weight:800; }
     .maplibregl-popup-content { background:#020617; color:#f8fafc; border:1px solid #334155; border-radius:12px; }
     .maplibregl-popup-tip { border-top-color:#020617!important; }
   </style>
@@ -47,6 +62,7 @@
     const debugEl = document.getElementById("debugStatus");
 
     let markers = [];
+    let garageMarkers = [];
     let map;
     let fitOnce = false;
 
@@ -125,6 +141,11 @@
       markers = [];
     }
 
+    function clearGarageMarkers(){
+      for(const m of garageMarkers) m.remove();
+      garageMarkers = [];
+    }
+
     function ageText(lastSeenUtc){
       const d = new Date(lastSeenUtc);
       if(isNaN(d.getTime())) return '';
@@ -156,6 +177,8 @@
 
         const bounds = new maplibregl.LngLatBounds();
         let validCount = 0;
+
+        await loadGarages(bounds);
 
         for(const p of points){
           const lat = Number(p.latitude ?? p.lat);
@@ -198,6 +221,51 @@
         statusEl.innerHTML = `<span class="error">Map polling error: ${esc(e.message)}</span>`;
         debugEl.textContent = '';
       }
+    }
+
+    async function loadGarages(bounds){
+      try{
+        const url = guildId ? `/api/vtc/garages?guildId=${encodeURIComponent(guildId)}` : '/api/vtc/garages';
+        const res = await fetch(url, { cache:'no-store' });
+        const data = await safeJsonResponse(res);
+        const garages = Array.isArray(data.garages) ? data.garages : (Array.isArray(data.data) ? data.data : []);
+
+        clearGarageMarkers();
+
+        for(const g of garages){
+          const lat = Number(g.latitude ?? g.mapY ?? g.lat);
+          const lng = Number(g.longitude ?? g.mapX ?? g.lng ?? g.lon);
+          if(!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
+
+          const owned = g.owned === true || g.isOwned === true;
+          const el = document.createElement('div');
+          el.className = 'garage-marker' + (owned ? ' owned' : '');
+          el.title = `${g.cityName || g.city || 'Garage'} ${owned ? '(Owned)' : ''}`;
+          el.innerHTML = '🏢';
+
+          const popup = new maplibregl.Popup({ offset: 22 }).setHTML(`
+            <div class="garage-popup">
+              <strong>${esc(g.cityName || g.city || 'Garage')}${g.state ? ', ' + esc(g.state) : ''}</strong><br>
+              <span class="${owned ? 'owned' : ''}">${owned ? 'Owned VTC Garage' : 'ATS Garage'}</span><br>
+              Size: ${esc(g.size || 'Small')}<br>
+              Trucks: ${esc(g.assigned ?? 0)}/${esc(g.capacity ?? g.truckCapacity ?? g.slots ?? 3)}<br>
+              ${(g.trucks || g.assignedTruckNumbers || []).length ? 'Units: ' + esc((g.trucks || g.assignedTruckNumbers).join(', ')) + '<br>' : ''}
+              ${g.notes ? '<span class="muted">' + esc(g.notes) + '</span>' : ''}
+            </div>
+          `);
+
+          const marker = new maplibregl.Marker({ element: el })
+            .setLngLat([lng, lat])
+            .setPopup(popup)
+            .addTo(map);
+
+          garageMarkers.push(marker);
+
+          if(owned && bounds){
+            bounds.extend([lng, lat]);
+          }
+        }
+      }catch(e){ }
     }
 
     bootMap();
