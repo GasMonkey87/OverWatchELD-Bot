@@ -620,7 +620,9 @@ public static class BotCommandHandler
     {
         var channelId = ctx.Message.Channel.Id;
 
-        services.DispatchStore.SetBolChannel(ctx.GuildIdStr, channelId);
+        await services.GuildSettingsStore.SetBolChannelAsync(
+    ctx.GuildIdStr,
+    channelId);
 
         await ctx.Message.Channel.SendMessageAsync(
             $"✅ ELD-BOL channel linked.\nBOL messages will now be sent here: <#{channelId}>");
