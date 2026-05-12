@@ -14,7 +14,7 @@ public static class BolDiscordOnlyRoutes
 {
     public static void Register(IEndpointRouteBuilder r, BotServices services, JsonSerializerOptions jsonRead, JsonSerializerOptions jsonWrite)
     {
-        r.MapGet("/vtc/bol/settings", (HttpRequest req) =>
+        r.MapGet("/vtc/bol/settings", async (HttpRequest req) =>
         {
             try
             {
@@ -33,7 +33,9 @@ public static class BolDiscordOnlyRoutes
                     }, jsonWrite);
                 }
 
-                var settings = services.DispatchStore?.Get(guildId);
+                var settings = services.GuildSettingsStore != null
+                    ? await services.GuildSettingsStore.GetAsync(guildId)
+                    : null;
                 var channelId = ResolveBolChannelId(settings);
 
                 return Results.Json(new
@@ -54,7 +56,7 @@ public static class BolDiscordOnlyRoutes
             }
         });
 
-        r.MapMethods("/vtc/bol/settings", new[] { "POST", "GET" }, (HttpRequest req) =>
+        r.MapMethods("/vtc/bol/settings", new[] { "POST", "GET" }, async (HttpRequest req) =>
         {
             try
             {
@@ -74,7 +76,9 @@ public static class BolDiscordOnlyRoutes
                     }, jsonWrite);
                 }
 
-                var settings = services.DispatchStore?.Get(guildId);
+                var settings = services.GuildSettingsStore != null
+                    ? await services.GuildSettingsStore.GetAsync(guildId)
+                    : null;
                 var channelId = ResolveBolChannelId(settings);
 
                 return Results.Json(new
@@ -161,7 +165,9 @@ public static class BolDiscordOnlyRoutes
                     }, statusCode: 400);
                 }
 
-                var settings = services.DispatchStore?.Get(guild.Id.ToString());
+                var settings = services.GuildSettingsStore != null
+                    ? await services.GuildSettingsStore.GetAsync(guild.Id.ToString())
+                    : null;
                 var channelId = ResolveBolChannelId(settings);
 
                 if (!ulong.TryParse(channelId, out var bolChannelId) || bolChannelId == 0)
