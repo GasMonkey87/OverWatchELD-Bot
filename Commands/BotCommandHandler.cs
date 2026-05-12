@@ -600,39 +600,39 @@ public static class BotCommandHandler
     }
 
     private static async Task HandleSetBolChannelAsync(CommandContext ctx, BotServices services)
-{
-    if (!await RequireStaffAsync(ctx))
-        return;
-
-    if (services.DispatchStore == null)
     {
-        await ctx.Message.Channel.SendMessageAsync("❌ Dispatch store not initialized.");
-        return;
-    }
+        if (!await RequireStaffAsync(ctx))
+            return;
 
-    if (ctx.Guild == null)
-    {
-        await ctx.Message.Channel.SendMessageAsync("❌ This command must be used in a server.");
-        return;
-    }
+        if (services.GuildSettingsStore == null)
+        {
+            await ctx.Message.Channel.SendMessageAsync("❌ Guild settings store not initialized.");
+            return;
+        }
 
-    try
-    {
-        var channelId = ctx.Message.Channel.Id;
+        if (ctx.Guild == null || string.IsNullOrWhiteSpace(ctx.GuildIdStr))
+        {
+            await ctx.Message.Channel.SendMessageAsync("❌ This command must be used in a server.");
+            return;
+        }
 
-        await services.GuildSettingsStore.SetBolChannelAsync(
-    ctx.GuildIdStr,
-    channelId);
+        try
+        {
+            var channelId = ctx.Message.Channel.Id;
 
-        await ctx.Message.Channel.SendMessageAsync(
-            $"✅ ELD-BOL channel linked.\nBOL messages will now be sent here: <#{channelId}>");
+            await services.GuildSettingsStore.SetBolChannelAsync(ctx.GuildIdStr, channelId);
+
+            await ctx.Message.Channel.SendMessageAsync(
+                $"✅ ELD-BOL channel linked.
+BOL messages will now be sent here: <#{channelId}>");
+        }
+        catch (Exception ex)
+        {
+            await ctx.Message.Channel.SendMessageAsync(
+                $"❌ Failed to set BOL channel.
+{ex.Message}");
+        }
     }
-    catch (Exception ex)
-    {
-        await ctx.Message.Channel.SendMessageAsync(
-            $"❌ Failed to set BOL channel.\n{ex.Message}");
-    }
-}
     
     public static string GenerateLinkCode(int len)
     {
