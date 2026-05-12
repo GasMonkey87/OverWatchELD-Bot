@@ -111,7 +111,13 @@ public static class BotCommandHandler
             await HandleRosterListAsync(ctx, services);
             return;
         }
-
+       
+        if (ctx.Cmd == "setbolchannel")
+{
+    await HandleSetBolChannelAsync(ctx, services);
+    return;
+}
+        
         if (ctx.Cmd == "announcement" || ctx.Cmd == "announcements")
         {
             await HandleAnnouncementAsync(ctx, services);
@@ -593,6 +599,39 @@ public static class BotCommandHandler
         await ctx.Message.Channel.SendMessageAsync("✅ Announcement webhook saved.");
     }
 
+    private static async Task HandleSetBolChannelAsync(CommandContext ctx, BotServices services)
+{
+    if (!await RequireStaffAsync(ctx))
+        return;
+
+    if (services.DispatchStore == null)
+    {
+        await ctx.Message.Channel.SendMessageAsync("❌ Dispatch store not initialized.");
+        return;
+    }
+
+    if (ctx.Guild == null)
+    {
+        await ctx.Message.Channel.SendMessageAsync("❌ This command must be used in a server.");
+        return;
+    }
+
+    try
+    {
+        var channelId = ctx.Message.Channel.Id;
+
+        services.DispatchStore.SetBolChannel(ctx.GuildIdStr, channelId);
+
+        await ctx.Message.Channel.SendMessageAsync(
+            $"✅ ELD-BOL channel linked.\nBOL messages will now be sent here: <#{channelId}>");
+    }
+    catch (Exception ex)
+    {
+        await ctx.Message.Channel.SendMessageAsync(
+            $"❌ Failed to set BOL channel.\n{ex.Message}");
+    }
+}
+    
     public static string GenerateLinkCode(int len)
     {
         const string alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
