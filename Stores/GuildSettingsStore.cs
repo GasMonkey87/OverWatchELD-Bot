@@ -171,6 +171,14 @@ public sealed class GuildSettingsStore
         await UpsertAsync(s);
     }
 
+    public async Task SetBolChannelAsync(string guildId, ulong channelId)
+{
+    await PatchAsync(guildId, s =>
+    {
+        s.BolChannelId = channelId.ToString();
+    });
+}
+    
     private static string ConvertRailwayDatabaseUrl(string url)
     {
         if (!url.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
