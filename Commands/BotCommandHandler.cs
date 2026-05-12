@@ -600,39 +600,37 @@ public static class BotCommandHandler
     }
 
     private static async Task HandleSetBolChannelAsync(CommandContext ctx, BotServices services)
+{
+    if (!await RequireStaffAsync(ctx))
+        return;
+
+    if (services.GuildSettingsStore == null)
     {
-        if (!await RequireStaffAsync(ctx))
-            return;
-
-        if (services.GuildSettingsStore == null)
-        {
-            await ctx.Message.Channel.SendMessageAsync("❌ Guild settings store not initialized.");
-            return;
-        }
-
-        if (ctx.Guild == null || string.IsNullOrWhiteSpace(ctx.GuildIdStr))
-        {
-            await ctx.Message.Channel.SendMessageAsync("❌ This command must be used in a server.");
-            return;
-        }
-
-        try
-        {
-            var channelId = ctx.Message.Channel.Id;
-
-            await services.GuildSettingsStore.SetBolChannelAsync(ctx.GuildIdStr, channelId);
-
-            await ctx.Message.Channel.SendMessageAsync(
-                $"✅ ELD-BOL channel linked.
-BOL messages will now be sent here: <#{channelId}>");
-        }
-        catch (Exception ex)
-        {
-            await ctx.Message.Channel.SendMessageAsync(
-                $"❌ Failed to set BOL channel.
-{ex.Message}");
-        }
+        await ctx.Message.Channel.SendMessageAsync("❌ Guild settings store not initialized.");
+        return;
     }
+
+    if (ctx.Guild == null || string.IsNullOrWhiteSpace(ctx.GuildIdStr))
+    {
+        await ctx.Message.Channel.SendMessageAsync("❌ This command must be used in a server.");
+        return;
+    }
+
+    try
+    {
+        var channelId = ctx.Message.Channel.Id;
+
+        await services.GuildSettingsStore.SetBolChannelAsync(ctx.GuildIdStr, channelId);
+
+        await ctx.Message.Channel.SendMessageAsync(
+            $"✅ ELD-BOL channel linked.\nBOL messages will now be sent here: <#{channelId}>");
+    }
+    catch (Exception ex)
+    {
+        await ctx.Message.Channel.SendMessageAsync(
+            $"❌ Failed to set BOL channel.\n{ex.Message}");
+    }
+}
     
     public static string GenerateLinkCode(int len)
     {
