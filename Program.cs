@@ -417,6 +417,73 @@ Message:
             discordReady = services.DiscordReady
         }));
 
+        app.MapPost("/api/fleet/truck-approved", async (
+    HttpContext ctx,
+    DiscordSocketClient discord,
+    GuildSettingsStore settingsStore) =>
+{
+    var req = await ctx.Request.ReadFromJsonAsync<TruckApprovedDiscordRequest>();
+
+    if (req == null || string.IsNullOrWhiteSpace(req.GuildId))
+        return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
+
+    var guild = discord.GetGuild(ulong.Parse(req.GuildId));
+    if (guild == null)
+        return Results.Json(new { ok = false, error = "GuildNotFound" });
+
+    var settings = await settingsStore.GetAsync(req.GuildId);
+
+    // Uses fleetChannelId if ELD sends it, otherwise falls back to loadboard channel.
+    var channelIdText = FirstNonBlank(req.FleetChannelId, settings.LoadboardChannelId);
+
+    if (!ulong.TryParse(channelIdText, out var channelId))
+        return Results.Json(new { ok = false, error = "FleetChannelNotConfigured" });
+
+    var channel = guild.GetTextChannel(channelId);
+    if (channel == null)
+        return Results.Json(new { ok = false, error = "FleetChannelNotFound" });
+
+    var embed = new EmbedBuilder()
+        .WithTitle("🚛 New Fleet Truck Approved")
+        .WithColor(Color.Green)
+        .AddField("Truck #", FirstNonBlank(req.TruckNumber, "N/A"), true)
+        .AddField("Driver", FirstNonBlank(req.DriverName, "Unassigned"), true)
+        .AddField("Truck", FirstNonBlank(req.TruckName, req.Model, "Unknown"), true)
+        .AddField("Plate", FirstNonBlank(req.Plate, "N/A"), true)
+        .AddField("Mileage", FirstNonBlank(req.Mileage, "N/A"), true)
+        .AddField("Status", "Approved", true)
+        .WithFooter("OverWatch ELD Fleet Management")
+        .WithCurrentTimestamp()
+        .Build();
+
+    await channel.SendMessageAsync(embed: embed);
+
+    return Results.Json(new { ok = true });
+});
+
+static string FirstNonBlank(params string?[] values)
+{
+    foreach (var v in values)
+    {
+        if (!string.IsNullOrWhiteSpace(v))
+            return v.Trim();
+    }
+
+    return "";
+}
+
+public sealed class TruckApprovedDiscordRequest
+{
+    public string GuildId { get; set; } = "";
+    public string FleetChannelId { get; set; } = "";
+    public string TruckNumber { get; set; } = "";
+    public string DriverName { get; set; } = "";
+    public string TruckName { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string Plate { get; set; } = "";
+    public string Mileage { get; set; } = "";
+}
+        
         app.MapMapAssetRoutes(); // fine if method exists
 
         app.MapGet("/api/status", () => Results.Ok(new
