@@ -80,74 +80,65 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
         }, jsonWrite));
         
         r.MapPost("/fleet/truck-approved", async (HttpContext ctx) =>
+{
+    try
+    {
+        var req = await ctx.Request.ReadFromJsonAsync<TruckApprovedDiscordRequest>(jsonRead);
+
+        if (req == null)
+            return Results.Json(new { ok = false, error = "BadJson" }, statusCode: 400);
+
+        if (string.IsNullOrWhiteSpace(req.GuildId))
+            return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+        if (services.Client == null || !services.DiscordReady)
+            return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+
+        if (!ulong.TryParse(req.GuildId.Trim(), out var gid))
+            return Results.Json(new { ok = false, error = "BadGuildId", guildId = req.GuildId }, statusCode: 400);
+
+        var guild = services.Client.GetGuild(gid);
+        if (guild == null)
+            return Results.Json(new { ok = false, error = "GuildNotFound", guildId = req.GuildId }, statusCode: 404);
+
+        var channel = guild.TextChannels.FirstOrDefault(c =>
         {
-            var req = await ctx.Request.ReadFromJsonAsync<TruckApprovedDiscordRequest>(jsonRead);
-        
-            if (req == null || string.IsNullOrWhiteSpace(req.GuildId))
-                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
-        
-            if (services.Client == null || !services.DiscordReady)
-                return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
-        
-            if (!ulong.TryParse(req.GuildId.Trim(), out var gid))
-                return Results.Json(new { ok = false, error = "BadGuildId" }, statusCode: 400);
-        
-            var guild = services.Client.GetGuild(gid);
-            if (guild == null)
-                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
-        
-            SocketTextChannel? channel = null;
-        
-            if (ulong.TryParse((req.FleetChannelId ?? "").Trim(), out var fleetCid))
-                channel = guild.GetTextChannel(fleetCid);
-        
-            channel ??= guild.TextChannels.FirstOrDefault(c =>
-            {
-                var n = (c.Name ?? "").ToLowerInvariant().Replace("_", "-").Replace(" ", "-");
-                return n == "fleet" ||
-                       n == "fleet-trucks" ||
-                       n == "vtc-fleet" ||
-                       n == "trucks" ||
-                       n.Contains("fleet") ||
-                       n.Contains("truck");
-            });
-        
-            if (channel == null && services.GuildSettingsStore != null)
-            {
-                var settings = await services.GuildSettingsStore.GetAsync(req.GuildId);
-                if (ulong.TryParse(settings.LoadboardChannelId, out var loadboardCid))
-                    channel = guild.GetTextChannel(loadboardCid);
-                if (channel == null && ulong.TryParse(settings.AnnouncementsChannelId, out var announceCid))
-                    channel = guild.GetTextChannel(announceCid);
-                if (channel == null && ulong.TryParse(settings.DispatchChannelId, out var dispatchCid))
-                    channel = guild.GetTextChannel(dispatchCid);
-            }
-        
-            if (channel == null)
-                return Results.Json(new { ok = false, error = "FleetChannelNotFound" }, statusCode: 404);
-        
-            var embed = new EmbedBuilder()
-                .WithTitle("🚛 New Fleet Truck Approved")
-                .WithColor(Color.Green)
-                .AddField("Truck #", FirstNonEmpty(req.TruckNumber, "N/A"), true)
-                .AddField("Driver", FirstNonEmpty(req.DriverName, "Unassigned"), true)
-                .AddField("Truck", FirstNonEmpty(req.TruckName, req.Model, "Unknown"), true)
-                .AddField("Plate", FirstNonEmpty(req.Plate, "N/A"), true)
-                .AddField("Mileage", FirstNonEmpty(req.Mileage, "N/A"), true)
-                .AddField("Status", "Approved", true)
-                .WithFooter("OverWatch ELD Fleet Management")
-                .WithCurrentTimestamp()
-                .Build();
-        
-            await channel.SendMessageAsync(embed: embed);
-        
-            return Results.Json(new
-            {
-                ok = true,
-                channelId = channel.Id.ToString(),
-                channelName = channel.Name
-            }, jsonWrite);
+            var n = (c.Name ?? "").ToLowerInvariant().Replace("_", "-").Replace(" ", "-");
+            return n == "fleet-trucks" || n == "fleet" || n == "vtc-fleet" || n == "trucks" || n.Contains("fleet") || n.Contains("truck");
         });
+
+        if (channel == null)
+            return Results.Json(new { ok = false, error = "FleetChannelNotFound", channels = guild.TextChannels.Select(c => c.Name).ToArray() }, statusCode: 404);
+
+        var embed = new EmbedBuilder()
+            .WithTitle("🚛 New Fleet Truck Approved")
+            .WithColor(Color.Green)
+            .AddField("Truck #", FirstNonEmpty(req.TruckNumber, "N/A"), true)
+            .AddField("Driver", FirstNonEmpty(req.DriverName, "Unassigned"), true)
+            .AddField("Truck", FirstNonEmpty(req.TruckName, req.Model, "Unknown"), true)
+            .AddField("Plate", FirstNonEmpty(req.Plate, "N/A"), true)
+            .AddField("Mileage", FirstNonEmpty(req.Mileage, "N/A"), true)
+            .AddField("Status", "Approved", true)
+            .WithFooter("OverWatch ELD Fleet Management")
+            .WithCurrentTimestamp()
+            .Build();
+
+        await channel.SendMessageAsync(embed: embed);
+
+        return Results.Json(new { ok = true, channelId = channel.Id.ToString(), channelName = channel.Name }, jsonWrite);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            ok = false,
+            error = "FleetTruckApprovedRouteException",
+            message = ex.Message,
+            type = ex.GetType().FullName,
+            stack = ex.StackTrace
+        }, statusCode: 500);
+    }
+});
         
         r.MapGet("/vtc/servers", () =>
         {
