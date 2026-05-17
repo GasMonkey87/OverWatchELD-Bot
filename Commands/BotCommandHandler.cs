@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Linq;
@@ -102,9 +103,9 @@ public static class BotCommandHandler
             await HandleSetDispatchWebhookAsync(ctx, services);
             return;
         }
-        if (cmd.Equals("!exportlogs", StringComparison.OrdinalIgnoreCase))
+        if (ctx.Cmd == "exportlogs")
         {
-            await HandleExportLogsAsync(message);
+            await HandleExportLogsAsync(ctx);
             return;
         }
         if (ctx.Cmd == "rosterlink")
@@ -306,24 +307,24 @@ public static class BotCommandHandler
             await ctx.Message.Channel.SendMessageAsync("❌ Failed to create link code.");
         }
     }
-    private static async Task HandleExportLogsAsync(SocketMessage message)
+    private static async Task HandleExportLogsAsync(CommandContext ctx)
 {
     try
     {
-        var guildChannel = message.Channel as SocketGuildChannel;
+        var guildChannel = ctx.Message.Channel as SocketGuildChannel;
         if (guildChannel == null)
         {
-            await message.Channel.SendMessageAsync("❌ This command can only be used in a server.");
+            await ctx.Message.Channel.SendMessageAsync("❌ This command can only be used in a server.");
             return;
         }
 
         var guild = guildChannel.Guild;
-        var mentionedUser = message.MentionedUsers.FirstOrDefault();
+        var mentionedUser = ctx.Message.MentionedUsers.FirstOrDefault();
 
-        var targetUser = mentionedUser ?? message.Author;
+        var targetUser = mentionedUser ?? ctx.Message.Author;
         var date = DateTime.UtcNow.Date;
 
-        var parts = message.Content.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var parts = ctx.Message.Content.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         foreach (var part in parts)
         {
             if (DateTime.TryParse(part, out var parsed))
@@ -338,7 +339,9 @@ public static class BotCommandHandler
 
         if (exportChannel == null)
         {
-            exportChannel = await guild.CreateTextChannelAsync("logs-export");
+            await guild.CreateTextChannelAsync("logs-export");
+            await ctx.Message.Channel.SendMessageAsync("✅ Created #logs-export. Run `!exportlogs` again to create the driver thread.");
+            return;
         }
 
         var threadName = $"logs-{targetUser.Username}-{date:yyyy-MM-dd}"
@@ -379,11 +382,11 @@ Status: Export request received.
 """;
 
         await thread.SendMessageAsync(exportText);
-        await message.Channel.SendMessageAsync($"✅ Logs exported to thread: {thread.Mention}");
+        await ctx.Message.Channel.SendMessageAsync($"✅ Logs exported to thread: {thread.Mention}");
     }
     catch (Exception ex)
     {
-        await message.Channel.SendMessageAsync($"❌ Export failed: `{ex.Message}`");
+        await ctx.Message.Channel.SendMessageAsync($"❌ Export failed: `{ex.Message}`");
     }
 }
     private static async Task HandleUnlinkAsync(CommandContext ctx, BotServices services)
