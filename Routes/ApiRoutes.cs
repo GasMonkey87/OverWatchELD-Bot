@@ -1229,6 +1229,50 @@ if (names.Any(x =>
             return null;
         }
     }
+    private static string NormalizeNotifyChannel(string? value)
+    {
+        return (value ?? "")
+            .Trim()
+            .TrimStart('#')
+            .ToLowerInvariant()
+            .Replace("_", "-")
+            .Replace(" ", "-");
+    }
+
+    private static string NotifyIcon(string? category)
+    {
+        return (category ?? "").Trim().ToLowerInvariant() switch
+        {
+            "dispatch" => "📦",
+            "events" => "📅",
+            "convoys" => "🚚",
+            "garages" => "🏢",
+            "fleet" => "🚛",
+            "maintenance" => "🛠️",
+            "breakdown" => "🚨",
+            "violation" => "⚠️",
+            "messages" => "💬",
+            _ => "📣"
+        };
+    }
+
+    private static Color NotifyColor(string? category)
+    {
+        return (category ?? "").Trim().ToLowerInvariant() switch
+        {
+            "dispatch" => Color.Blue,
+            "events" => Color.Purple,
+            "convoys" => Color.Orange,
+            "garages" => Color.Green,
+            "fleet" => Color.Teal,
+            "maintenance" => Color.Red,
+            "breakdown" => Color.Red,
+            "violation" => Color.Orange,
+            "messages" => Color.Blue,
+            _ => Color.DarkGrey
+        };
+    }
+
 }
 
 
@@ -1255,4 +1299,3 @@ public sealed class EldNotificationPushRequest
     public string ChannelId { get; set; } = "";
     public string DefaultChannelName { get; set; } = "eld-notifications";
 }
-
