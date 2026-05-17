@@ -1,5 +1,8 @@
+using System;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Linq;
+using System.Threading.Tasks;
 using Discord;
 using Discord.Rest;
 using Discord.WebSocket;
@@ -99,7 +102,11 @@ public static class BotCommandHandler
             await HandleSetDispatchWebhookAsync(ctx, services);
             return;
         }
-
+        if (cmd.Equals("!exportlogs", StringComparison.OrdinalIgnoreCase))
+        {
+            await HandleExportLogsAsync(message);
+            return;
+        }
         if (ctx.Cmd == "rosterlink")
         {
             await HandleRosterLinkAsync(ctx, services);
@@ -299,7 +306,86 @@ public static class BotCommandHandler
             await ctx.Message.Channel.SendMessageAsync("❌ Failed to create link code.");
         }
     }
+    private async Task HandleExportLogsAsync(SocketMessage message)
+{
+    try
+    {
+        var guildChannel = message.Channel as SocketGuildChannel;
+        if (guildChannel == null)
+        {
+            await message.Channel.SendMessageAsync("❌ This command can only be used in a server.");
+            return;
+        }
 
+        var guild = guildChannel.Guild;
+        var mentionedUser = message.MentionedUsers.FirstOrDefault();
+
+        var targetUser = mentionedUser ?? message.Author;
+        var date = DateTime.UtcNow.Date;
+
+        var parts = message.Content.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        foreach (var part in parts)
+        {
+            if (DateTime.TryParse(part, out var parsed))
+            {
+                date = parsed.Date;
+                break;
+            }
+        }
+
+        var exportChannel = guild.TextChannels
+            .FirstOrDefault(c => c.Name.Equals("logs-export", StringComparison.OrdinalIgnoreCase));
+
+        if (exportChannel == null)
+        {
+            exportChannel = await guild.CreateTextChannelAsync("logs-export");
+        }
+
+        var threadName = $"logs-{targetUser.Username}-{date:yyyy-MM-dd}"
+            .ToLowerInvariant()
+            .Replace(" ", "-");
+
+        var existingThread = exportChannel.Threads
+            .FirstOrDefault(t => t.Name.Equals(threadName, StringComparison.OrdinalIgnoreCase));
+
+        IThreadChannel thread;
+
+        if (existingThread != null)
+        {
+            thread = existingThread;
+        }
+        else
+        {
+            thread = await exportChannel.CreateThreadAsync(
+                name: threadName,
+                type: ThreadType.PublicThread,
+                autoArchiveDuration: ThreadArchiveDuration.OneWeek);
+        }
+
+        var exportText =
+$"""
+📋 **Daily Log Export**
+Driver: {targetUser.Mention}
+Date: {date:yyyy-MM-dd}
+
+Status: Export request received.
+
+⚠️ Log data source still needs to be connected here:
+- duty events
+- violations
+- certification status
+- truck info
+- locations
+""";
+
+        await thread.SendMessageAsync(exportText);
+        await message.Channel.SendMessageAsync($"✅ Logs exported to thread: {thread.Mention}");
+    }
+    catch (Exception ex)
+    {
+        await message.Channel.SendMessageAsync($"❌ Export failed: `{ex.Message}`");
+    }
+}
     private static async Task HandleUnlinkAsync(CommandContext ctx, BotServices services)
     {
         if (ctx.Message.Channel is not SocketGuildChannel)
