@@ -451,18 +451,29 @@ Message:
 
             var settings = await settingsStore.GetAsync(req.GuildId);
 
-            var channelIdText = FirstNonBlank(
-                req.FleetChannelId,
-                settings.LoadboardChannelId,
-                settings.AnnouncementsChannelId,
-                settings.DispatchChannelId);
+            SocketTextChannel? channel = null;
 
-            if (!ulong.TryParse(channelIdText, out var channelId))
-                return Results.Json(new { ok = false, error = "FleetChannelNotConfigured" });
+            if (ulong.TryParse(req.FleetChannelId, out var explicitChannelId))
+                channel = guild.GetTextChannel(explicitChannelId);
 
-            var channel = guild.GetTextChannel(channelId);
+            // Prefer an actual fleet/truck channel by name so this posts in the fleet channel,
+            // even though older vtc_config.json files do not have a FleetChannelId field yet.
+            channel ??= FindFleetTextChannel(guild);
+
+            // Safe fallback if the server does not have a fleet-named channel yet.
+            channel ??= ResolveTextChannelById(guild, settings.LoadboardChannelId);
+            channel ??= ResolveTextChannelById(guild, settings.AnnouncementsChannelId);
+            channel ??= ResolveTextChannelById(guild, settings.DispatchChannelId);
+
             if (channel == null)
-                return Results.Json(new { ok = false, error = "FleetChannelNotFound" });
+            {
+                return Results.Json(new
+                {
+                    ok = false,
+                    error = "FleetChannelNotConfigured",
+                    hint = "Create a Discord text channel named fleet, fleet-trucks, vtc-fleet, or trucks, or configure a fallback channel."
+                });
+            }
 
             var embed = new EmbedBuilder()
                 .WithTitle("🚛 New Fleet Truck Approved")
@@ -479,7 +490,12 @@ Message:
 
             await channel.SendMessageAsync(embed: embed);
 
-            return Results.Json(new { ok = true });
+            return Results.Json(new
+            {
+                ok = true,
+                channelId = channel.Id.ToString(),
+                channelName = channel.Name
+            });
         });
 
         app.MapGet("/api/onboarding/me", (HttpContext http, WebSessionStore sessions) =>
@@ -830,6 +846,59 @@ Message:
 
         Console.WriteLine($"Bot running on :{port}");
         await app.RunAsync();
+    }
+
+    private static SocketTextChannel? ResolveTextChannelById(SocketGuild guild, string? channelIdText)
+    {
+        if (guild == null || string.IsNullOrWhiteSpace(channelIdText))
+            return null;
+
+        return ulong.TryParse(channelIdText.Trim(), out var channelId)
+            ? guild.GetTextChannel(channelId)
+            : null;
+    }
+
+    private static SocketTextChannel? FindFleetTextChannel(SocketGuild guild)
+    {
+        if (guild == null)
+            return null;
+
+        var preferredNames = new[]
+        {
+            "fleet-trucks",
+            "fleet_trucks",
+            "fleet trucks",
+            "vtc-fleet",
+            "vtc_fleet",
+            "fleet",
+            "trucks",
+            "truck-approvals",
+            "truck_approvals"
+        };
+
+        foreach (var wanted in preferredNames)
+        {
+            var match = guild.TextChannels.FirstOrDefault(c =>
+                string.Equals(NormalizeChannelName(c.Name), NormalizeChannelName(wanted), StringComparison.OrdinalIgnoreCase));
+
+            if (match != null)
+                return match;
+        }
+
+        return guild.TextChannels.FirstOrDefault(c =>
+        {
+            var name = NormalizeChannelName(c.Name);
+            return name.Contains("fleet") || name.Contains("truck");
+        });
+    }
+
+    private static string NormalizeChannelName(string? value)
+    {
+        return (value ?? "")
+            .Trim()
+            .ToLowerInvariant()
+            .Replace(" ", "-")
+            .Replace("_", "-");
     }
 
     private static string FirstNonBlank(params string?[] values)
