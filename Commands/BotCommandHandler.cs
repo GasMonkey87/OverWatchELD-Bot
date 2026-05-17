@@ -306,7 +306,7 @@ public static class BotCommandHandler
             await ctx.Message.Channel.SendMessageAsync("❌ Failed to create link code.");
         }
     }
-    private async Task HandleExportLogsAsync(SocketMessage message)
+    private static async Task HandleExportLogsAsync(SocketMessage message)
 {
     try
     {
