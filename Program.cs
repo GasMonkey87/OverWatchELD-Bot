@@ -907,18 +907,6 @@ Message:
             .Replace("_", "-");
     }
 
-    private static string FirstNonBlank(params string?[] values)
-    {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value))
-                return value.Trim();
-        }
-
-        return "";
-    }
-}
-
 public sealed class TruckApprovedDiscordRequest
 {
     public string GuildId { get; set; } = "";
