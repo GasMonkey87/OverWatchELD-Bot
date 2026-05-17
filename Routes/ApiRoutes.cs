@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Linq;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Discord;
 using Discord.WebSocket;
@@ -69,6 +70,84 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
     {
         BolUploadRoutes.Register(r, services, jsonWrite);
         BolDiscordOnlyRoutes.Register(r, services, jsonRead, jsonWrite);
+
+        r.MapGet("/fleet/truck-approved", () => Results.Json(new
+        {
+            ok = true,
+            route = "/api/fleet/truck-approved",
+            method = "POST",
+            deployed = true
+        }, jsonWrite));
+        
+        r.MapPost("/fleet/truck-approved", async (HttpContext ctx) =>
+        {
+            var req = await ctx.Request.ReadFromJsonAsync<TruckApprovedDiscordRequest>(jsonRead);
+        
+            if (req == null || string.IsNullOrWhiteSpace(req.GuildId))
+                return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+        
+            if (services.Client == null || !services.DiscordReady)
+                return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+        
+            if (!ulong.TryParse(req.GuildId.Trim(), out var gid))
+                return Results.Json(new { ok = false, error = "BadGuildId" }, statusCode: 400);
+        
+            var guild = services.Client.GetGuild(gid);
+            if (guild == null)
+                return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+        
+            SocketTextChannel? channel = null;
+        
+            if (ulong.TryParse((req.FleetChannelId ?? "").Trim(), out var fleetCid))
+                channel = guild.GetTextChannel(fleetCid);
+        
+            channel ??= guild.TextChannels.FirstOrDefault(c =>
+            {
+                var n = (c.Name ?? "").ToLowerInvariant().Replace("_", "-").Replace(" ", "-");
+                return n == "fleet" ||
+                       n == "fleet-trucks" ||
+                       n == "vtc-fleet" ||
+                       n == "trucks" ||
+                       n.Contains("fleet") ||
+                       n.Contains("truck");
+            });
+        
+            if (channel == null && services.GuildSettingsStore != null)
+            {
+                var settings = await services.GuildSettingsStore.GetAsync(req.GuildId);
+                if (ulong.TryParse(settings.LoadboardChannelId, out var loadboardCid))
+                    channel = guild.GetTextChannel(loadboardCid);
+                if (channel == null && ulong.TryParse(settings.AnnouncementsChannelId, out var announceCid))
+                    channel = guild.GetTextChannel(announceCid);
+                if (channel == null && ulong.TryParse(settings.DispatchChannelId, out var dispatchCid))
+                    channel = guild.GetTextChannel(dispatchCid);
+            }
+        
+            if (channel == null)
+                return Results.Json(new { ok = false, error = "FleetChannelNotFound" }, statusCode: 404);
+        
+            var embed = new EmbedBuilder()
+                .WithTitle("🚛 New Fleet Truck Approved")
+                .WithColor(Color.Green)
+                .AddField("Truck #", FirstNonEmpty(req.TruckNumber, "N/A"), true)
+                .AddField("Driver", FirstNonEmpty(req.DriverName, "Unassigned"), true)
+                .AddField("Truck", FirstNonEmpty(req.TruckName, req.Model, "Unknown"), true)
+                .AddField("Plate", FirstNonEmpty(req.Plate, "N/A"), true)
+                .AddField("Mileage", FirstNonEmpty(req.Mileage, "N/A"), true)
+                .AddField("Status", "Approved", true)
+                .WithFooter("OverWatch ELD Fleet Management")
+                .WithCurrentTimestamp()
+                .Build();
+        
+            await channel.SendMessageAsync(embed: embed);
+        
+            return Results.Json(new
+            {
+                ok = true,
+                channelId = channel.Id.ToString(),
+                channelName = channel.Name
+            }, jsonWrite);
+        });
         
         r.MapGet("/vtc/servers", () =>
         {
@@ -1100,4 +1179,17 @@ if (names.Any(x =>
             return null;
         }
     }
+}
+
+
+public sealed class TruckApprovedDiscordRequest
+{
+    public string GuildId { get; set; } = "";
+    public string FleetChannelId { get; set; } = "";
+    public string TruckNumber { get; set; } = "";
+    public string DriverName { get; set; } = "";
+    public string TruckName { get; set; } = "";
+    public string Model { get; set; } = "";
+    public string Plate { get; set; } = "";
+    public string Mileage { get; set; } = "";
 }
