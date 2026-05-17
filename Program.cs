@@ -925,3 +925,4 @@ public sealed class IssueReportRequest
     public string? Subject { get; set; }
     public string? Message { get; set; }
 }
+}
