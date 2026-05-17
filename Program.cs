@@ -417,7 +417,13 @@ Message:
             discordReady = services.DiscordReady
         }));
 
-        
+        app.MapGet("/api/fleet/truck-approved", () => Results.Json(new
+{
+    ok = true,
+    route = "/api/fleet/truck-approved",
+    methods = "POST",
+    message = "Fleet truck approval route is deployed."
+}));
         
         app.MapMapAssetRoutes(); // fine if method exists
 
