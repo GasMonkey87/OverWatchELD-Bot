@@ -761,5 +761,21 @@ Status: Export request received.
         {
             return null;
         }
+    public static string GenerateLinkCode(int len)
+{
+    const string alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+    len = Math.Clamp(len, 4, 12);
+
+    var bytes = new byte[len];
+    RandomNumberGenerator.Fill(bytes);
+
+    var chars = new char[len];
+
+    for (int i = 0; i < len; i++)
+        chars[i] = alphabet[bytes[i] % alphabet.Length];
+
+    return new string(chars);
+}
     }
 }
