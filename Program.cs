@@ -849,7 +849,7 @@ Message:
         DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatchMessageStore);
         ManagementRoutes.Register(app, services, dispatchMessageStore, driverDisciplineStore);
         app.MapPortalDataRoutes();
-
+        BolUploadRoutes.Register(app.MapGroup("/api"), services, JsonWriteOpts);
         Console.WriteLine($"Bot running on :{port}");
         await app.RunAsync();
     }
