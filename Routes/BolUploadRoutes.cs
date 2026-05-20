@@ -28,7 +28,7 @@ public static class BolUploadRoutes
             readOpts,
             jsonWrite);
 
-        r.MapPost("/loads/bol/upload", async (HttpRequest req) =>
+        async Task<IResult> HandleBolUpload(HttpRequest req)
         {
             if (services.Client == null)
                 return Results.Json(new { ok = false, error = "ClientNull" }, statusCode: 503);
@@ -37,9 +37,20 @@ public static class BolUploadRoutes
                 return Results.Json(new { ok = false, error = "ExpectedMultipartFormData" }, statusCode: 400);
 
             var form = await req.ReadFormAsync();
-            var loadNumber = (form["loadNumber"].ToString() ?? "").Trim();
-            var status = (form["status"].ToString() ?? "").Trim();
-            var file = form.Files["file"];
+
+            var loadNumber = FirstNonBlank(
+                form["loadNumber"].ToString(),
+                form["currentLoadNumber"].ToString(),
+                form["bolNumber"].ToString()).Trim();
+
+            var status = FirstNonBlank(
+                form["status"].ToString(),
+                form["bolStatus"].ToString()).Trim();
+
+            var file = form.Files["file"] ??
+                       form.Files["bol"] ??
+                       form.Files["bolFile"] ??
+                       form.Files.FirstOrDefault();
 
             if (string.IsNullOrWhiteSpace(loadNumber))
                 return Results.Json(new { ok = false, error = "MissingLoadNumber" }, statusCode: 400);
@@ -51,19 +62,28 @@ public static class BolUploadRoutes
             if (map == null)
                 return Results.Json(new { ok = false, error = "LoadThreadNotFound" }, statusCode: 404);
 
-            var displayName = string.IsNullOrWhiteSpace(status)
-                ? $"BOL - {loadNumber}.pdf"
-                : $"BOL - {loadNumber} - {status}.pdf";
+            var ext = Path.GetExtension(file.FileName);
+            if (string.IsNullOrWhiteSpace(ext))
+                ext = ".pdf";
+
+            var safeStatus = string.IsNullOrWhiteSpace(status) ? "" : $" - {status}";
+            var displayName = $"BOL - {loadNumber}{safeStatus}{ext}";
 
             if (ulong.TryParse(map.ThreadId, out var threadId) && threadId != 0)
             {
                 try
                 {
                     var channel = await services.Client.Rest.GetChannelAsync(threadId);
+
                     if (channel is RestThreadChannel thread)
                     {
                         await using var stream = file.OpenReadStream();
-                        await thread.SendFileAsync(stream, displayName, $"📄 BOL attached for load `{loadNumber}`.");
+
+                        await thread.SendFileAsync(
+                            stream,
+                            displayName,
+                            $"📄 BOL attached for load `{loadNumber}`.");
+
                         return Results.Json(new
                         {
                             ok = true,
@@ -76,6 +96,8 @@ public static class BolUploadRoutes
                 }
                 catch (Exception ex)
                 {
+                    Console.WriteLine("[BOL THREAD UPLOAD ERROR] " + ex);
+
                     return Results.Json(new
                     {
                         ok = false,
@@ -92,11 +114,17 @@ public static class BolUploadRoutes
                 {
                     var guild = services.Client.GetGuild(guildId);
                     var channel = guild?.GetTextChannel(channelId);
+
                     if (channel == null)
                         return Results.Json(new { ok = false, error = "FallbackChannelNotFound" }, statusCode: 404);
 
                     await using var stream = file.OpenReadStream();
-                    await channel.SendFileAsync(stream, displayName, $"📄 BOL attached for load `{loadNumber}`.");
+
+                    await channel.SendFileAsync(
+                        stream,
+                        displayName,
+                        $"📄 BOL attached for load `{loadNumber}`.");
+
                     return Results.Json(new
                     {
                         ok = true,
@@ -108,6 +136,8 @@ public static class BolUploadRoutes
                 }
                 catch (Exception ex)
                 {
+                    Console.WriteLine("[BOL CHANNEL UPLOAD ERROR] " + ex);
+
                     return Results.Json(new
                     {
                         ok = false,
@@ -118,7 +148,21 @@ public static class BolUploadRoutes
             }
 
             return Results.Json(new { ok = false, error = "NoUsableThreadOrChannel" }, statusCode: 404);
-        });
+        }
+
+        r.MapPost("/loads/bol/upload", HandleBolUpload);
+        r.MapPost("/loads/bol/post", HandleBolUpload);
+    }
+
+    private static string FirstNonBlank(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+        }
+
+        return "";
     }
 
     private sealed class LoadThreadMapStore
@@ -137,6 +181,7 @@ public static class BolUploadRoutes
         public LoadThreadEntry? GetByLoadNumber(string loadNumber)
         {
             var all = LoadAll();
+
             return all.FirstOrDefault(x =>
                 string.Equals(x.LoadNumber, loadNumber, StringComparison.OrdinalIgnoreCase));
         }
@@ -149,6 +194,7 @@ public static class BolUploadRoutes
                     return new List<LoadThreadEntry>();
 
                 var raw = File.ReadAllText(_path);
+
                 if (string.IsNullOrWhiteSpace(raw))
                     return new List<LoadThreadEntry>();
 
@@ -164,6 +210,7 @@ public static class BolUploadRoutes
         public void SaveAll(List<LoadThreadEntry> items)
         {
             var dir = Path.GetDirectoryName(_path);
+
             if (!string.IsNullOrWhiteSpace(dir))
                 Directory.CreateDirectory(dir);
 
