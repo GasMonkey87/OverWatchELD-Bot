@@ -712,22 +712,34 @@ Status: Export request received.
     }
 
     private static async Task HandleSetBolChannelAsync(CommandContext ctx, BotServices services)
-    
-    public static string GenerateLinkCode(int len)
+{
+    if (ctx.Guild == null || string.IsNullOrWhiteSpace(ctx.GuildIdStr))
     {
-        const string alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-        len = Math.Clamp(len, 4, 12);
-
-        var bytes = new byte[len];
-        RandomNumberGenerator.Fill(bytes);
-
-        var chars = new char[len];
-        for (int i = 0; i < len; i++)
-            chars[i] = alphabet[bytes[i] % alphabet.Length];
-
-        return new string(chars);
+        await ctx.Message.Channel.SendMessageAsync("❌ This command must be used in a server.");
+        return;
     }
 
+    var channelId = ctx.Message.Channel.Id;
+
+    if (services.GuildSettingsStore == null)
+    {
+        await ctx.Message.Channel.SendMessageAsync("❌ Guild settings store not initialized.");
+        return;
+    }
+
+    try
+    {
+        await services.GuildSettingsStore.SetBolChannelAsync(ctx.GuildIdStr, channelId);
+
+        await ctx.Message.Channel.SendMessageAsync(
+            $"✅ ELD-BOL channel linked.\nBOL messages will now be sent here: <#{channelId}>");
+    }
+    catch (Exception ex)
+    {
+        await ctx.Message.Channel.SendMessageAsync(
+            $"❌ Failed to set BOL channel.\n{ex.Message}");
+    }
+}
     public static ulong? TryParseChannelIdFromMention(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
