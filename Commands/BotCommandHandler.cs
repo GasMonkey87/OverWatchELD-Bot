@@ -197,19 +197,42 @@ public static class BotCommandHandler
         }
     }
 
-    private static bool UserHasStaffRole(CommandContext ctx)
-    {
-        if (ctx.Guild == null) return false;
-        if (ctx.Message.Author.Id == ctx.Guild.OwnerId) return true;
-        if (ctx.Message.Author is not SocketGuildUser gu) return false;
+   private static bool UserHasStaffRole(CommandContext ctx)
+{
+    if (ctx.Guild == null)
+        return false;
 
-        return gu.Roles.Any(r =>
-            r.Name.Equals("Owner", StringComparison.OrdinalIgnoreCase) ||
-            r.Name.Equals("Admin", StringComparison.OrdinalIgnoreCase) ||
-            r.Name.Equals("Administrator", StringComparison.OrdinalIgnoreCase) ||
-            r.Name.Equals("Manager", StringComparison.OrdinalIgnoreCase) ||
-            r.Name.Equals("Dispatcher", StringComparison.OrdinalIgnoreCase));
-    }
+    if (ctx.Message.Author is not SocketGuildUser gu)
+        return false;
+
+    // Discord server owner always allowed
+    if (ctx.Guild.OwnerId == gu.Id)
+        return true;
+
+    // REAL Discord permissions
+    if (gu.GuildPermissions.Administrator)
+        return true;
+
+    if (gu.GuildPermissions.ManageGuild)
+        return true;
+
+    if (gu.GuildPermissions.ManageChannels)
+        return true;
+
+    // Fallback role-name checks
+    return gu.Roles.Any(r =>
+    {
+        var name = (r.Name ?? "").Trim().ToLowerInvariant();
+
+        return
+            name.Contains("owner") ||
+            name.Contains("admin") ||
+            name.Contains("administrator") ||
+            name.Contains("manager") ||
+            name.Contains("management") ||
+            name.Contains("dispatcher");
+    });
+}
 
     private static async Task<bool> RequireStaffAsync(CommandContext ctx)
     {
