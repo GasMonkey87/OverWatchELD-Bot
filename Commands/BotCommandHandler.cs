@@ -32,37 +32,6 @@ public static class BotCommandHandler
         }
         catch { }
 
-        try
-        {
-            var now = DateTime.UtcNow;
-            lock (services.HandledMessageLock)
-            {
-                var expired = services.HandledMessages
-                    .Where(x => (now - x.Value).TotalMinutes > 10)
-                    .Select(x => x.Key)
-                    .ToList();
-
-                foreach (var key in expired)
-                    services.HandledMessages.Remove(key);
-
-                if (services.HandledMessages.ContainsKey(msg.Id))
-                    return;
-
-                services.HandledMessages[msg.Id] = now;
-            }
-        }
-        catch { }
-
-        if (services.ThreadStore != null)
-        {
-            try
-            {
-                var handled = await LinkThreadCommand.TryHandleAsync(msg, client, services.ThreadStore);
-                if (handled) return;
-            }
-            catch { }
-        }
-
         var content = (msg.Content ?? "").Trim();
         if (!content.StartsWith("!")) return;
 
@@ -103,11 +72,13 @@ public static class BotCommandHandler
             await HandleSetDispatchWebhookAsync(ctx, services);
             return;
         }
+
         if (ctx.Cmd == "exportlogs")
         {
             await HandleExportLogsAsync(ctx);
             return;
         }
+
         if (ctx.Cmd == "rosterlink")
         {
             await HandleRosterLinkAsync(ctx, services);
@@ -119,13 +90,13 @@ public static class BotCommandHandler
             await HandleRosterListAsync(ctx, services);
             return;
         }
-       
+
         if (ctx.Cmd == "setbolchannel")
-{
-    await HandleSetBolChannelAsync(ctx, services);
-    return;
-}
-        
+        {
+            await HandleSetBolChannelAsync(ctx, services);
+            return;
+        }
+
         if (ctx.Cmd == "announcement" || ctx.Cmd == "announcements")
         {
             await HandleAnnouncementAsync(ctx, services);
@@ -197,46 +168,40 @@ public static class BotCommandHandler
         }
     }
 
-   private static bool UserHasStaffRole(CommandContext ctx)
-{
-    if (ctx.Guild == null)
-        return false;
-
-    if (ctx.Message.Author is not SocketGuildUser gu)
-        return false;
-
-    // Discord server owner always allowed
-    if (ctx.Guild.OwnerId == gu.Id)
-        return true;
-
-    // REAL Discord permissions
-    if (gu.GuildPermissions.Administrator)
-        return true;
-
-    if (gu.GuildPermissions.ManageGuild)
-        return true;
-
-    if (gu.GuildPermissions.ManageChannels)
-        return true;
-
-    // Fallback role-name checks
-    return gu.Roles.Any(r =>
+    private static bool UserHasStaffRole(CommandContext ctx)
     {
-        var name = (r.Name ?? "").Trim().ToLowerInvariant();
+        if (ctx.Guild == null)
+            return false;
 
-        return
-            name.Contains("owner") ||
-            name.Contains("admin") ||
-            name.Contains("administrator") ||
-            name.Contains("manager") ||
-            name.Contains("management") ||
-            name.Contains("dispatcher");
-    });
-}
+        if (ctx.Guild.OwnerId == ctx.Message.Author.Id)
+            return true;
+
+        var user = ctx.Guild.GetUser(ctx.Message.Author.Id);
+        if (user == null)
+            return false;
+
+        if (user.GuildPermissions.Administrator ||
+            user.GuildPermissions.ManageGuild ||
+            user.GuildPermissions.ManageChannels)
+            return true;
+
+        return user.Roles.Any(r =>
+        {
+            var name = (r.Name ?? "").Trim().ToLowerInvariant();
+
+            return name.Contains("owner") ||
+                   name.Contains("admin") ||
+                   name.Contains("administrator") ||
+                   name.Contains("manager") ||
+                   name.Contains("management") ||
+                   name.Contains("dispatcher");
+        });
+    }
 
     private static async Task<bool> RequireStaffAsync(CommandContext ctx)
     {
-        if (UserHasStaffRole(ctx)) return true;
+        if (UserHasStaffRole(ctx))
+            return true;
 
         await ctx.Message.Channel.SendMessageAsync("⛔ This command is restricted to Owner/Admin/Manager/Dispatcher roles.");
         return false;
@@ -253,7 +218,8 @@ public static class BotCommandHandler
             "`!rosterlink @user | DriverName` - Link a Discord user to roster\n" +
             "`!announcement #channel` - Set announcement channel\n" +
             "`!setannouncementwebhook <url>` - Set announcement webhook\n" +
-            "`!setdispatchwebhook <url>` - Set dispatch webhook");
+            "`!setdispatchwebhook <url>` - Set dispatch webhook\n" +
+            "`!setbolchannel` - Set this channel as the BOL upload channel");
     }
 
     private static async Task HandleLinkAsync(CommandContext ctx, BotServices services)
@@ -266,7 +232,7 @@ public static class BotCommandHandler
 
         if (ctx.Message.Channel is not SocketGuildChannel gch)
         {
-            await ctx.Message.Channel.SendMessageAsync("❌ Run `!link` inside your VTC server (not DM), then paste the code into the ELD.");
+            await ctx.Message.Channel.SendMessageAsync("❌ Run `!link` inside your VTC server, not DM.");
             return;
         }
 
@@ -274,6 +240,7 @@ public static class BotCommandHandler
         {
             var guild = gch.Guild;
             var code = (ctx.Arg0 ?? "").Trim();
+
             if (string.IsNullOrWhiteSpace(code))
                 code = GenerateLinkCode(6);
 
@@ -330,65 +297,65 @@ public static class BotCommandHandler
             await ctx.Message.Channel.SendMessageAsync("❌ Failed to create link code.");
         }
     }
+
     private static async Task HandleExportLogsAsync(CommandContext ctx)
-{
-    try
     {
-        var guildChannel = ctx.Message.Channel as SocketGuildChannel;
-        if (guildChannel == null)
+        try
         {
-            await ctx.Message.Channel.SendMessageAsync("❌ This command can only be used in a server.");
-            return;
-        }
-
-        var guild = guildChannel.Guild;
-        var mentionedUser = ctx.Message.MentionedUsers.FirstOrDefault();
-
-        var targetUser = mentionedUser ?? ctx.Message.Author;
-        var date = DateTime.UtcNow.Date;
-
-        var parts = ctx.Message.Content.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var part in parts)
-        {
-            if (DateTime.TryParse(part, out var parsed))
+            var guildChannel = ctx.Message.Channel as SocketGuildChannel;
+            if (guildChannel == null)
             {
-                date = parsed.Date;
-                break;
+                await ctx.Message.Channel.SendMessageAsync("❌ This command can only be used in a server.");
+                return;
             }
-        }
 
-        var exportChannel = guild.TextChannels
-            .FirstOrDefault(c => c.Name.Equals("logs-export", StringComparison.OrdinalIgnoreCase));
+            var guild = guildChannel.Guild;
+            var mentionedUser = ctx.Message.MentionedUsers.FirstOrDefault();
+            var targetUser = mentionedUser ?? ctx.Message.Author;
+            var date = DateTime.UtcNow.Date;
 
-        if (exportChannel == null)
-        {
-            await guild.CreateTextChannelAsync("logs-export");
-            await ctx.Message.Channel.SendMessageAsync("✅ Created #logs-export. Run `!exportlogs` again to create the driver thread.");
-            return;
-        }
+            var parts = ctx.Message.Content.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            foreach (var part in parts)
+            {
+                if (DateTime.TryParse(part, out var parsed))
+                {
+                    date = parsed.Date;
+                    break;
+                }
+            }
 
-        var threadName = $"logs-{targetUser.Username}-{date:yyyy-MM-dd}"
-            .ToLowerInvariant()
-            .Replace(" ", "-");
+            var exportChannel = guild.TextChannels
+                .FirstOrDefault(c => c.Name.Equals("logs-export", StringComparison.OrdinalIgnoreCase));
 
-        var existingThread = exportChannel.Threads
-            .FirstOrDefault(t => t.Name.Equals(threadName, StringComparison.OrdinalIgnoreCase));
+            if (exportChannel == null)
+            {
+                await guild.CreateTextChannelAsync("logs-export");
+                await ctx.Message.Channel.SendMessageAsync("✅ Created #logs-export. Run `!exportlogs` again.");
+                return;
+            }
 
-        IThreadChannel thread;
+            var threadName = $"logs-{targetUser.Username}-{date:yyyy-MM-dd}"
+                .ToLowerInvariant()
+                .Replace(" ", "-");
 
-        if (existingThread != null)
-        {
-            thread = existingThread;
-        }
-        else
-        {
-            thread = await exportChannel.CreateThreadAsync(
-                name: threadName,
-                type: ThreadType.PublicThread,
-                autoArchiveDuration: ThreadArchiveDuration.OneWeek);
-        }
+            var existingThread = exportChannel.Threads
+                .FirstOrDefault(t => t.Name.Equals(threadName, StringComparison.OrdinalIgnoreCase));
 
-        var exportText =
+            IThreadChannel thread;
+
+            if (existingThread != null)
+            {
+                thread = existingThread;
+            }
+            else
+            {
+                thread = await exportChannel.CreateThreadAsync(
+                    name: threadName,
+                    type: ThreadType.PublicThread,
+                    autoArchiveDuration: ThreadArchiveDuration.OneWeek);
+            }
+
+            var exportText =
 $"""
 📋 **Daily Log Export**
 Driver: {targetUser.Mention}
@@ -404,14 +371,15 @@ Status: Export request received.
 - locations
 """;
 
-        await thread.SendMessageAsync(exportText);
-        await ctx.Message.Channel.SendMessageAsync($"✅ Logs exported to thread: {thread.Mention}");
+            await thread.SendMessageAsync(exportText);
+            await ctx.Message.Channel.SendMessageAsync($"✅ Logs exported to thread: {thread.Mention}");
+        }
+        catch (Exception ex)
+        {
+            await ctx.Message.Channel.SendMessageAsync($"❌ Export failed: `{ex.Message}`");
+        }
     }
-    catch (Exception ex)
-    {
-        await ctx.Message.Channel.SendMessageAsync($"❌ Export failed: `{ex.Message}`");
-    }
-}
+
     private static async Task HandleUnlinkAsync(CommandContext ctx, BotServices services)
     {
         if (ctx.Message.Channel is not SocketGuildChannel)
@@ -687,7 +655,7 @@ Status: Export request received.
         }
         catch (Exception ex)
         {
-            await ctx.Message.Channel.SendMessageAsync($"❌ Webhook create failed (need Manage Webhooks). {ex.Message}");
+            await ctx.Message.Channel.SendMessageAsync($"❌ Webhook create failed. Bot needs Manage Webhooks. {ex.Message}");
         }
     }
 
@@ -712,40 +680,61 @@ Status: Export request received.
     }
 
     private static async Task HandleSetBolChannelAsync(CommandContext ctx, BotServices services)
-{
-    if (ctx.Guild == null || string.IsNullOrWhiteSpace(ctx.GuildIdStr))
     {
-        await ctx.Message.Channel.SendMessageAsync("❌ This command must be used in a server.");
-        return;
+        if (ctx.Guild == null || string.IsNullOrWhiteSpace(ctx.GuildIdStr))
+        {
+            await ctx.Message.Channel.SendMessageAsync("❌ This command must be used in a server.");
+            return;
+        }
+
+        if (services.GuildSettingsStore == null)
+        {
+            await ctx.Message.Channel.SendMessageAsync("❌ Guild settings store not initialized.");
+            return;
+        }
+
+        try
+        {
+            var channelId = ctx.Message.Channel.Id;
+
+            await services.GuildSettingsStore.SetBolChannelAsync(ctx.GuildIdStr, channelId);
+
+            await ctx.Message.Channel.SendMessageAsync(
+                $"✅ ELD-BOL channel linked.\nBOL messages will now be sent here: <#{channelId}>");
+        }
+        catch (Exception ex)
+        {
+            await ctx.Message.Channel.SendMessageAsync(
+                $"❌ Failed to set BOL channel.\n{ex.Message}");
+        }
     }
 
-    var channelId = ctx.Message.Channel.Id;
-
-    if (services.GuildSettingsStore == null)
+    public static string GenerateLinkCode(int len)
     {
-        await ctx.Message.Channel.SendMessageAsync("❌ Guild settings store not initialized.");
-        return;
+        const string alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+        len = Math.Clamp(len, 4, 12);
+
+        var bytes = new byte[len];
+        RandomNumberGenerator.Fill(bytes);
+
+        var chars = new char[len];
+
+        for (int i = 0; i < len; i++)
+            chars[i] = alphabet[bytes[i] % alphabet.Length];
+
+        return new string(chars);
     }
 
-    try
-    {
-        await services.GuildSettingsStore.SetBolChannelAsync(ctx.GuildIdStr, channelId);
-
-        await ctx.Message.Channel.SendMessageAsync(
-            $"✅ ELD-BOL channel linked.\nBOL messages will now be sent here: <#{channelId}>");
-    }
-    catch (Exception ex)
-    {
-        await ctx.Message.Channel.SendMessageAsync(
-            $"❌ Failed to set BOL channel.\n{ex.Message}");
-    }
-}
     public static ulong? TryParseChannelIdFromMention(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return null;
+
         raw = raw.Trim();
+
         if (raw.StartsWith("<#") && raw.EndsWith(">"))
             raw = raw.Substring(2, raw.Length - 3);
+
         return ulong.TryParse(raw, out var id) ? id : null;
     }
 
@@ -754,28 +743,15 @@ Status: Export request received.
         try
         {
             var token = (hook.Token ?? "").Trim();
-            if (string.IsNullOrWhiteSpace(token)) return null;
+
+            if (string.IsNullOrWhiteSpace(token))
+                return null;
+
             return $"https://discord.com/api/webhooks/{hook.Id}/{token}";
         }
         catch
         {
             return null;
         }
-    public static string GenerateLinkCode(int len)
-{
-    const string alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-
-    len = Math.Clamp(len, 4, 12);
-
-    var bytes = new byte[len];
-    RandomNumberGenerator.Fill(bytes);
-
-    var chars = new char[len];
-
-    for (int i = 0; i < len; i++)
-        chars[i] = alphabet[bytes[i] % alphabet.Length];
-
-    return new string(chars);
-}
     }
 }
