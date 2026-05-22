@@ -347,6 +347,75 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
             }, jsonWrite);
         });
 
+        app.MapPost("/api/maintenance/request", async (HttpContext ctx) =>
+{
+    try
+    {
+        var body = await ctx.Request.ReadFromJsonAsync<JsonElement>();
+
+        string Get(string name)
+        {
+            if (body.TryGetProperty(name, out var v))
+                return v.ToString() ?? "";
+            return "";
+        }
+
+        bool GetBool(string name)
+        {
+            if (body.TryGetProperty(name, out var v))
+            {
+                if (v.ValueKind == JsonValueKind.True) return true;
+                if (v.ValueKind == JsonValueKind.False) return false;
+            }
+            return false;
+        }
+
+        var guildId = Get("guildId");
+        var requestNumber = Get("requestNumber");
+
+        var embed = new
+        {
+            embeds = new[]
+            {
+                new
+                {
+                    title = $"🔧 Maintenance Request #{requestNumber}",
+                    color = 15105570,
+                    fields = new object[]
+                    {
+                        new { name = "Driver", value = Get("driverName"), inline = true },
+                        new { name = "Truck", value = Get("truck"), inline = true },
+                        new { name = "Unit #", value = Get("unitNumber"), inline = true },
+                        new { name = "Plate", value = Get("plateNumber"), inline = true },
+                        new { name = "Location", value = Get("location"), inline = false },
+                        new { name = "Issue", value = Get("currentIssue"), inline = false },
+                        new { name = "Severity", value = Get("severity"), inline = true },
+                        new { name = "Condition", value = $"{Get("conditionPercent")}% ", inline = true },
+                        new { name = "DOT Inspection", value = GetBool("dotInspectionRequested") ? "YES" : "No", inline = true },
+                        new { name = "Damage Repair", value = GetBool("damageRepairRequested") ? "YES" : "No", inline = true },
+                        new { name = "Repair Malfunctions", value = GetBool("malfunctionRepairRequested") ? "YES" : "No", inline = true },
+                        new { name = "Other Maintenance", value = GetBool("otherMaintenanceRequested") ? "YES" : "No", inline = true },
+                        new { name = "Notes", value = Get("notes"), inline = false }
+                    }
+                }
+            }
+        };
+
+        // reuse your existing maintenance/BOL/dispatch webhook logic here
+        // wherever your bot already posts embeds to Discord
+
+        return Results.Ok(new { ok = true });
+    }
+    catch (Exception ex)
+    {
+        return Results.BadRequest(new
+        {
+            ok = false,
+            error = ex.Message
+        });
+    }
+});
+        
         r.MapGet("/vtc/roster", async (HttpRequest req) =>
         {
             var guild = DiscordThreadService.ResolveGuild(services.Client, req.Query["guildId"].ToString());
