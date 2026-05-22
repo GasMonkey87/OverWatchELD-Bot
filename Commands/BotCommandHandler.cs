@@ -709,6 +709,95 @@ Status: Export request received.
         }
     }
 
+    private static async Task HandleMaintenanceRequestAsync(HttpListenerContext ctx, BotServices services)
+{
+    try
+    {
+        using var reader = new StreamReader(ctx.Request.InputStream);
+        var json = await reader.ReadToEndAsync();
+
+        var body = JsonSerializer.Deserialize<JsonElement>(json);
+
+        string Get(string name)
+        {
+            if (body.TryGetProperty(name, out var v))
+                return v.ToString() ?? "";
+
+            return "";
+        }
+
+        bool GetBool(string name)
+        {
+            if (body.TryGetProperty(name, out var v))
+            {
+                if (v.ValueKind == JsonValueKind.True) return true;
+                if (v.ValueKind == JsonValueKind.False) return false;
+            }
+
+            return false;
+        }
+
+        var guildId = Get("guildId");
+
+        if (string.IsNullOrWhiteSpace(guildId))
+        {
+            ctx.Response.StatusCode = 400;
+            return;
+        }
+
+        var requestNumber = Get("requestNumber");
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"🔧 Maintenance Request #{requestNumber}")
+            .WithColor(new Color(255, 140, 0))
+            .AddField("Driver", Get("driverName"), true)
+            .AddField("Truck", Get("truck"), true)
+            .AddField("Unit #", Get("unitNumber"), true)
+            .AddField("Plate", Get("plateNumber"), true)
+            .AddField("Location", Get("location"), false)
+            .AddField("Issue", Get("currentIssue"), false)
+            .AddField("Severity", Get("severity"), true)
+            .AddField("Condition", $"{Get("conditionPercent")}% ", true)
+            .AddField("DOT Inspection", GetBool("dotInspectionRequested") ? "YES" : "No", true)
+            .AddField("Damage Repair", GetBool("damageRepairRequested") ? "YES" : "No", true)
+            .AddField("Repair Malfunctions", GetBool("malfunctionRepairRequested") ? "YES" : "No", true)
+            .AddField("Other Maintenance", GetBool("otherMaintenanceRequested") ? "YES" : "No", true)
+            .AddField("Notes", Get("notes"), false)
+            .WithCurrentTimestamp();
+
+        if (!ulong.TryParse(guildId, out var gid))
+        {
+            ctx.Response.StatusCode = 400;
+            return;
+        }
+
+        var guild = services.Client.GetGuild(gid);
+
+        if (guild == null)
+        {
+            ctx.Response.StatusCode = 404;
+            return;
+        }
+
+        var maintenanceChannel = guild.TextChannels
+            .FirstOrDefault(x =>
+                x.Name.Contains("maintenance", StringComparison.OrdinalIgnoreCase));
+
+        if (maintenanceChannel == null)
+        {
+            maintenanceChannel = await guild.CreateTextChannelAsync("maintenance-requests");
+        }
+
+        await maintenanceChannel.SendMessageAsync(embed: embed.Build());
+
+        ctx.Response.StatusCode = 200;
+    }
+    catch
+    {
+        ctx.Response.StatusCode = 500;
+    }
+}
+    
     public static string GenerateLinkCode(int len)
     {
         const string alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
