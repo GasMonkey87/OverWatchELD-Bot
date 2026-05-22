@@ -12,6 +12,8 @@ public sealed class GuildSettings
     public string AnnouncementsChannelId { get; set; } = "";
     public string BolChannelId { get; set; } = "";
     public string LoadboardChannelId { get; set; } = "";
+    public string MaintenanceChannelId { get; set; } = "";
+    public string FleetChannelId { get; set; } = "";
     public bool UseLoadThreads { get; set; } = true;
     public bool AutoArchiveCompletedLoads { get; set; } = true;
 }
@@ -58,14 +60,28 @@ public sealed class GuildSettingsStore
             announcements_channel_id TEXT DEFAULT '',
             bol_channel_id TEXT DEFAULT '',
             loadboard_channel_id TEXT DEFAULT '',
+            maintenance_channel_id TEXT DEFAULT '',
+            fleet_channel_id TEXT DEFAULT '',
             use_load_threads BOOLEAN DEFAULT TRUE,
             auto_archive_completed_loads BOOLEAN DEFAULT TRUE,
             updated_utc TIMESTAMPTZ DEFAULT NOW()
         );
         """;
 
-        await using var cmd = new NpgsqlCommand(sql, conn);
-        await cmd.ExecuteNonQueryAsync();
+        await using (var cmd = new NpgsqlCommand(sql, conn))
+        {
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var alterSql = """
+        ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS maintenance_channel_id TEXT DEFAULT '';
+        ALTER TABLE guild_settings ADD COLUMN IF NOT EXISTS fleet_channel_id TEXT DEFAULT '';
+        """;
+
+        await using (var alter = new NpgsqlCommand(alterSql, conn))
+        {
+            await alter.ExecuteNonQueryAsync();
+        }
     }
 
     public async Task<GuildSettings> GetAsync(string guildId)
@@ -83,7 +99,7 @@ public sealed class GuildSettingsStore
         var sql = """
         SELECT guild_id, vtc_name, dispatch_channel_id, logs_channel_id,
                inspections_channel_id, announcements_channel_id, bol_channel_id,
-               loadboard_channel_id, use_load_threads, auto_archive_completed_loads
+               loadboard_channel_id, maintenance_channel_id, fleet_channel_id, use_load_threads, auto_archive_completed_loads
         FROM guild_settings
         WHERE guild_id = @guild_id;
         """;
@@ -106,8 +122,10 @@ public sealed class GuildSettingsStore
             AnnouncementsChannelId = r.GetString(5),
             BolChannelId = r.GetString(6),
             LoadboardChannelId = r.GetString(7),
-            UseLoadThreads = r.GetBoolean(8),
-            AutoArchiveCompletedLoads = r.GetBoolean(9)
+            MaintenanceChannelId = r.GetString(8),
+            FleetChannelId = r.GetString(9),
+            UseLoadThreads = r.GetBoolean(10),
+            AutoArchiveCompletedLoads = r.GetBoolean(11)
         };
     }
 
@@ -125,13 +143,13 @@ public sealed class GuildSettingsStore
         INSERT INTO guild_settings (
             guild_id, vtc_name, dispatch_channel_id, logs_channel_id,
             inspections_channel_id, announcements_channel_id, bol_channel_id,
-            loadboard_channel_id, use_load_threads, auto_archive_completed_loads,
+            loadboard_channel_id, maintenance_channel_id, fleet_channel_id, use_load_threads, auto_archive_completed_loads,
             updated_utc
         )
         VALUES (
             @guild_id, @vtc_name, @dispatch_channel_id, @logs_channel_id,
             @inspections_channel_id, @announcements_channel_id, @bol_channel_id,
-            @loadboard_channel_id, @use_load_threads, @auto_archive_completed_loads,
+            @loadboard_channel_id, @maintenance_channel_id, @fleet_channel_id, @use_load_threads, @auto_archive_completed_loads,
             NOW()
         )
         ON CONFLICT (guild_id)
@@ -143,6 +161,8 @@ public sealed class GuildSettingsStore
             announcements_channel_id = EXCLUDED.announcements_channel_id,
             bol_channel_id = EXCLUDED.bol_channel_id,
             loadboard_channel_id = EXCLUDED.loadboard_channel_id,
+            maintenance_channel_id = EXCLUDED.maintenance_channel_id,
+            fleet_channel_id = EXCLUDED.fleet_channel_id,
             use_load_threads = EXCLUDED.use_load_threads,
             auto_archive_completed_loads = EXCLUDED.auto_archive_completed_loads,
             updated_utc = NOW();
@@ -157,6 +177,8 @@ public sealed class GuildSettingsStore
         cmd.Parameters.AddWithValue("announcements_channel_id", s.AnnouncementsChannelId ?? "");
         cmd.Parameters.AddWithValue("bol_channel_id", s.BolChannelId ?? "");
         cmd.Parameters.AddWithValue("loadboard_channel_id", s.LoadboardChannelId ?? "");
+        cmd.Parameters.AddWithValue("maintenance_channel_id", s.MaintenanceChannelId ?? "");
+        cmd.Parameters.AddWithValue("fleet_channel_id", s.FleetChannelId ?? "");
         cmd.Parameters.AddWithValue("use_load_threads", s.UseLoadThreads);
         cmd.Parameters.AddWithValue("auto_archive_completed_loads", s.AutoArchiveCompletedLoads);
 
@@ -171,13 +193,55 @@ public sealed class GuildSettingsStore
         await UpsertAsync(s);
     }
 
-    public async Task SetBolChannelAsync(string guildId, ulong channelId)
-{
-    await PatchAsync(guildId, s =>
+    public async Task SetChannelAsync(string guildId, string channelType, ulong channelId)
     {
-        s.BolChannelId = channelId.ToString();
-    });
-}
+        channelType = (channelType ?? "").Trim().ToLowerInvariant();
+
+        await PatchAsync(guildId, s =>
+        {
+            var value = channelId.ToString();
+
+            switch (channelType)
+            {
+                case "dispatch":
+                    s.DispatchChannelId = value;
+                    break;
+                case "logs":
+                case "log":
+                    s.LogsChannelId = value;
+                    break;
+                case "inspection":
+                case "inspections":
+                    s.InspectionsChannelId = value;
+                    break;
+                case "announcement":
+                case "announcements":
+                    s.AnnouncementsChannelId = value;
+                    break;
+                case "bol":
+                    s.BolChannelId = value;
+                    break;
+                case "loadboard":
+                case "loads":
+                    s.LoadboardChannelId = value;
+                    break;
+                case "maintenance":
+                    s.MaintenanceChannelId = value;
+                    break;
+                case "fleet":
+                    s.FleetChannelId = value;
+                    break;
+            }
+        });
+    }
+
+    public Task SetBolChannelAsync(string guildId, ulong channelId) => SetChannelAsync(guildId, "bol", channelId);
+    public Task SetDispatchChannelAsync(string guildId, ulong channelId) => SetChannelAsync(guildId, "dispatch", channelId);
+    public Task SetLogsChannelAsync(string guildId, ulong channelId) => SetChannelAsync(guildId, "logs", channelId);
+    public Task SetInspectionsChannelAsync(string guildId, ulong channelId) => SetChannelAsync(guildId, "inspections", channelId);
+    public Task SetMaintenanceChannelAsync(string guildId, ulong channelId) => SetChannelAsync(guildId, "maintenance", channelId);
+    public Task SetFleetChannelAsync(string guildId, ulong channelId) => SetChannelAsync(guildId, "fleet", channelId);
+    public Task SetLoadboardChannelAsync(string guildId, ulong channelId) => SetChannelAsync(guildId, "loadboard", channelId);
     
     private static string ConvertRailwayDatabaseUrl(string url)
     {

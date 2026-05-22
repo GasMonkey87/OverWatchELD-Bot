@@ -347,74 +347,138 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
             }, jsonWrite);
         });
 
-        app.MapPost("/api/maintenance/request", async (HttpContext ctx) =>
-{
-    try
-    {
-        var body = await ctx.Request.ReadFromJsonAsync<JsonElement>();
-
-        string Get(string name)
+        r.MapPost("/maintenance/request", async (HttpContext ctx) =>
         {
-            if (body.TryGetProperty(name, out var v))
-                return v.ToString() ?? "";
-            return "";
-        }
-
-        bool GetBool(string name)
-        {
-            if (body.TryGetProperty(name, out var v))
+            try
             {
-                if (v.ValueKind == JsonValueKind.True) return true;
-                if (v.ValueKind == JsonValueKind.False) return false;
-            }
-            return false;
-        }
+                if (services.Client == null || !services.DiscordReady)
+                    return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
 
-        var guildId = Get("guildId");
-        var requestNumber = Get("requestNumber");
+                var body = await ctx.Request.ReadFromJsonAsync<JsonElement>(jsonRead);
 
-        var embed = new
-        {
-            embeds = new[]
-            {
-                new
+                string Get(params string[] names)
                 {
-                    title = $"🔧 Maintenance Request #{requestNumber}",
-                    color = 15105570,
-                    fields = new object[]
+                    foreach (var name in names)
                     {
-                        new { name = "Driver", value = Get("driverName"), inline = true },
-                        new { name = "Truck", value = Get("truck"), inline = true },
-                        new { name = "Unit #", value = Get("unitNumber"), inline = true },
-                        new { name = "Plate", value = Get("plateNumber"), inline = true },
-                        new { name = "Location", value = Get("location"), inline = false },
-                        new { name = "Issue", value = Get("currentIssue"), inline = false },
-                        new { name = "Severity", value = Get("severity"), inline = true },
-                        new { name = "Condition", value = $"{Get("conditionPercent")}% ", inline = true },
-                        new { name = "DOT Inspection", value = GetBool("dotInspectionRequested") ? "YES" : "No", inline = true },
-                        new { name = "Damage Repair", value = GetBool("damageRepairRequested") ? "YES" : "No", inline = true },
-                        new { name = "Repair Malfunctions", value = GetBool("malfunctionRepairRequested") ? "YES" : "No", inline = true },
-                        new { name = "Other Maintenance", value = GetBool("otherMaintenanceRequested") ? "YES" : "No", inline = true },
-                        new { name = "Notes", value = Get("notes"), inline = false }
+                        if (body.ValueKind == JsonValueKind.Object && body.TryGetProperty(name, out var v))
+                        {
+                            var text = v.ToString() ?? "";
+                            if (!string.IsNullOrWhiteSpace(text))
+                                return text.Trim();
+                        }
                     }
+
+                    return "";
                 }
+
+                bool GetBool(params string[] names)
+                {
+                    foreach (var name in names)
+                    {
+                        if (body.ValueKind == JsonValueKind.Object && body.TryGetProperty(name, out var v))
+                        {
+                            if (v.ValueKind == JsonValueKind.True) return true;
+                            if (v.ValueKind == JsonValueKind.False) return false;
+                            if (bool.TryParse(v.ToString(), out var b)) return b;
+                        }
+                    }
+
+                    return false;
+                }
+
+                var guildId = FirstNonEmpty(
+                    Get("guildId", "GuildId"),
+                    ctx.Request.Query["guildId"].ToString());
+
+                if (string.IsNullOrWhiteSpace(guildId))
+                    return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
+
+                if (!ulong.TryParse(guildId.Trim(), out var gid) || gid == 0)
+                    return Results.Json(new { ok = false, error = "BadGuildId", guildId }, statusCode: 400);
+
+                var guild = services.Client.GetGuild(gid);
+                if (guild == null)
+                    return Results.Json(new { ok = false, error = "GuildNotFound", guildId }, statusCode: 404);
+
+                SocketTextChannel? channel = null;
+                var settings = services.GuildSettingsStore != null
+                    ? await services.GuildSettingsStore.GetAsync(guildId)
+                    : null;
+
+                if (settings != null && ulong.TryParse((settings.MaintenanceChannelId ?? "").Trim(), out var mid) && mid != 0)
+                    channel = guild.GetTextChannel(mid);
+
+                channel ??= guild.TextChannels.FirstOrDefault(c =>
+                {
+                    var n = NormalizeNotifyChannel(c.Name);
+                    return n == "eld-maintenance" ||
+                           n == "maintenance" ||
+                           n == "maintenance-requests" ||
+                           n.Contains("maintenance");
+                });
+
+                if (channel == null)
+                    channel = await guild.CreateTextChannelAsync("maintenance-requests");
+
+                var requestNumber = FirstNonEmpty(Get("requestNumber", "RequestNumber"), "N/A");
+                var driver = FirstNonEmpty(Get("driverName", "DriverName"), Get("driverDiscordId", "DriverDiscordId"), "Unknown Driver");
+                var truck = FirstNonEmpty(Get("truck", "truckName", "Truck", "TruckName"), "Unknown Truck");
+                var unit = FirstNonEmpty(Get("unitNumber", "UnitNumber"), "N/A");
+                var plate = FirstNonEmpty(Get("plateNumber", "PlateNumber"), "N/A");
+                var location = FirstNonEmpty(Get("location", "Location"), "Unknown");
+                var issue = FirstNonEmpty(Get("currentIssue", "CurrentIssue"), "Maintenance requested");
+                var severity = FirstNonEmpty(Get("severity", "currentIssueSeverity", "CurrentIssueSeverity"), "Normal");
+                var condition = FirstNonEmpty(Get("conditionPercent", "ConditionPercent"), "N/A");
+                var odometer = FirstNonEmpty(Get("odometerMiles", "OdometerMiles"), "N/A");
+                var fuel = FirstNonEmpty(Get("fuelPercent", "FuelPercent"), "N/A");
+                var notes = FirstNonEmpty(Get("notes", "Notes"), "No notes provided.");
+
+                var embed = new EmbedBuilder()
+                    .WithTitle($"🔧 Maintenance Request #{requestNumber}")
+                    .WithColor(Color.Orange)
+                    .AddField("Request #", requestNumber, true)
+                    .AddField("Driver", driver, true)
+                    .AddField("Truck", truck, true)
+                    .AddField("Unit #", unit, true)
+                    .AddField("Plate", plate, true)
+                    .AddField("Location", location, false)
+                    .AddField("Issue", issue, false)
+                    .AddField("Severity", severity, true)
+                    .AddField("Condition", condition == "N/A" ? "N/A" : $"{condition}%", true)
+                    .AddField("Odometer", odometer, true)
+                    .AddField("Fuel", fuel == "N/A" ? "N/A" : $"{fuel}%", true)
+                    .AddField("DOT Inspection", GetBool("dotInspectionRequested", "DotInspectionRequested") ? "YES" : "No", true)
+                    .AddField("Damage Repair", GetBool("damageRepairRequested", "DamageRepairRequested") ? "YES" : "No", true)
+                    .AddField("Repair Malfunctions", GetBool("malfunctionRepairRequested", "MalfunctionRepairRequested") ? "YES" : "No", true)
+                    .AddField("Other Maintenance", GetBool("otherMaintenanceRequested", "OtherMaintenanceRequested") ? "YES" : "No", true)
+                    .AddField("Out Of Service", GetBool("outOfService", "OutOfService") ? "YES" : "No", true)
+                    .AddField("Notes", notes.Length > 1024 ? notes[..1020] + "..." : notes, false)
+                    .WithFooter("OverWatch ELD Maintenance")
+                    .WithCurrentTimestamp()
+                    .Build();
+
+                await channel.SendMessageAsync(embed: embed);
+
+                return Results.Json(new
+                {
+                    ok = true,
+                    guildId,
+                    channelId = channel.Id.ToString(),
+                    channelName = channel.Name,
+                    requestNumber
+                }, jsonWrite);
             }
-        };
-
-        // reuse your existing maintenance/BOL/dispatch webhook logic here
-        // wherever your bot already posts embeds to Discord
-
-        return Results.Ok(new { ok = true });
-    }
-    catch (Exception ex)
-    {
-        return Results.BadRequest(new
-        {
-            ok = false,
-            error = ex.Message
+            catch (Exception ex)
+            {
+                return Results.Json(new
+                {
+                    ok = false,
+                    error = "MaintenanceRequestPostFailed",
+                    message = ex.Message,
+                    type = ex.GetType().FullName
+                }, statusCode: 500);
+            }
         });
-    }
-});
         
         r.MapGet("/vtc/roster", async (HttpRequest req) =>
         {
