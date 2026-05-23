@@ -108,7 +108,11 @@ public static class BotCommandHandler
             await HandleSetAnnouncementWebhookAsync(ctx, services);
             return;
         }
-
+        if (ctx.Cmd == "setlogschannel")
+        {
+            await HandleSetLogsChannelAsync(ctx, services);
+            return;
+        }
         await msg.Channel.SendMessageAsync("Unknown command. Use `!help`.");
     }
 
@@ -508,7 +512,30 @@ Status: Export request received.
         services.DispatchStore.SetDispatchWebhook(ctx.GuildIdStr, ctx.Arg.Trim());
         await ctx.Message.Channel.SendMessageAsync("✅ Dispatch webhook saved.");
     }
+    private static async Task HandleSetLogsChannelAsync(CommandContext ctx, BotServices services)
+{
+    if (!await RequireStaffAsync(ctx))
+        return;
 
+    if (ctx.Guild == null)
+    {
+        await ctx.Message.Channel.SendMessageAsync("❌ Must be used inside a server.");
+        return;
+    }
+
+    if (services.GuildSettingsStore == null)
+    {
+        await ctx.Message.Channel.SendMessageAsync("❌ Guild settings store not ready.");
+        return;
+    }
+
+    await services.GuildSettingsStore.SetLogsChannelAsync(
+        ctx.Guild.Id.ToString(),
+        ctx.Message.Channel.Id);
+
+    await ctx.Message.Channel.SendMessageAsync(
+        $"✅ Logs export channel set to <#{ctx.Message.Channel.Id}>");
+}
     private static async Task HandleRosterLinkAsync(CommandContext ctx, BotServices services)
     {
         if (!await RequireStaffAsync(ctx)) return;
