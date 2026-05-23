@@ -407,7 +407,28 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
 
                 if (settings != null && ulong.TryParse((settings.MaintenanceChannelId ?? "").Trim(), out var mid) && mid != 0)
                     channel = guild.GetTextChannel(mid);
+                if (channel == null && settings != null)
+{
+    var altIds = new[]
+    {
+        ReadObjString(settings, "MaintenanceChannel"),
+        ReadObjString(settings, "MaintenanceChannelID"),
+        ReadObjString(settings, "MaintenanceChannelId"),
+        ReadObjString(settings, "MaintChannelId"),
+        ReadObjString(settings, "FleetMaintenanceChannelId")
+    };
 
+    foreach (var id in altIds)
+    {
+        if (ulong.TryParse((id ?? "").Trim(), out var alt) && alt != 0)
+        {
+            channel = guild.GetTextChannel(alt);
+
+            if (channel != null)
+                break;
+        }
+    }
+}
                 channel ??= guild.TextChannels.FirstOrDefault(c =>
                 {
                     var n = NormalizeNotifyChannel(c.Name);
