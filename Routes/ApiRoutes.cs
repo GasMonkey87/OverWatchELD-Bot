@@ -438,10 +438,11 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
                            n.Contains("maintenance");
                 });
 
-                if (channel == null)
-                    var createdChannel = await guild.CreateTextChannelAsync("maintenance-requests");
-channel = guild.GetTextChannel(createdChannel.Id);
-
+              if (channel == null)
+{
+    var createdChannel = await guild.CreateTextChannelAsync("maintenance-requests");
+    channel = guild.GetTextChannel(createdChannel.Id);
+}
                 var requestNumber = FirstNonEmpty(Get("requestNumber", "RequestNumber"), "N/A");
                 var driver = FirstNonEmpty(Get("driverName", "DriverName"), Get("driverDiscordId", "DriverDiscordId"), "Unknown Driver");
                 var truck = FirstNonEmpty(Get("truck", "truckName", "Truck", "TruckName"), "Unknown Truck");
