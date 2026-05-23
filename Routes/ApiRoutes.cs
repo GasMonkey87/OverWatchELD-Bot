@@ -674,7 +674,93 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
         }, statusCode: 500);
     }
 });
-        
+        r.MapPost("/inspections/export", async (HttpContext ctx) =>
+{
+    try
+    {
+        if (services.Client == null || !services.DiscordReady)
+            return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+
+        var body = await ctx.Request.ReadFromJsonAsync<JsonElement>(jsonRead);
+
+        string Get(params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (body.ValueKind == JsonValueKind.Object && body.TryGetProperty(name, out var v))
+                {
+                    var text = v.ToString() ?? "";
+                    if (!string.IsNullOrWhiteSpace(text))
+                        return text.Trim();
+                }
+            }
+
+            return "";
+        }
+
+        var guildId = FirstNonEmpty(Get("guildId", "GuildId"), ctx.Request.Query["guildId"].ToString());
+
+        if (!ulong.TryParse(guildId, out var gid))
+            return Results.Json(new { ok = false, error = "BadGuildId" }, statusCode: 400);
+
+        var guild = services.Client.GetGuild(gid);
+
+        if (guild == null)
+            return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+        SocketTextChannel? channel = null;
+
+        var settings = services.GuildSettingsStore != null
+            ? await services.GuildSettingsStore.GetAsync(guildId)
+            : null;
+
+        if (settings != null &&
+            ulong.TryParse((settings.InspectionsChannelId ?? "").Trim(), out var iid) &&
+            iid != 0)
+        {
+            channel = guild.GetTextChannel(iid);
+        }
+
+        channel ??= guild.TextChannels.FirstOrDefault(c =>
+        {
+            var n = NormalizeNotifyChannel(c.Name);
+            return n.Contains("inspection") || n.Contains("dvir");
+        });
+
+        if (channel == null)
+        {
+            var created = await guild.CreateTextChannelAsync("eld-inspections");
+            channel = guild.GetTextChannel(created.Id);
+        }
+
+        var driver = FirstNonEmpty(Get("driverName", "DriverName"), "Unknown Driver");
+        var count = FirstNonEmpty(Get("count", "Count"), "0");
+        var summary = FirstNonEmpty(Get("summary", "Summary"), "Inspections exported.");
+
+        var embed = new EmbedBuilder()
+            .WithTitle("🧾 Inspection Export")
+            .WithColor(Color.Teal)
+            .AddField("Driver", driver, true)
+            .AddField("Inspections", count, true)
+            .AddField("Summary", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
+            .WithFooter("OverWatch ELD Inspections")
+            .WithCurrentTimestamp()
+            .Build();
+
+        await channel.SendMessageAsync(embed: embed);
+
+        return Results.Json(new
+        {
+            ok = true,
+            channelId = channel.Id.ToString(),
+            channelName = channel.Name
+        }, jsonWrite);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { ok = false, error = "InspectionExportFailed", message = ex.Message }, statusCode: 500);
+    }
+});
         r.MapGet("/vtc/roster", async (HttpRequest req) =>
         {
             var guild = DiscordThreadService.ResolveGuild(services.Client, req.Query["guildId"].ToString());
