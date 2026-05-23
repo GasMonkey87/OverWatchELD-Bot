@@ -439,7 +439,8 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
                 });
 
                 if (channel == null)
-                    channel = await guild.CreateTextChannelAsync("maintenance-requests");
+                    var createdChannel = await guild.CreateTextChannelAsync("maintenance-requests");
+channel = guild.GetTextChannel(createdChannel.Id);
 
                 var requestNumber = FirstNonEmpty(Get("requestNumber", "RequestNumber"), "N/A");
                 var driver = FirstNonEmpty(Get("driverName", "DriverName"), Get("driverDiscordId", "DriverDiscordId"), "Unknown Driver");
