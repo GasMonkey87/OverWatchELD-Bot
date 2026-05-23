@@ -502,7 +502,59 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
                 }, statusCode: 500);
             }
         });
-        
+        r.MapPost("/maintenance/fixed", async (HttpContext ctx) =>
+{
+    try
+    {
+        if (services.Client == null || !services.DiscordReady)
+            return Results.Json(new { ok = false, error = "DiscordNotReady" }, statusCode: 503);
+
+        var body = await ctx.Request.ReadFromJsonAsync<JsonElement>(jsonRead);
+
+        string Get(string name)
+        {
+            if (body.ValueKind == JsonValueKind.Object && body.TryGetProperty(name, out var v))
+                return v.ToString() ?? "";
+            return "";
+        }
+
+        var guildId = FirstNonEmpty(Get("guildId"), ctx.Request.Query["guildId"].ToString());
+
+        if (!ulong.TryParse(guildId, out var gid))
+            return Results.Json(new { ok = false, error = "BadGuildId" }, statusCode: 400);
+
+        var guild = services.Client.GetGuild(gid);
+        if (guild == null)
+            return Results.Json(new { ok = false, error = "GuildNotFound" }, statusCode: 404);
+
+        var channel = guild.TextChannels.FirstOrDefault(c =>
+            NormalizeNotifyChannel(c.Name).Contains("maintenance"));
+
+        if (channel == null)
+            return Results.Json(new { ok = false, error = "MaintenanceChannelNotFound" }, statusCode: 404);
+
+        var embed = new EmbedBuilder()
+            .WithTitle($"✅ Maintenance Request Fixed #{Get("requestNumber")}")
+            .WithColor(Color.Green)
+            .AddField("Fixed Type", FirstNonEmpty(Get("fixedType"), "Maintenance"), true)
+            .AddField("Fixed By", FirstNonEmpty(Get("fixedBy"), "Unknown"), true)
+            .AddField("Truck", FirstNonEmpty(Get("truck"), "Unknown"), true)
+            .AddField("Unit #", FirstNonEmpty(Get("unitNumber"), "N/A"), true)
+            .AddField("Driver", FirstNonEmpty(Get("driverName"), "N/A"), true)
+            .AddField("Fix Notes", FirstNonEmpty(Get("fixNotes"), "No notes."), false)
+            .WithFooter("OverWatch ELD Maintenance")
+            .WithCurrentTimestamp()
+            .Build();
+
+        await channel.SendMessageAsync(embed: embed);
+
+        return Results.Json(new { ok = true, channelId = channel.Id.ToString(), channelName = channel.Name }, jsonWrite);
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new { ok = false, error = "MaintenanceFixedPostFailed", message = ex.Message }, statusCode: 500);
+    }
+});
         r.MapGet("/vtc/roster", async (HttpRequest req) =>
         {
             var guild = DiscordThreadService.ResolveGuild(services.Client, req.Query["guildId"].ToString());
