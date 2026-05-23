@@ -556,7 +556,7 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
     }
 });
 
-        r.MapPost("/logs/export", async (HttpContext ctx) =>
+       r.MapPost("/logs/export", async (HttpContext ctx) =>
 {
     try
     {
@@ -609,10 +609,7 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
         channel ??= guild.TextChannels.FirstOrDefault(c =>
         {
             var n = NormalizeNotifyChannel(c.Name);
-            return n == "logs" ||
-                   n == "driver-logs" ||
-                   n == "eld-logs" ||
-                   n.Contains("log");
+            return n.Contains("log");
         });
 
         if (channel == null)
@@ -621,49 +618,44 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
             channel = guild.GetTextChannel(created.Id);
         }
 
-        var driver = FirstNonEmpty(
-            Get("driverName", "DriverName"),
-            "Unknown Driver");
-
-        var truck = FirstNonEmpty(
-            Get("truck", "TruckName"),
-            "Unknown Truck");
-
-        var unit = FirstNonEmpty(
-            Get("unitNumber", "UnitNumber"),
-            "N/A");
-
-        var dateRange = FirstNonEmpty(
-            Get("dateRange", "DateRange"),
-            DateTime.UtcNow.ToString("yyyy-MM-dd"));
-
-        var violations = FirstNonEmpty(
-            Get("violations", "Violations"),
-            "None");
-
-        var cert = FirstNonEmpty(
-            Get("certified", "Certified"),
-            "YES");
-
-        var summary = FirstNonEmpty(
-            Get("summary", "Summary"),
-            "Driver logs exported.");
+        var driver = FirstNonEmpty(Get("driverName"), "Unknown Driver");
+        var truck = FirstNonEmpty(Get("truck"), "Unknown Truck");
+        var unit = FirstNonEmpty(Get("unitNumber"), "N/A");
+        var dateRange = FirstNonEmpty(Get("dateRange"), "Today");
+        var violations = FirstNonEmpty(Get("violations"), "None");
+        var cert = FirstNonEmpty(Get("certified"), "NO");
+        var summary = FirstNonEmpty(Get("summary"), "No summary.");
 
         var embed = new EmbedBuilder()
-            .WithTitle($"📋 Driver Log Export")
+            .WithTitle("📋 Driver Log Export")
             .WithColor(Color.Blue)
             .AddField("Driver", driver, true)
             .AddField("Truck", truck, true)
             .AddField("Unit #", unit, true)
-            .AddField("Date Range", dateRange, true)
+            .AddField("Date", dateRange, true)
             .AddField("Certified", cert, true)
             .AddField("Violations", violations, false)
-            .AddField("Summary", summary, false)
+            .AddField("Summary", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
             .WithFooter("OverWatch ELD Logs")
-            .WithCurrentTimestamp()
-            .Build();
+            .WithCurrentTimestamp();
 
-        await channel.SendMessageAsync(embed: embed);
+        var graphBase64 = Get("graphPngBase64");
+
+        if (!string.IsNullOrWhiteSpace(graphBase64))
+        {
+            var bytes = Convert.FromBase64String(graphBase64);
+
+            using var stream = new MemoryStream(bytes);
+
+            await channel.SendFileAsync(
+                stream,
+                "log-graph.png",
+                embed: embed.WithImageUrl("attachment://log-graph.png").Build());
+        }
+        else
+        {
+            await channel.SendMessageAsync(embed: embed.Build());
+        }
 
         return Results.Json(new
         {
