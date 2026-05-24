@@ -229,8 +229,8 @@ public static class BotCommandHandler
             "`!announcement #channel` - Set announcement channel\n" +
             "`!setannouncementwebhook <url>` - Set announcement webhook\n" +
             "`!setdispatchwebhook <url>` - Set dispatch webhook\n" +
-            "`!setbolchannel` - Set this channel as the BOL upload channel") +
-            "`!setlogschannel` - Set this channel as the Logs upload channel")+
+            "`!setbolchannel` - Set this channel as the BOL upload channel" +
+            "`!setlogschannel` - Set this channel as the Logs upload channel"+
             "`!score` - See your Driver Score");
     }
 
