@@ -634,6 +634,46 @@ Status: Export request received.
         await ctx.Message.Channel.SendMessageAsync(textOut.Length > 1800 ? textOut[..1800] + "\n..." : textOut);
     }
 
+private static async Task HandleScoreAsync(CommandContext ctx)
+{
+    if (ctx.Guild == null)
+    {
+        await ctx.Message.Channel.SendMessageAsync("❌ Use this command in a server.");
+        return;
+    }
+
+    var record = DriverScoreStore.Load(
+        ctx.Guild.Id.ToString(),
+        ctx.Message.Author.Id.ToString());
+
+    if (record == null)
+    {
+        await ctx.Message.Channel.SendMessageAsync(
+            "⚠️ No ELD safety score found yet. Open OverWatch ELD and let it sync your score.");
+        return;
+    }
+
+    var color = record.Score >= 90 ? Color.Green :
+                record.Score >= 75 ? Color.Orange :
+                Color.Red;
+
+    var embed = new EmbedBuilder()
+        .WithTitle("🛡️ Driver Safety Score")
+        .WithColor(color)
+        .AddField("Driver", string.IsNullOrWhiteSpace(record.DriverName) ? ctx.Message.Author.Username : record.DriverName, true)
+        .AddField("Score", $"{record.Score}/100", true)
+        .AddField("Speeding Events", record.SpeedingEvents, true)
+        .AddField("Inspection Defects", record.InspectionDefects, true)
+        .AddField("HOS Violations", record.HosViolations, true)
+        .AddField("Missed Pre-Trips", record.MissedPreTrips, true)
+        .AddField("Notes", string.IsNullOrWhiteSpace(record.Notes) ? "No coaching notes." : record.Notes, false)
+        .WithFooter($"Last synced {record.UpdatedUtc:u}")
+        .WithCurrentTimestamp()
+        .Build();
+
+    await ctx.Message.Channel.SendMessageAsync(embed: embed);
+}
+    
     private static async Task HandleAnnouncementAsync(CommandContext ctx, BotServices services)
     {
         if (!await RequireStaffAsync(ctx)) return;
