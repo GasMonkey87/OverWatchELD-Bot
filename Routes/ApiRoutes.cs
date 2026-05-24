@@ -619,52 +619,69 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
             channel = guild.GetTextChannel(created.Id);
         }
 
-        var driver = FirstNonEmpty(Get("driverName"), "Unknown Driver");
-        var truck = FirstNonEmpty(Get("truck"), "Unknown Truck");
-        var unit = FirstNonEmpty(Get("unitNumber"), "N/A");
-        var dateRange = FirstNonEmpty(Get("dateRange"), "Today");
-        var violations = FirstNonEmpty(Get("violations"), "None");
-        var cert = FirstNonEmpty(Get("certified"), "NO");
-        var summary = FirstNonEmpty(Get("summary"), "No summary.");
-        var reportText = FirstNonEmpty(
-    Get("reportText", "ReportText"),
-    summary);
+        var driver = FirstNonEmpty(Get("driverName", "DriverName"), "Unknown Driver");
+        var truck = FirstNonEmpty(Get("truck", "Truck", "truckName", "TruckName"), "Unknown Truck");
+        var unit = FirstNonEmpty(Get("unitNumber", "UnitNumber"), "N/A");
+        var dateRange = FirstNonEmpty(Get("dateRange", "DateRange"), "Today");
+        var violations = FirstNonEmpty(Get("violations", "Violations"), "None");
+        var cert = FirstNonEmpty(Get("certified", "Certified"), "NO");
+        var hosRemaining = FirstNonEmpty(Get("hosRemaining", "HosRemaining", "HOSRemaining"), "N/A");
+        var summary = FirstNonEmpty(Get("summary", "Summary"), "No summary.");
+        var reportText = FirstNonEmpty(Get("reportText", "ReportText"), summary);
+        var graphBase64 = Get("graphPngBase64", "GraphPngBase64");
+
         var hasViolations =
-    !string.IsNullOrWhiteSpace(violations) &&
-    !violations.Equals("None", StringComparison.OrdinalIgnoreCase) &&
-    !violations.Equals("0", StringComparison.OrdinalIgnoreCase);
+            !string.IsNullOrWhiteSpace(violations) &&
+            !violations.Equals("None", StringComparison.OrdinalIgnoreCase) &&
+            !violations.Equals("0", StringComparison.OrdinalIgnoreCase);
 
-var embed = new EmbedBuilder()
-    .WithTitle("📋 OverWatch ELD Log Export")
-    .WithColor(hasViolations ? Color.Orange : Color.Green)
-    .WithDescription("Driver logs exported from OverWatch ELD.")
-    .AddField("Driver", driver, true)
-    .AddField("Truck", truck, true)
-    .AddField("Unit #", unit, true)
-    .AddField("Date Range", dateRange, true)
-    .AddField("Certified", cert, true)
-    .AddField("Violations", hasViolations ? $"⚠️ {violations}" : "✅ None", true)
-    .AddField("Summary", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
-    .WithFooter("OverWatch ELD • Driver Logs")
-    .WithCurrentTimestamp()
-    .Build();
-
-        var graphBase64 = Get("graphPngBase64");
+        var embedBuilder = new EmbedBuilder()
+            .WithTitle("📋 OverWatch ELD Log Export")
+            .WithColor(hasViolations ? Color.Orange : Color.Green)
+            .WithDescription("Driver logs exported from OverWatch ELD.")
+            .AddField("Driver", driver, true)
+            .AddField("Truck", truck, true)
+            .AddField("Unit #", unit, true)
+            .AddField("Date Range", dateRange, true)
+            .AddField("Certified", cert, true)
+            .AddField("Violations", hasViolations ? $"⚠️ {violations}" : "✅ None", true)
+            .AddField("HOS Remaining", hosRemaining, true)
+            .AddField("Summary", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
+            .WithFooter("OverWatch ELD • Driver Logs")
+            .WithCurrentTimestamp();
 
         if (!string.IsNullOrWhiteSpace(graphBase64))
         {
             var bytes = Convert.FromBase64String(graphBase64);
 
-            using var stream = new MemoryStream(bytes);
+            using var graphStream = new MemoryStream(bytes);
+
+            await channel.SendFileAsync(
+                graphStream,
+                "log-graph.png",
+                embed: embedBuilder.WithImageUrl("attachment://log-graph.png").Build());
+
+            if (!string.IsNullOrWhiteSpace(reportText))
+            {
+                using var reportStream = new MemoryStream(Encoding.UTF8.GetBytes(reportText));
+
+                await channel.SendFileAsync(
+                    reportStream,
+                    $"driver-log-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.txt");
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(reportText))
+        {
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(reportText));
 
             await channel.SendFileAsync(
                 stream,
-                "log-graph.png",
-                embed: embed.WithImageUrl("attachment://log-graph.png").Build());
+                $"driver-log-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.txt",
+                embed: embedBuilder.Build());
         }
         else
         {
-            await channel.SendMessageAsync(embed: embed.Build());
+            await channel.SendMessageAsync(embed: embedBuilder.Build());
         }
 
         return Results.Json(new
@@ -748,39 +765,27 @@ var embed = new EmbedBuilder()
         var summary = FirstNonEmpty(Get("summary", "Summary"), "Inspections exported.");
 
         var isDefectExport =
-    summary.Contains("defect", StringComparison.OrdinalIgnoreCase) &&
-    !summary.Contains("no defects", StringComparison.OrdinalIgnoreCase);
+            summary.Contains("defect", StringComparison.OrdinalIgnoreCase) &&
+            !summary.Contains("no defects", StringComparison.OrdinalIgnoreCase);
 
-var resultText = isDefectExport
-    ? "⚠️ Defects Reported"
-    : "✅ No Defects Reported";
+        var resultText = isDefectExport
+            ? "⚠️ Defects Reported"
+            : "✅ No Defects Reported";
 
-var embed = new EmbedBuilder()
-    .WithTitle("🧾 OverWatch ELD Inspection Export")
-    .WithColor(isDefectExport ? Color.Orange : Color.Green)
-    .WithDescription("Inspection records exported from OverWatch ELD.")
-    .AddField("Driver", driver, true)
-    .AddField("Inspection Count", count, true)
-    .AddField("Result", resultText, true)
-    .AddField("Exported", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'"), true)
-    .AddField("Records", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
-    .WithFooter("OverWatch ELD • Inspection Records")
-    .WithCurrentTimestamp()
-    .Build();
+        var embed = new EmbedBuilder()
+            .WithTitle("🧾 OverWatch ELD Inspection Export")
+            .WithColor(isDefectExport ? Color.Orange : Color.Green)
+            .WithDescription("Inspection records exported from OverWatch ELD.")
+            .AddField("Driver", driver, true)
+            .AddField("Inspection Count", count, true)
+            .AddField("Result", resultText, true)
+            .AddField("Exported", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'"), true)
+            .AddField("Records", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
+            .WithFooter("OverWatch ELD • Inspection Records")
+            .WithCurrentTimestamp()
+            .Build();
 
-        if (!string.IsNullOrWhiteSpace(reportText))
-{
-    using var stream = new MemoryStream(Encoding.UTF8.GetBytes(reportText));
-
-    await channel.SendFileAsync(
-        stream,
-        $"driver-log-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.txt",
-        embed: embed);
-}
-else
-{
-    await channel.SendMessageAsync(embed: embed);
-}
+        await channel.SendMessageAsync(embed: embed);
 
         return Results.Json(new
         {
