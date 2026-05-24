@@ -626,18 +626,25 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
         var cert = FirstNonEmpty(Get("certified"), "NO");
         var summary = FirstNonEmpty(Get("summary"), "No summary.");
 
-        var embed = new EmbedBuilder()
-            .WithTitle("📋 Driver Log Export")
-            .WithColor(Color.Blue)
-            .AddField("Driver", driver, true)
-            .AddField("Truck", truck, true)
-            .AddField("Unit #", unit, true)
-            .AddField("Date", dateRange, true)
-            .AddField("Certified", cert, true)
-            .AddField("Violations", violations, false)
-            .AddField("Summary", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
-            .WithFooter("OverWatch ELD Logs")
-            .WithCurrentTimestamp();
+        var hasViolations =
+    !string.IsNullOrWhiteSpace(violations) &&
+    !violations.Equals("None", StringComparison.OrdinalIgnoreCase) &&
+    !violations.Equals("0", StringComparison.OrdinalIgnoreCase);
+
+var embed = new EmbedBuilder()
+    .WithTitle("📋 OverWatch ELD Log Export")
+    .WithColor(hasViolations ? Color.Orange : Color.Green)
+    .WithDescription("Driver logs exported from OverWatch ELD.")
+    .AddField("Driver", driver, true)
+    .AddField("Truck", truck, true)
+    .AddField("Unit #", unit, true)
+    .AddField("Date Range", dateRange, true)
+    .AddField("Certified", cert, true)
+    .AddField("Violations", hasViolations ? $"⚠️ {violations}" : "✅ None", true)
+    .AddField("Summary", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
+    .WithFooter("OverWatch ELD • Driver Logs")
+    .WithCurrentTimestamp()
+    .Build();
 
         var graphBase64 = Get("graphPngBase64");
 
