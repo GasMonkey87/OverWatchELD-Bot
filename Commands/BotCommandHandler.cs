@@ -651,8 +651,8 @@ private static async Task HandleScoreAsync(CommandContext ctx)
     }
 
     var record = DriverScoreStore.Load(
-        ctx.Guild.Id.ToString(),
-        ctx.Message.Author.Id.ToString());
+    ctx.Guild.Id.ToString(),
+    ctx.Message.Author.Id.ToString());
 
     if (record == null)
     {
