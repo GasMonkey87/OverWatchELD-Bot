@@ -737,19 +737,23 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
         var count = FirstNonEmpty(Get("count", "Count"), "0");
         var summary = FirstNonEmpty(Get("summary", "Summary"), "Inspections exported.");
 
-        var passedText = summary.Contains("Defects", StringComparison.OrdinalIgnoreCase)
+        var isDefectExport =
+    summary.Contains("defect", StringComparison.OrdinalIgnoreCase) &&
+    !summary.Contains("no defects", StringComparison.OrdinalIgnoreCase);
+
+var resultText = isDefectExport
     ? "⚠️ Defects Reported"
     : "✅ No Defects Reported";
 
 var embed = new EmbedBuilder()
     .WithTitle("🧾 OverWatch ELD Inspection Export")
-    .WithColor(summary.Contains("Defects", StringComparison.OrdinalIgnoreCase) ? Color.Orange : Color.Green)
-    .WithDescription("A driver inspection report was exported from OverWatch ELD.")
+    .WithColor(isDefectExport ? Color.Orange : Color.Green)
+    .WithDescription("Inspection records exported from OverWatch ELD.")
     .AddField("Driver", driver, true)
     .AddField("Inspection Count", count, true)
-    .AddField("Result", passedText, true)
+    .AddField("Result", resultText, true)
     .AddField("Exported", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm 'UTC'"), true)
-    .AddField("Inspection Summary", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
+    .AddField("Records", summary.Length > 1024 ? summary[..1020] + "..." : summary, false)
     .WithFooter("OverWatch ELD • Inspection Records")
     .WithCurrentTimestamp()
     .Build();
