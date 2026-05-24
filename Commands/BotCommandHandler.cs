@@ -217,22 +217,22 @@ public static class BotCommandHandler
         return false;
     }
 
-    private static async Task HandleHelpAsync(CommandContext ctx)
-    {
-        await ctx.Message.Channel.SendMessageAsync(
-            "**OverWatch ELD Commands**\n" +
-            "`!link` - Generate an ELD link code\n" +
-            "`!unlink` - Unlink your Discord account from this VTC\n" +
-            "`!ping` - Check bot response\n" +
-            "`!rosterlist` - Show roster list\n" +
-            "`!rosterlink @user | DriverName` - Link a Discord user to roster\n" +
-            "`!announcement #channel` - Set announcement channel\n" +
-            "`!setannouncementwebhook <url>` - Set announcement webhook\n" +
-            "`!setdispatchwebhook <url>` - Set dispatch webhook\n" +
-            "`!setbolchannel` - Set this channel as the BOL upload channel" +
-            "`!setlogschannel` - Set this channel as the Logs upload channel"+
-            "`!score` - See your Driver Score");
-    }
+   private static async Task HandleHelpAsync(CommandContext ctx)
+{
+    await ctx.Message.Channel.SendMessageAsync(
+        "**OverWatch ELD Commands**\n" +
+        "`!link` - Generate an ELD link code\n" +
+        "`!unlink` - Unlink your Discord account from this VTC\n" +
+        "`!ping` - Check bot response\n" +
+        "`!rosterlist` - Show roster list\n" +
+        "`!rosterlink @user | DriverName` - Link a Discord user to roster\n" +
+        "`!announcement #channel` - Set announcement channel\n" +
+        "`!setannouncementwebhook <url>` - Set announcement webhook\n" +
+        "`!setdispatchwebhook <url>` - Set dispatch webhook\n" +
+        "`!setbolchannel` - Set this channel as the BOL upload channel\n" +
+        "`!setlogschannel` - Set this channel as the Logs upload channel\n" +
+        "`!score` - See your Driver Safety Score");
+}
 
     private static async Task HandleLinkAsync(CommandContext ctx, BotServices services)
     {
