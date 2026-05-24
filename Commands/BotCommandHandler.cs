@@ -85,6 +85,12 @@ public static class BotCommandHandler
             return;
         }
 
+        if (ctx.Cmd == "score")
+{
+    await HandleScoreAsync(ctx);
+    return;
+}
+
         if (ctx.Cmd == "rosterlist")
         {
             await HandleRosterListAsync(ctx, services);
@@ -223,7 +229,9 @@ public static class BotCommandHandler
             "`!announcement #channel` - Set announcement channel\n" +
             "`!setannouncementwebhook <url>` - Set announcement webhook\n" +
             "`!setdispatchwebhook <url>` - Set dispatch webhook\n" +
-            "`!setbolchannel` - Set this channel as the BOL upload channel");
+            "`!setbolchannel` - Set this channel as the BOL upload channel") +
+            "`!setlogschannel` - Set this channel as the Logs upload channel")+
+            "`!score` - See your Driver Score");
     }
 
     private static async Task HandleLinkAsync(CommandContext ctx, BotServices services)
