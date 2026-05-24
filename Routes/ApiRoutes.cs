@@ -556,7 +556,37 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
         return Results.Json(new { ok = false, error = "MaintenanceFixedPostFailed", message = ex.Message }, statusCode: 500);
     }
 });
+r.MapPost("/drivers/score/update", async (HttpContext ctx) =>
+{
+    var body = await ctx.Request.ReadFromJsonAsync<JsonElement>(jsonRead);
 
+    string Get(string name) =>
+        body.ValueKind == JsonValueKind.Object && body.TryGetProperty(name, out var v)
+            ? v.ToString() ?? ""
+            : "";
+
+    var guildId = Get("guildId");
+    var discordUserId = Get("discordUserId");
+
+    if (string.IsNullOrWhiteSpace(guildId) || string.IsNullOrWhiteSpace(discordUserId))
+        return Results.Json(new { ok = false, error = "MissingGuildOrUser" }, statusCode: 400);
+
+    DriverScoreStore.Save(guildId, discordUserId, new DriverScoreRecord
+    {
+        GuildId = guildId,
+        DiscordUserId = discordUserId,
+        DriverName = Get("driverName"),
+        Score = int.TryParse(Get("score"), out var s) ? s : 100,
+        SpeedingEvents = int.TryParse(Get("speedingEvents"), out var sp) ? sp : 0,
+        InspectionDefects = int.TryParse(Get("inspectionDefects"), out var d) ? d : 0,
+        HosViolations = int.TryParse(Get("hosViolations"), out var h) ? h : 0,
+        MissedPreTrips = int.TryParse(Get("missedPreTrips"), out var m) ? m : 0,
+        Notes = Get("notes"),
+        UpdatedUtc = DateTime.UtcNow
+    });
+
+    return Results.Json(new { ok = true }, jsonWrite);
+});
        r.MapPost("/logs/export", async (HttpContext ctx) =>
 {
     try
