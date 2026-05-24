@@ -14,6 +14,7 @@ using OverWatchELD.VtcBot.Models;
 using OverWatchELD.VtcBot.Models.Events;
 using OverWatchELD.VtcBot.Services;
 using OverWatchELD.VtcBot.Stores;
+using System.IO;
 
 namespace OverWatchELD.VtcBot.Routes;
 
@@ -625,7 +626,9 @@ private static readonly HashSet<string> ManagerRoleNames = new(StringComparer.Or
         var violations = FirstNonEmpty(Get("violations"), "None");
         var cert = FirstNonEmpty(Get("certified"), "NO");
         var summary = FirstNonEmpty(Get("summary"), "No summary.");
-
+        var reportText = FirstNonEmpty(
+    Get("reportText", "ReportText"),
+    summary);
         var hasViolations =
     !string.IsNullOrWhiteSpace(violations) &&
     !violations.Equals("None", StringComparison.OrdinalIgnoreCase) &&
@@ -765,7 +768,19 @@ var embed = new EmbedBuilder()
     .WithCurrentTimestamp()
     .Build();
 
-        await channel.SendMessageAsync(embed: embed);
+        if (!string.IsNullOrWhiteSpace(reportText))
+{
+    using var stream = new MemoryStream(Encoding.UTF8.GetBytes(reportText));
+
+    await channel.SendFileAsync(
+        stream,
+        $"driver-log-export-{DateTime.UtcNow:yyyyMMdd-HHmmss}.txt",
+        embed: embed);
+}
+else
+{
+    await channel.SendMessageAsync(embed: embed);
+}
 
         return Results.Json(new
         {
