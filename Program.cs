@@ -644,9 +644,9 @@ Message:
                     IsEssential = true
                 });
 
-                var redirect = only.IsManager
-                    ? $"/manage.html?guildId={Uri.EscapeDataString(only.GuildId)}"
-                    : $"/portal.html?guildId={Uri.EscapeDataString(only.GuildId)}";
+               var redirect = only.IsManager
+    ? $"/manage.html?guildId={Uri.EscapeDataString(only.GuildId)}"
+    : $"/driver-home.html?guildId={Uri.EscapeDataString(only.GuildId)}";
 
                 return Results.Redirect(redirect);
             }
@@ -746,8 +746,8 @@ Message:
             });
 
             var redirect = selected.IsManager
-                ? $"/manage.html?guildId={Uri.EscapeDataString(selected.GuildId)}"
-                : $"/portal.html?guildId={Uri.EscapeDataString(selected.GuildId)}";
+    ? $"/manage.html?guildId={Uri.EscapeDataString(selected.GuildId)}"
+    : $"/driver-home.html?guildId={Uri.EscapeDataString(selected.GuildId)}";
 
             return Results.Ok(new
             {
