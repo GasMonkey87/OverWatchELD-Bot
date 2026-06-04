@@ -543,11 +543,28 @@ Message:
             http.Response.Cookies.Append("ow_oauth_state", state, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = false,
+                Secure = true,
                 SameSite = SameSiteMode.Lax,
                 Expires = DateTimeOffset.UtcNow.AddMinutes(10),
                 IsEssential = true
             });
+
+            var linkDiscord = http.Request.Query["linkDiscord"].ToString();
+            if (linkDiscord == "1" || linkDiscord.Equals("true", StringComparison.OrdinalIgnoreCase))
+            {
+                http.Response.Cookies.Append("ow_link_discord", "1", new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.Lax,
+                    Expires = DateTimeOffset.UtcNow.AddMinutes(10),
+                    IsEssential = true
+                });
+            }
+            else
+            {
+                http.Response.Cookies.Delete("ow_link_discord");
+            }
 
             var url = oauth.BuildAuthorizeUrl(state);
             return Results.Redirect(url);
@@ -568,7 +585,7 @@ Message:
         {
             var error = http.Request.Query["error"].ToString();
             if (!string.IsNullOrWhiteSpace(error))
-                return Results.Redirect("/?authError=discord_denied");
+                return Results.Redirect("/driver-home.html?linkDiscord=denied");
 
             var code = http.Request.Query["code"].ToString();
             var state = http.Request.Query["state"].ToString();
@@ -579,26 +596,64 @@ Message:
                 string.IsNullOrWhiteSpace(expectedState) ||
                 !string.Equals(state, expectedState, StringComparison.Ordinal))
             {
-                return Results.Redirect("/?authError=invalid_state");
+                return Results.Redirect("/driver-home.html?linkDiscord=invalid_state");
             }
 
             var tokenRes = await oauth.ExchangeCodeAsync(code, ct);
             if (tokenRes == null || string.IsNullOrWhiteSpace(tokenRes.AccessToken))
-                return Results.Redirect("/?authError=token_exchange_failed");
+                return Results.Redirect("/driver-home.html?linkDiscord=token_failed");
 
             var user = await oauth.GetCurrentUserAsync(tokenRes.AccessToken, ct);
             if (user == null || string.IsNullOrWhiteSpace(user.Id))
-                return Results.Redirect("/?authError=user_fetch_failed");
+                return Results.Redirect("/driver-home.html?linkDiscord=user_failed");
+
+            var isLinkDiscord = string.Equals(http.Request.Cookies["ow_link_discord"], "1", StringComparison.Ordinal);
+            var currentSessionId = http.Request.Cookies["ow_session"];
+
+            if (isLinkDiscord &&
+                !string.IsNullOrWhiteSpace(currentSessionId) &&
+                sessions.TryGet(currentSessionId, out var currentSession) &&
+                currentSession != null &&
+                !string.IsNullOrWhiteSpace(currentSession.AccountId))
+            {
+                var linked = emailAccountStore.LinkDiscord(
+                    currentSession.AccountId,
+                    user.Id,
+                    user.Username ?? "",
+                    user.GlobalName ?? "");
+
+                sessions.Save(currentSessionId, new WebSessionUser
+                {
+                    AccountId = currentSession.AccountId,
+                    Email = currentSession.Email,
+                    IsEmailAccount = true,
+                    DiscordUserId = user.Id,
+                    Username = string.IsNullOrWhiteSpace(linked?.DisplayName) ? currentSession.Username : linked!.DisplayName,
+                    GlobalName = string.IsNullOrWhiteSpace(user.GlobalName) ? linked?.DisplayName ?? currentSession.GlobalName : user.GlobalName,
+                    AccessToken = tokenRes.AccessToken,
+                    ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30)
+                });
+
+                http.Response.Cookies.Delete("ow_link_discord");
+                http.Response.Cookies.Delete("ow_oauth_state");
+
+                return Results.Redirect("/driver-home.html?linkDiscord=success");
+            }
 
             var guilds = await oauth.GetCurrentUserGuildsAsync(tokenRes.AccessToken, ct);
             var matches = vtcAccess.MatchSupportedVtcs(user.Id, guilds);
 
+            var existingLinkedAccount = emailAccountStore.FindByDiscordUserId(user.Id);
+
             var sessionId = Guid.NewGuid().ToString("N");
             sessions.Save(sessionId, new WebSessionUser
             {
+                AccountId = existingLinkedAccount?.Id ?? "",
+                Email = existingLinkedAccount?.Email ?? "",
+                IsEmailAccount = existingLinkedAccount != null,
                 DiscordUserId = user.Id,
-                Username = user.Username,
-                GlobalName = user.GlobalName,
+                Username = existingLinkedAccount?.DisplayName ?? user.Username,
+                GlobalName = user.GlobalName ?? existingLinkedAccount?.DisplayName,
                 AccessToken = tokenRes.AccessToken,
                 ExpiresUtc = DateTimeOffset.UtcNow.AddHours(8)
             });
@@ -606,11 +661,14 @@ Message:
             http.Response.Cookies.Append("ow_session", sessionId, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = false,
+                Secure = true,
                 SameSite = SameSiteMode.Lax,
                 Expires = DateTimeOffset.UtcNow.AddHours(8),
                 IsEssential = true
             });
+
+            http.Response.Cookies.Delete("ow_link_discord");
+            http.Response.Cookies.Delete("ow_oauth_state");
 
             http.Session.SetString("discord_user", JsonSerializer.Serialize(new
             {
@@ -632,7 +690,7 @@ Message:
             ));
 
             if (matches.Count == 0)
-                return Results.Redirect("/?authError=no_supported_vtc");
+                return Results.Redirect("/driver-home.html?discordLinked=1");
 
             if (matches.Count == 1)
             {
@@ -641,15 +699,15 @@ Message:
                 http.Response.Cookies.Append("ow_selected_guild", only.GuildId, new CookieOptions
                 {
                     HttpOnly = true,
-                    Secure = false,
+                    Secure = true,
                     SameSite = SameSiteMode.Lax,
                     Expires = DateTimeOffset.UtcNow.AddHours(8),
                     IsEssential = true
                 });
 
-               var redirect = only.IsManager
-    ? $"/manage.html?guildId={Uri.EscapeDataString(only.GuildId)}"
-    : $"/driver-home.html?guildId={Uri.EscapeDataString(only.GuildId)}";
+                var redirect = only.IsManager
+                    ? $"/manage.html?guildId={Uri.EscapeDataString(only.GuildId)}"
+                    : $"/driver-home.html?guildId={Uri.EscapeDataString(only.GuildId)}";
 
                 return Results.Redirect(redirect);
             }
@@ -674,6 +732,10 @@ Message:
                 ok = true,
                 data = new
                 {
+                    accountId = user.AccountId,
+                    email = user.Email,
+                    isEmailAccount = user.IsEmailAccount,
+                    discordLinked = !string.IsNullOrWhiteSpace(user.DiscordUserId),
                     discordUserId = user.DiscordUserId,
                     username = user.Username,
                     globalName = user.GlobalName
