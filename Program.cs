@@ -198,7 +198,7 @@ public static partial class Program
         });
 
         builder.Services.Configure<DiscordOAuthOptions>(builder.Configuration.GetSection("DiscordOAuth"));
-        builder.Services.AddSingleton<WebSessionStore>();
+        builder.Services.AddSingleton(new WebSessionStore(Path.Combine(dataDir, "overwatcheld_sessions.db")));
         builder.Services.AddSingleton(new VtcAccessService(_client));
         builder.Services.AddHttpClient<DiscordOAuthService>();
         builder.Services.AddSingleton<PortalDataStore>();
