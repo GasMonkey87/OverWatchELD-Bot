@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>OverWatch ELD</title>
+
+<style>
+
+/* KEEP YOUR EXISTING STYLES (from your file) */
+/* --- PASTE YOUR FULL CSS HERE --- */
+
+/* 🔥 ADD THIS AT THE BOTTOM OF YOUR CSS */
+
+.clock-showcase {
+  margin-top: 24px;
+  padding: 24px;
+  border-radius: 24px;
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(47,124,246,.15), rgba(43,196,109,.08));
+}
+
+.clock-grid {
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.clock-card {
+  background: rgba(255,255,255,.03);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 18px;
+  text-align: center;
+}
+
+.clock-ring {
+  width: 90px;
+  height: 90px;
+  margin: 0 auto 12px;
+  border-radius: 50%;
+  position: relative;
+  animation: pulse 2.5s infinite;
+}
+
+.clock-ring::after {
+  content:"";
+  position:absolute;
+  inset:10px;
+  border-radius:50%;
+  background:#0b1729;
+}
+
+.drive { background: conic-gradient(#22c55e 0deg, #22c55e 300deg, rgba(255,255,255,.1) 300deg); }
+.shift { background: conic-gradient(#2f7cf6 0deg, #2f7cf6 260deg, rgba(255,255,255,.1) 260deg); }
+.cycle { background: conic-gradient(#a78bfa 0deg, #a78bfa 320deg, rgba(255,255,255,.1) 320deg); }
+.break { background: conic-gradient(#f59e0b 0deg, #f59e0b 180deg, rgba(255,255,255,.1) 180deg); }
+
+.clock-card strong {
+  display:block;
+  font-size:18px;
+}
+
+.clock-card span {
+  color:var(--muted);
+  font-size:13px;
+}
+
+@keyframes pulse {
+  0% { transform:scale(1); filter:drop-shadow(0 0 0 rgba(47,124,246,0)); }
+  50% { transform:scale(1.05); filter:drop-shadow(0 0 12px rgba(47,124,246,.5)); }
+  100% { transform:scale(1); filter:drop-shadow(0 0 0 rgba(47,124,246,0)); }
+}
+
+@media (max-width:900px) {
+  .clock-grid { grid-template-columns:1fr 1fr; }
+}
+
+@media (max-width:600px) {
+  .clock-grid { grid-template-columns:1fr; }
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="site-shell">
+
+  <!-- HEADER -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">🚛</div>
+      <div>
+        <div class="brand-title">OverWatch ELD</div>
+        <div class="brand-subtitle">The ELD you can count on.</div>
+      </div>
+    </div>
+
+    <div class="top-actions">
+      <a class="btn ghost" href="/setup.html">Setup Guide</a>
+      <a class="btn primary" href="/downloads.html">Download</a>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="hero-grid">
+
+      <div class="hero-copy">
+        <div class="eyebrow">Professional VTC Fleet Tools</div>
+        <h1>Run your fleet like a real operation.</h1>
+        <p>
+          Real-time HOS clocks, telemetry, dispatch, and Discord integration — all in one platform built for serious VTC operations.
+        </p>
+
+        <div class="hero-cta">
+          <a class="btn primary" href="/downloads.html">Download Now</a>
+          <a class="btn ghost" href="/setup.html">Setup Guide</a>
+        </div>
+
+        <div class="hero-stats">
+          <div class="stat">
+            <div class="stat-label">Telemetry</div>
+            <div class="stat-value">LIVE</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Discord</div>
+            <div class="stat-value">SYNCED</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Fleet</div>
+            <div class="stat-value">CONNECTED</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-media">
+        <img src="/img/overwatch-eld-hero.png">
+      </div>
+
+    </div>
+  </section>
+
+  <!-- 🔥 NEW DUTY CLOCK SHOWCASE -->
+  <div class="clock-showcase">
+    <h2>Live Duty Clocks</h2>
+    <p style="color:var(--muted);">
+      Real-time HOS clocks designed for clarity, precision, and driver awareness.
+    </p>
+
+    <div class="clock-grid">
+
+      <div class="clock-card">
+        <div class="clock-ring drive"></div>
+        <strong>10:42</strong>
+        <span>Drive</span>
+      </div>
+
+      <div class="clock-card">
+        <div class="clock-ring shift"></div>
+        <strong>13:31</strong>
+        <span>Shift</span>
+      </div>
+
+      <div class="clock-card">
+        <div class="clock-ring cycle"></div>
+        <strong>68:45</strong>
+        <span>Cycle</span>
+      </div>
+
+      <div class="clock-card">
+        <div class="clock-ring break"></div>
+        <strong>00:27</strong>
+        <span>Break</span>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
