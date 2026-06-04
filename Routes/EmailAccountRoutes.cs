@@ -18,7 +18,7 @@ app.MapPost("/api/account/register", async (HttpContext ctx) =>
 var req =
 await ctx.Request.ReadFromJsonAsync<RegisterRequest>();
 
-```
+
         if (req == null)
             return Results.BadRequest();
 
@@ -109,6 +109,6 @@ private sealed class LoginRequest
     public string Email { get; set; } = "";
     public string Password { get; set; } = "";
 }
-```
+
 
 }
