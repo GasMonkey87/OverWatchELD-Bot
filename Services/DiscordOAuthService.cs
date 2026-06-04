@@ -7,7 +7,7 @@ namespace OverWatchELD.VtcBot.Services;
 
 public sealed class DiscordOAuthService
 {
-    private const string PublicBaseUrl = "https://overwatcheld.com";
+    private const string PublicBaseUrl = "https://api.overwatcheld.com";
     private static readonly JsonSerializerOptions JsonOpts = new(JsonSerializerDefaults.Web);
 
     private readonly HttpClient _http;
@@ -40,6 +40,7 @@ public sealed class DiscordOAuthService
     public async Task<DiscordTokenResponse?> ExchangeCodeAsync(string code, CancellationToken ct = default)
     {
         using var req = new HttpRequestMessage(HttpMethod.Post, "https://discord.com/api/oauth2/token");
+
         req.Content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
             ["client_id"] = _options.ClientId,
@@ -80,15 +81,23 @@ public sealed class DiscordOAuthService
             return new List<DiscordGuildDto>();
 
         await using var stream = await res.Content.ReadAsStreamAsync(ct);
+
         return await JsonSerializer.DeserializeAsync<List<DiscordGuildDto>>(stream, JsonOpts, ct)
                ?? new List<DiscordGuildDto>();
     }
 
     private string ResolveRedirectUri()
     {
+        var explicitRedirect = Environment.GetEnvironmentVariable("DISCORD_REDIRECT_URI")
+            ?? Environment.GetEnvironmentVariable("DiscordOAuth__RedirectUri");
+
+        if (!string.IsNullOrWhiteSpace(explicitRedirect))
+            return explicitRedirect.Trim();
+
         var fromEnv = Environment.GetEnvironmentVariable("OVERWATCH_PUBLIC_BASE_URL")
             ?? Environment.GetEnvironmentVariable("PUBLIC_BASE_URL")
-            ?? Environment.GetEnvironmentVariable("APP_BASE_URL");
+            ?? Environment.GetEnvironmentVariable("APP_BASE_URL")
+            ?? Environment.GetEnvironmentVariable("ELD_BASE_URL");
 
         var baseUrl = string.IsNullOrWhiteSpace(fromEnv)
             ? PublicBaseUrl
@@ -96,10 +105,11 @@ public sealed class DiscordOAuthService
 
         var configured = (_options.RedirectUri ?? string.Empty).Trim();
 
-        // If Railway still has the old redirect URI configured, override it so Discord returns
-        // users to the custom production domain instead of overwatcheld.up.railway.app.
         if (string.IsNullOrWhiteSpace(configured) ||
-            configured.Contains("overwatcheld.up.railway.app", StringComparison.OrdinalIgnoreCase))
+            configured.Contains("overwatcheld.com", StringComparison.OrdinalIgnoreCase) ||
+            configured.Contains("overwatcheld.up.railway.app", StringComparison.OrdinalIgnoreCase) ||
+            configured.Contains("overwatcheld-bot", StringComparison.OrdinalIgnoreCase) ||
+            configured.Contains("overwatcheld-api", StringComparison.OrdinalIgnoreCase))
         {
             return $"{baseUrl}/auth/discord/callback";
         }
