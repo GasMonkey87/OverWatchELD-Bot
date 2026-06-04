@@ -7,7 +7,7 @@ public sealed class EmailAccountStore
 {
 private readonly string _connectionString;
 
-```
+
 public EmailAccountStore(string dbPath)
 {
     Directory.CreateDirectory(Path.GetDirectoryName(dbPath) ?? AppContext.BaseDirectory);
@@ -148,7 +148,7 @@ public EmailAccount? ValidateLogin(string email, string password)
         DiscordUsername = reader["DiscordUsername"].ToString() ?? ""
     };
 }
-```
+
 
 }
 
