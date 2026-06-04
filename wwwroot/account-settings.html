@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Account Settings | OverWatch ELD</title>
+<style>
+:root{--bg:#020617;--panel:#0f172a;--line:#334155;--text:#f8fafc;--muted:#94a3b8;--accent:#38bdf8;--green:#22c55e;--red:#ef4444}*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 15% 0%,rgba(56,189,248,.18),transparent 34%),linear-gradient(180deg,#020617,#08111f);color:var(--text);font-family:Segoe UI,Arial,sans-serif}.wrap{max-width:1180px;margin:0 auto;padding:24px}.top{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:18px}.brand{display:flex;gap:12px;align-items:center}.mark{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),#1d4ed8);color:#020617;font-weight:950}.grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.card{background:rgba(15,23,42,.94);border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:0 18px 50px rgba(0,0,0,.18)}.muted{color:var(--muted)}.label{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:900;margin-top:12px}.value{font-weight:900;margin-top:5px;word-break:break-word}input,textarea{width:100%;margin:8px 0 12px;padding:12px;border-radius:12px;border:1px solid var(--line);background:#020617;color:white}textarea{min-height:110px;resize:vertical}.btn{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);background:#0b1220;color:white;border-radius:12px;padding:10px 13px;text-decoration:none;font-weight:900;cursor:pointer}.btn.primary{background:linear-gradient(135deg,#075985,#1d4ed8);border-color:#38bdf8}.btn.danger{background:#450a0a;border-color:#dc2626}.actions{display:flex;gap:10px;flex-wrap:wrap}.msg{min-height:22px;margin-top:8px;color:#93c5fd}.ok{color:#86efac}.bad{color:#fca5a5}.pill{display:inline-flex;gap:8px;align-items:center;padding:8px 12px;border-radius:999px;border:1px solid rgba(56,189,248,.35);background:rgba(56,189,248,.12);font-weight:900}.avatar{width:96px;height:96px;border-radius:24px;object-fit:cover;border:1px solid var(--line);background:#020617;display:grid;place-items:center;font-size:34px;font-weight:950;color:#38bdf8}.formgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.full{grid-column:1/-1}@media(max-width:850px){.grid,.formgrid{grid-template-columns:1fr}.top{display:block}.actions{margin-top:12px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand"><div class="mark">OW</div><div><h1 style="margin:0">Account Settings</h1><div class="muted">Persistent OverWatch ELD profile</div></div></div>
+    <div class="actions"><a class="btn" href="/driver-home.html">Driver Home</a><button class="btn danger" onclick="logout()">Logout</button></div>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Edit Profile</h2>
+      <p class="muted">These details are saved to your account and used across the web portal, driver dashboard, VTC tools, dispatch, and profile cards.</p>
+      <div class="formgrid">
+        <div><div class="label">Display Name</div><input id="displayNameInput" placeholder="Display name"></div>
+        <div><div class="label">Phone</div><input id="phoneInput" placeholder="Optional phone number"></div>
+        <div><div class="label">Home City</div><input id="homeCityInput" placeholder="City"></div>
+        <div><div class="label">Home State</div><input id="homeStateInput" placeholder="State"></div>
+        <div><div class="label">Preferred Truck</div><input id="preferredTruckInput" placeholder="Peterbilt 389, Freightliner Cascadia, etc."></div>
+        <div><div class="label">Company / VTC</div><input id="companyInput" placeholder="Company or VTC name"></div>
+        <div class="full"><div class="label">Avatar URL</div><input id="avatarUrlInput" placeholder="https://... image URL"></div>
+        <div class="full"><div class="label">Bio</div><textarea id="bioInput" placeholder="Tell your VTC a little about you..."></textarea></div>
+      </div>
+      <button class="btn primary" onclick="saveProfile()">Save Profile</button>
+      <div class="msg" id="profileMsg"></div>
+    </section>
+
+    <aside class="card">
+      <h2>Profile Preview</h2>
+      <div id="avatarPreview" class="avatar">OW</div>
+      <div class="label">Email</div><div class="value" id="emailValue">Loading...</div>
+      <div class="label">Display Name</div><div class="value" id="previewName">Loading...</div>
+      <div class="label">Location</div><div class="value" id="previewLocation">Not set</div>
+      <div class="label">Preferred Truck</div><div class="value" id="previewTruck">Not set</div>
+      <div class="label">Company / VTC</div><div class="value" id="previewCompany">Not set</div>
+      <div class="label">Bio</div><div class="muted" id="previewBio">No bio yet.</div>
+      <div style="margin-top:14px"><span class="pill" id="discordStatus">Discord: Checking...</span></div>
+      <div class="actions" style="margin-top:14px"><a class="btn primary" href="/login?linkDiscord=1" id="discordLinkBtn">Link Discord</a></div>
+    </aside>
+
+    <section class="card">
+      <h2>Change Password</h2>
+      <div class="label">Current Password</div><input id="currentPasswordInput" type="password" autocomplete="current-password">
+      <div class="label">New Password</div><input id="newPasswordInput" type="password" autocomplete="new-password">
+      <div class="label">Confirm New Password</div><input id="confirmPasswordInput" type="password" autocomplete="new-password">
+      <button class="btn primary" onclick="changePassword()">Change Password</button>
+      <div class="msg" id="passwordMsg"></div>
+    </section>
+
+    <section class="card">
+      <h2>Account Status</h2>
+      <div class="label">Account ID</div><div class="value" id="accountIdValue">Loading...</div>
+      <div class="label">Created</div><div class="value" id="createdValue">Loading...</div>
+      <div class="label">Last Login</div><div class="value" id="lastLoginValue">Loading...</div>
+      <p class="muted">Your profile is stored in SQLite and will persist across Railway restarts and across the web app.</p>
+    </section>
+  </div>
+</div>
+<script>
+let currentAccount=null;
+const $=id=>document.getElementById(id);
+function safe(v,f=''){return (v??'').toString().trim()||f;}
+function setMsg(id,text,good){const el=$(id);el.textContent=text;el.className='msg '+(good?'ok':'bad');}
+function fmtDate(v){if(!v)return 'Not available';try{return new Date(v).toLocaleString();}catch{return 'Not available';}}
+function renderAvatar(name,url){const el=$('avatarPreview');el.innerHTML='';if(url){const img=document.createElement('img');img.src=url;img.alt='Avatar';img.style.width='100%';img.style.height='100%';img.style.objectFit='cover';img.style.borderRadius='24px';img.onerror=()=>{el.textContent=(name||'OW').substring(0,2).toUpperCase();};el.appendChild(img);}else{el.textContent=(name||'OW').substring(0,2).toUpperCase();}}
+function renderProfile(d){currentAccount=d;$('emailValue').textContent=safe(d.email,'Unknown');$('accountIdValue').textContent=safe(d.accountId,'Unknown');$('createdValue').textContent=fmtDate(d.createdUtc);$('lastLoginValue').textContent=fmtDate(d.lastLoginUtc);$('displayNameInput').value=safe(d.displayName);$('phoneInput').value=safe(d.phone);$('homeCityInput').value=safe(d.homeCity);$('homeStateInput').value=safe(d.homeState);$('preferredTruckInput').value=safe(d.preferredTruck);$('companyInput').value=safe(d.company);$('bioInput').value=safe(d.bio);$('avatarUrlInput').value=safe(d.avatarUrl);$('previewName').textContent=safe(d.displayName,'Driver');$('previewLocation').textContent=[safe(d.homeCity),safe(d.homeState)].filter(Boolean).join(', ')||'Not set';$('previewTruck').textContent=safe(d.preferredTruck,'Not set');$('previewCompany').textContent=safe(d.company,'Not set');$('previewBio').textContent=safe(d.bio,'No bio yet.');renderAvatar(d.displayName,d.avatarUrl);const linked=!!d.discordLinked;$('discordStatus').textContent=linked?'Discord: '+safe(d.discordGlobalName||d.discordUsername||d.discordUserId):'Discord: Not linked';$('discordLinkBtn').textContent=linked?'Re-Link Discord':'Link Discord';}
+async function api(url,opts={}){const r=await fetch(url,{credentials:'include',headers:{'Content-Type':'application/json',...(opts.headers||{})},...opts});let j={};try{j=await r.json();}catch{}if(!r.ok||j.ok===false)throw new Error(j.error||'HTTP '+r.status);return j;}
+async function loadProfile(){try{const j=await api('/api/account/me');renderProfile(j.data||{});}catch(e){location.href='/account-login.html';}}
+async function saveProfile(){try{const body={displayName:$('displayNameInput').value,phone:$('phoneInput').value,homeCity:$('homeCityInput').value,homeState:$('homeStateInput').value,preferredTruck:$('preferredTruckInput').value,company:$('companyInput').value,bio:$('bioInput').value,avatarUrl:$('avatarUrlInput').value};const j=await api('/api/account/update-profile',{method:'POST',body:JSON.stringify(body)});renderProfile(j.data||body);setMsg('profileMsg','Profile saved.',true);}catch(e){setMsg('profileMsg',e.message||'Save failed.',false);}}
+async function changePassword(){try{const body={currentPassword:$('currentPasswordInput').value,newPassword:$('newPasswordInput').value,confirmPassword:$('confirmPasswordInput').value};await api('/api/account/change-password',{method:'POST',body:JSON.stringify(body)});$('currentPasswordInput').value='';$('newPasswordInput').value='';$('confirmPasswordInput').value='';setMsg('passwordMsg','Password changed.',true);}catch(e){setMsg('passwordMsg',e.message||'Password change failed.',false);}}
+async function logout(){try{await api('/api/account/logout',{method:'POST'});}catch{}location.href='/account-login.html';}
+loadProfile();
+</script>
+</body>
+</html>
