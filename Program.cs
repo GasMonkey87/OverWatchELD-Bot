@@ -43,7 +43,10 @@ public static partial class Program
     {
         var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
         Directory.CreateDirectory(dataDir);
-
+        
+        var emailAccountStore = new EmailAccountStore(
+    Path.Combine(dataDir, "overwatcheld_accounts.db"));
+        
         var dispatchLoadStore = new DispatchLoadStore(
             Path.Combine(dataDir, "dispatch_loads.json"),
             JsonReadOpts,
@@ -851,6 +854,10 @@ Message:
         app.MapPortalDataRoutes();
         BolUploadRoutes.Register(app.MapGroup("/api"), services, JsonWriteOpts);
         Console.WriteLine($"Bot running on :{port}");
+        EmailAccountRoutes.Register(
+    app,
+    emailAccountStore,
+    app.Services.GetRequiredService<WebSessionStore>());
         await app.RunAsync();
     }
 
