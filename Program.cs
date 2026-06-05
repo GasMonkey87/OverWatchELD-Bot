@@ -558,7 +558,7 @@ Message:
             return Results.Redirect(target);
         });
 
-        app.MapGet("/login", (HttpContext http, DiscordOAuthService oauth) =>
+        app.MapGet("/login", (HttpContext http, DiscordOAuthService oauth, WebSessionStore sessions) =>
         {
             var state = Guid.NewGuid().ToString("N");
 
@@ -582,10 +582,30 @@ Message:
                     Expires = DateTimeOffset.UtcNow.AddMinutes(10),
                     IsEssential = true
                 });
+
+                // Save the currently logged-in website account id during the OAuth trip.
+                // This makes Discord linking reliable even if the browser/session cookie is not
+                // available after returning from Discord.
+                var currentSessionIdForLink = http.Request.Cookies["ow_session"];
+                if (!string.IsNullOrWhiteSpace(currentSessionIdForLink) &&
+                    sessions.TryGet(currentSessionIdForLink, out var currentUserForLink) &&
+                    currentUserForLink != null &&
+                    !string.IsNullOrWhiteSpace(currentUserForLink.AccountId))
+                {
+                    http.Response.Cookies.Append("ow_link_account_id", currentUserForLink.AccountId, new CookieOptions
+                    {
+                        HttpOnly = true,
+                        Secure = true,
+                        SameSite = SameSiteMode.None,
+                        Expires = DateTimeOffset.UtcNow.AddMinutes(10),
+                        IsEssential = true
+                    });
+                }
             }
             else
             {
                 http.Response.Cookies.Delete("ow_link_discord");
+                http.Response.Cookies.Delete("ow_link_account_id");
             }
 
             var url = oauth.BuildAuthorizeUrl(state);
@@ -632,31 +652,57 @@ Message:
             var isLinkDiscord = string.Equals(http.Request.Cookies["ow_link_discord"], "1", StringComparison.Ordinal);
             var currentSessionId = http.Request.Cookies["ow_session"];
 
-            if (isLinkDiscord &&
-                !string.IsNullOrWhiteSpace(currentSessionId) &&
-                sessions.TryGet(currentSessionId, out var currentSession) &&
-                currentSession != null &&
-                !string.IsNullOrWhiteSpace(currentSession.AccountId))
+            WebSessionUser? currentSession = null;
+            if (!string.IsNullOrWhiteSpace(currentSessionId))
+                sessions.TryGet(currentSessionId, out currentSession);
+
+            var linkAccountId = currentSession?.AccountId;
+            if (string.IsNullOrWhiteSpace(linkAccountId))
+                linkAccountId = http.Request.Cookies["ow_link_account_id"];
+
+            if (isLinkDiscord && !string.IsNullOrWhiteSpace(linkAccountId))
             {
                 var linked = emailAccountStore.LinkDiscord(
-                    currentSession.AccountId,
+                    linkAccountId,
                     user.Id,
                     user.Username ?? "",
                     user.GlobalName ?? "");
 
-                sessions.Save(currentSessionId, new WebSessionUser
+                if (linked == null)
                 {
-                    AccountId = currentSession.AccountId,
-                    Email = currentSession.Email,
+                    http.Response.Cookies.Delete("ow_link_discord");
+                    http.Response.Cookies.Delete("ow_link_account_id");
+                    http.Response.Cookies.Delete("ow_oauth_state");
+                    return Results.Redirect($"{portalBaseUrl}/profile.html?linkDiscord=account_not_found");
+                }
+
+                var sessionToSave = !string.IsNullOrWhiteSpace(currentSessionId)
+                    ? currentSessionId!
+                    : Guid.NewGuid().ToString("N");
+
+                sessions.Save(sessionToSave, new WebSessionUser
+                {
+                    AccountId = linked.Id,
+                    Email = linked.Email,
                     IsEmailAccount = true,
                     DiscordUserId = user.Id,
-                    Username = string.IsNullOrWhiteSpace(linked?.DisplayName) ? currentSession.Username : linked!.DisplayName,
-                    GlobalName = string.IsNullOrWhiteSpace(user.GlobalName) ? linked?.DisplayName ?? currentSession.GlobalName : user.GlobalName,
+                    Username = string.IsNullOrWhiteSpace(linked.DisplayName) ? user.Username : linked.DisplayName,
+                    GlobalName = string.IsNullOrWhiteSpace(user.GlobalName) ? linked.DisplayName : user.GlobalName,
                     AccessToken = tokenRes.AccessToken,
                     ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30)
                 });
 
+                http.Response.Cookies.Append("ow_session", sessionToSave, new CookieOptions
+                {
+                    HttpOnly = true,
+                    Secure = true,
+                    SameSite = SameSiteMode.None,
+                    Expires = DateTimeOffset.UtcNow.AddDays(30),
+                    IsEssential = true
+                });
+
                 http.Response.Cookies.Delete("ow_link_discord");
+                http.Response.Cookies.Delete("ow_link_account_id");
                 http.Response.Cookies.Delete("ow_oauth_state");
 
                 return Results.Redirect($"{portalBaseUrl}/driver-home.html?linkDiscord=success");
@@ -690,6 +736,7 @@ Message:
             });
 
             http.Response.Cookies.Delete("ow_link_discord");
+            http.Response.Cookies.Delete("ow_link_account_id");
             http.Response.Cookies.Delete("ow_oauth_state");
 
             http.Session.SetString("discord_user", JsonSerializer.Serialize(new
