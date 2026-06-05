@@ -43,6 +43,12 @@ public static partial class Program
     {
         var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
         Directory.CreateDirectory(dataDir);
+
+        var portalBaseUrl = (Environment.GetEnvironmentVariable("OVERWATCH_PORTAL_BASE_URL")
+            ?? Environment.GetEnvironmentVariable("PUBLIC_PORTAL_BASE_URL")
+            ?? "https://overwatcheld.com")
+            .Trim()
+            .TrimEnd('/');
         
         var emailAccountStore = new EmailAccountStore(
     Path.Combine(dataDir, "overwatcheld_accounts.db"));
@@ -541,7 +547,7 @@ Message:
         discordUserId = user.DiscordUserId
     });
 });
-        app.MapGet("/", () => Results.Redirect("/index.html"));
+        app.MapGet("/", () => Results.Ok(new { ok = true, service = "OverWatchELD API", portal = portalBaseUrl }));
 
         app.MapGet("/auth/login", (HttpContext http) =>
         {
@@ -601,7 +607,7 @@ Message:
         {
             var error = http.Request.Query["error"].ToString();
             if (!string.IsNullOrWhiteSpace(error))
-                return Results.Redirect("/driver-home.html?linkDiscord=denied");
+                return Results.Redirect($"{portalBaseUrl}/driver-home.html?linkDiscord=denied");
 
             var code = http.Request.Query["code"].ToString();
             var state = http.Request.Query["state"].ToString();
@@ -612,16 +618,16 @@ Message:
                 string.IsNullOrWhiteSpace(expectedState) ||
                 !string.Equals(state, expectedState, StringComparison.Ordinal))
             {
-                return Results.Redirect("/driver-home.html?linkDiscord=invalid_state");
+                return Results.Redirect($"{portalBaseUrl}/driver-home.html?linkDiscord=invalid_state");
             }
 
             var tokenRes = await oauth.ExchangeCodeAsync(code, ct);
             if (tokenRes == null || string.IsNullOrWhiteSpace(tokenRes.AccessToken))
-                return Results.Redirect("/driver-home.html?linkDiscord=token_failed");
+                return Results.Redirect($"{portalBaseUrl}/driver-home.html?linkDiscord=token_failed");
 
             var user = await oauth.GetCurrentUserAsync(tokenRes.AccessToken, ct);
             if (user == null || string.IsNullOrWhiteSpace(user.Id))
-                return Results.Redirect("/driver-home.html?linkDiscord=user_failed");
+                return Results.Redirect($"{portalBaseUrl}/driver-home.html?linkDiscord=user_failed");
 
             var isLinkDiscord = string.Equals(http.Request.Cookies["ow_link_discord"], "1", StringComparison.Ordinal);
             var currentSessionId = http.Request.Cookies["ow_session"];
@@ -653,7 +659,7 @@ Message:
                 http.Response.Cookies.Delete("ow_link_discord");
                 http.Response.Cookies.Delete("ow_oauth_state");
 
-                return Results.Redirect("/driver-home.html?linkDiscord=success");
+                return Results.Redirect($"{portalBaseUrl}/driver-home.html?linkDiscord=success");
             }
 
             var guilds = await oauth.GetCurrentUserGuildsAsync(tokenRes.AccessToken, ct);
@@ -706,7 +712,7 @@ Message:
             ));
 
             if (matches.Count == 0)
-                return Results.Redirect("/driver-home.html?discordLinked=1");
+                return Results.Redirect($"{portalBaseUrl}/driver-home.html?discordLinked=1");
 
             if (matches.Count == 1)
             {
@@ -722,13 +728,13 @@ Message:
                 });
 
                 var redirect = only.IsManager
-                    ? $"/manage.html?guildId={Uri.EscapeDataString(only.GuildId)}"
-                    : $"/driver-home.html?guildId={Uri.EscapeDataString(only.GuildId)}";
+    ? $"{portalBaseUrl}/vtc-dashboard.html?guildId={Uri.EscapeDataString(only.GuildId)}"
+    : $"{portalBaseUrl}/driver-home.html?guildId={Uri.EscapeDataString(only.GuildId)}";
 
                 return Results.Redirect(redirect);
             }
 
-            return Results.Redirect("/select-vtc.html");
+            return Results.Redirect($"{portalBaseUrl}/vtc-dashboard.html");
         });
 
         app.MapGet("/api/auth/me", (
@@ -827,8 +833,8 @@ Message:
             });
 
             var redirect = selected.IsManager
-    ? $"/manage.html?guildId={Uri.EscapeDataString(selected.GuildId)}"
-    : $"/driver-home.html?guildId={Uri.EscapeDataString(selected.GuildId)}";
+    ? $"{portalBaseUrl}/vtc-dashboard.html?guildId={Uri.EscapeDataString(selected.GuildId)}"
+    : $"{portalBaseUrl}/driver-home.html?guildId={Uri.EscapeDataString(selected.GuildId)}";
 
             return Results.Ok(new
             {
