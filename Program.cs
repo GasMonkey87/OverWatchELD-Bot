@@ -193,7 +193,8 @@ public static partial class Program
         {
             options.Cookie.HttpOnly = true;
             options.Cookie.IsEssential = true;
-            options.Cookie.SameSite = SameSiteMode.Lax;
+            options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+            options.Cookie.SameSite = SameSiteMode.None;
             options.IdleTimeout = TimeSpan.FromHours(12);
         });
 
@@ -207,12 +208,27 @@ public static partial class Program
         builder.Services.AddSignalR();
         builder.Services.AddCors(options =>
         {
-            options.AddPolicy("Open", policy =>
+            options.AddPolicy("CloudflarePortal", policy =>
             {
                 policy
-                    .AllowAnyOrigin()
+                    .SetIsOriginAllowed(origin =>
+                    {
+                        if (string.IsNullOrWhiteSpace(origin))
+                            return false;
+
+                        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                            return false;
+
+                        var host = uri.Host.ToLowerInvariant();
+
+                        return host == "overwatcheld.com" ||
+                               host == "www.overwatcheld.com" ||
+                               host == "overwatcheld.pages.dev" ||
+                               host.EndsWith(".overwatcheld.pages.dev", StringComparison.OrdinalIgnoreCase);
+                    })
                     .AllowAnyHeader()
-                    .AllowAnyMethod();
+                    .AllowAnyMethod()
+                    .AllowCredentials();
             });
         });
         builder.Services.AddSingleton<PersistentDispatchMessageStore>();
@@ -224,7 +240,7 @@ public static partial class Program
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
         var app = builder.Build();
 
-        app.UseCors("Open");
+        app.UseCors("CloudflarePortal");
 
         await app.Services.GetRequiredService<PersistentDispatchMessageStore>().EnsureCreatedAsync();
         services.GuildSettingsStore = app.Services.GetRequiredService<GuildSettingsStore>();
@@ -544,7 +560,7 @@ Message:
             {
                 HttpOnly = true,
                 Secure = true,
-                SameSite = SameSiteMode.Lax,
+                SameSite = SameSiteMode.None,
                 Expires = DateTimeOffset.UtcNow.AddMinutes(10),
                 IsEssential = true
             });
@@ -556,7 +572,7 @@ Message:
                 {
                     HttpOnly = true,
                     Secure = true,
-                    SameSite = SameSiteMode.Lax,
+                    SameSite = SameSiteMode.None,
                     Expires = DateTimeOffset.UtcNow.AddMinutes(10),
                     IsEssential = true
                 });
@@ -662,7 +678,7 @@ Message:
             {
                 HttpOnly = true,
                 Secure = true,
-                SameSite = SameSiteMode.Lax,
+                SameSite = SameSiteMode.None,
                 Expires = DateTimeOffset.UtcNow.AddHours(8),
                 IsEssential = true
             });
@@ -700,7 +716,7 @@ Message:
                 {
                     HttpOnly = true,
                     Secure = true,
-                    SameSite = SameSiteMode.Lax,
+                    SameSite = SameSiteMode.None,
                     Expires = DateTimeOffset.UtcNow.AddHours(8),
                     IsEssential = true
                 });
@@ -804,8 +820,8 @@ Message:
             http.Response.Cookies.Append("ow_selected_guild", selected.GuildId, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = false,
-                SameSite = SameSiteMode.Lax,
+                Secure = true,
+                SameSite = SameSiteMode.None,
                 Expires = DateTimeOffset.UtcNow.AddHours(8),
                 IsEssential = true
             });
