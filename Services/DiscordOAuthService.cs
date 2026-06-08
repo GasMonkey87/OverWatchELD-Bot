@@ -111,7 +111,7 @@ public sealed class DiscordOAuthService
             configured.Contains("overwatcheld-bot", StringComparison.OrdinalIgnoreCase) ||
             configured.Contains("overwatcheld-api", StringComparison.OrdinalIgnoreCase))
         {
-            return $"{baseUrl}/auth/discord/callback";
+            return $"{baseUrl}/api/auth/discord/callback";
         }
 
         return configured;
