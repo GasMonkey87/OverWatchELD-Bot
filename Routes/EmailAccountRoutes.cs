@@ -48,41 +48,13 @@ public static class EmailAccountRoutes
         app.MapPost("/api/account/login", async (HttpContext ctx) =>
         {
             var req = await ctx.Request.ReadFromJsonAsync<LoginRequest>();
+            return HandleLogin(ctx, req, accountStore, sessionStore, false);
+        });
 
-            if (req == null)
-                return Results.Json(new { ok = false, error = "BadRequest" }, statusCode: 400);
-
-            var account = accountStore.ValidateLogin(req.Email, req.Password);
-
-            if (account == null)
-            {
-                return Results.Json(new
-                {
-                    ok = false,
-                    error = "Invalid email or password."
-                }, statusCode: 401);
-            }
-
-            var sessionId = Guid.NewGuid().ToString("N");
-            SaveSession(sessionStore, sessionId, account);
-
-            ctx.Response.Cookies.Append(
-                "ow_session",
-                sessionId,
-                new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = true,
-                    SameSite = SameSiteMode.None,
-                    Expires = DateTimeOffset.UtcNow.AddDays(30),
-                    IsEssential = true
-                });
-
-            return Results.Json(new
-            {
-                ok = true,
-                redirectUrl = "/driver-home.html"
-            });
+        app.MapPost("/api/auth/login", async (HttpContext ctx) =>
+        {
+            var req = await ctx.Request.ReadFromJsonAsync<LoginRequest>();
+            return HandleLogin(ctx, req, accountStore, sessionStore, true);
         });
 
         app.MapGet("/api/account/me", (HttpContext ctx) =>
@@ -190,6 +162,60 @@ public static class EmailAccountRoutes
             ctx.Session.Remove("discord_guilds");
 
             return Results.Json(new { ok = true });
+        });
+    }
+
+    private static IResult HandleLogin(HttpContext ctx, LoginRequest? req, EmailAccountStore accountStore, WebSessionStore sessionStore, bool tokenResponse)
+    {
+        if (req == null)
+            return Results.Json(new { ok = false, error = "BadRequest" }, statusCode: 400);
+
+        var account = accountStore.ValidateLogin(req.Email, req.Password);
+
+        if (account == null)
+        {
+            return Results.Json(new
+            {
+                ok = false,
+                error = "Invalid email or password."
+            }, statusCode: 401);
+        }
+
+        var sessionId = Guid.NewGuid().ToString("N");
+        SaveSession(sessionStore, sessionId, account);
+
+        ctx.Response.Cookies.Append(
+            "ow_session",
+            sessionId,
+            new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Expires = DateTimeOffset.UtcNow.AddDays(30),
+                IsEssential = true
+            });
+
+        if (!tokenResponse)
+        {
+            return Results.Json(new
+            {
+                ok = true,
+                redirectUrl = "/driver-home.html"
+            });
+        }
+
+        return Results.Json(new
+        {
+            ok = true,
+            token = sessionId,
+            sessionToken = sessionId,
+            accountId = account.Id,
+            email = account.Email,
+            displayName = string.IsNullOrWhiteSpace(account.DisplayName) ? account.Email : account.DisplayName,
+            discordLinked = !string.IsNullOrWhiteSpace(account.DiscordUserId),
+            discordUserId = account.DiscordUserId ?? "",
+            guildId = ""
         });
     }
 
