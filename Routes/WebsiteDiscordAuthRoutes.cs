@@ -1,4 +1,3 @@
-using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OverWatchELD.VtcBot.Models;
@@ -9,7 +8,7 @@ namespace OverWatchELD.VtcBot.Routes;
 
 public static class WebsiteDiscordAuthRoutes
 {
-    public static void Register(WebApplication app)
+    public static void Register(WebApplication app, EmailAccountStore accountStore, WebSessionStore sessionStore)
     {
         app.MapGet("/api/auth/discord/login", (HttpContext ctx, DiscordOAuthService oauth) =>
         {
@@ -37,9 +36,7 @@ public static class WebsiteDiscordAuthRoutes
         app.MapGet("/api/auth/discord/callback", async (
             HttpContext ctx,
             DiscordOAuthService oauth,
-            WebSessionStore sessions,
             VtcAccessService vtcAccess,
-            EmailAccountStore accountStore,
             CancellationToken ct) =>
         {
             var error = ctx.Request.Query["error"].ToString();
@@ -72,7 +69,7 @@ public static class WebsiteDiscordAuthRoutes
             var existingAccount = accountStore.FindByDiscordUserId(user.Id);
             var sessionId = Guid.NewGuid().ToString("N");
 
-            sessions.Save(sessionId, new WebSessionUser
+            sessionStore.Save(sessionId, new WebSessionUser
             {
                 AccountId = existingAccount?.Id ?? "",
                 Email = existingAccount?.Email ?? "",
