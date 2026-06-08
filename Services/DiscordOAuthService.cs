@@ -88,12 +88,6 @@ public sealed class DiscordOAuthService
 
     private string ResolveRedirectUri()
     {
-        var explicitRedirect = Environment.GetEnvironmentVariable("DISCORD_REDIRECT_URI")
-            ?? Environment.GetEnvironmentVariable("DiscordOAuth__RedirectUri");
-
-        if (!string.IsNullOrWhiteSpace(explicitRedirect))
-            return explicitRedirect.Trim();
-
         var fromEnv = Environment.GetEnvironmentVariable("OVERWATCH_PUBLIC_BASE_URL")
             ?? Environment.GetEnvironmentVariable("PUBLIC_BASE_URL")
             ?? Environment.GetEnvironmentVariable("APP_BASE_URL")
@@ -103,17 +97,6 @@ public sealed class DiscordOAuthService
             ? PublicBaseUrl
             : fromEnv.Trim().TrimEnd('/');
 
-        var configured = (_options.RedirectUri ?? string.Empty).Trim();
-
-        if (string.IsNullOrWhiteSpace(configured) ||
-            configured.Contains("overwatcheld.com", StringComparison.OrdinalIgnoreCase) ||
-            configured.Contains("overwatcheld.up.railway.app", StringComparison.OrdinalIgnoreCase) ||
-            configured.Contains("overwatcheld-bot", StringComparison.OrdinalIgnoreCase) ||
-            configured.Contains("overwatcheld-api", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"{baseUrl}/api/auth/discord/callback";
-        }
-
-        return configured;
+        return $"{baseUrl}/api/auth/discord/callback";
     }
 }
