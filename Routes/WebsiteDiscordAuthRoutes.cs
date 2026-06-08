@@ -8,7 +8,7 @@ namespace OverWatchELD.VtcBot.Routes;
 
 public static class WebsiteDiscordAuthRoutes
 {
-    public static void Register(WebApplication app, EmailAccountStore accountStore, WebSessionStore sessionStore)
+    public static void Register(WebApplication app)
     {
         app.MapGet("/api/auth/discord/login", (HttpContext ctx, DiscordOAuthService oauth) =>
         {
@@ -36,6 +36,7 @@ public static class WebsiteDiscordAuthRoutes
         app.MapGet("/api/auth/discord/callback", async (
             HttpContext ctx,
             DiscordOAuthService oauth,
+            WebSessionStore sessionStore,
             VtcAccessService vtcAccess,
             CancellationToken ct) =>
         {
@@ -65,18 +66,16 @@ public static class WebsiteDiscordAuthRoutes
             var guilds = await oauth.GetCurrentUserGuildsAsync(tokenRes.AccessToken, ct);
             var matches = vtcAccess.MatchSupportedVtcs(user.Id, guilds);
             var selectedGuildId = matches.FirstOrDefault()?.GuildId ?? "";
-
-            var existingAccount = accountStore.FindByDiscordUserId(user.Id);
             var sessionId = Guid.NewGuid().ToString("N");
 
             sessionStore.Save(sessionId, new WebSessionUser
             {
-                AccountId = existingAccount?.Id ?? "",
-                Email = existingAccount?.Email ?? "",
-                IsEmailAccount = existingAccount != null,
+                AccountId = "",
+                Email = "",
+                IsEmailAccount = false,
                 DiscordUserId = user.Id,
-                Username = existingAccount?.DisplayName ?? user.Username,
-                GlobalName = user.GlobalName ?? existingAccount?.DisplayName,
+                Username = user.Username,
+                GlobalName = user.GlobalName,
                 AccessToken = tokenRes.AccessToken,
                 ExpiresUtc = DateTimeOffset.UtcNow.AddDays(30)
             });
