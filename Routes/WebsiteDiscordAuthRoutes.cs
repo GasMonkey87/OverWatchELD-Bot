@@ -1,3 +1,4 @@
+using Discord;
 using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -57,6 +58,11 @@ public static class WebsiteDiscordAuthRoutes
             var role = ResolveMemberRole(discordGuild, currentMember);
             var companyName = FirstNonBlank(portal.CompanyName, portal.SiteTitle, discordGuild?.Name, "Registered VTC");
             var about = FirstNonBlank(portal.CompanyInfo, portal.WelcomeText, "Owners and admins can write a brief company description here.");
+            var roster = BuildRoster(discordGuild, portal);
+            var fleet = BuildFleet(portal);
+            var garages = BuildGarages(portal);
+            var latest = BuildLatestInfo(discordGuild, portal);
+            var stats = BuildStats(discordGuild, portal, roster.Count, fleet.Count, garages.Count);
 
             return Results.Json(new
             {
@@ -69,11 +75,20 @@ public static class WebsiteDiscordAuthRoutes
                     description = FirstNonBlank(portal.WelcomeText, portal.CompanyInfo, $"Welcome to {companyName}."),
                     about,
                     logoUrl = FirstNonBlank(portal.LogoImageUrl, discordGuild?.IconUrl, ""),
+                    bannerUrl = portal.BannerImageUrl,
+                    heroImageUrl = portal.HeroImageUrl,
+                    discordUrl = portal.JoinDiscordUrl,
                     myRole = role,
                     canEditPortal = role is "Owner" or "Admin" or "Manager"
                 },
+                stats,
                 roles = BuildRoles(discordGuild, portal),
-                roster = BuildRoster(discordGuild, portal)
+                roster,
+                latest,
+                latestInfo = latest,
+                fleet,
+                trucks = fleet,
+                garages
             });
         });
 
@@ -272,7 +287,7 @@ public static class WebsiteDiscordAuthRoutes
                     .Where(u => !u.IsBot && ResolveMemberRole(guild, u) == roleName)
                     .Select(u => FirstNonBlank(u.DisplayName, u.GlobalName, u.Username))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Take(6)
+                    .Take(8)
                     .ToList();
             }
 
@@ -282,7 +297,7 @@ public static class WebsiteDiscordAuthRoutes
                     .Where(x => string.Equals(x.Role, roleName, StringComparison.OrdinalIgnoreCase))
                     .Select(x => FirstNonBlank(x.Name, x.DiscordUsername))
                     .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Take(6)
+                    .Take(8)
                     .ToList();
             }
 
@@ -295,13 +310,39 @@ public static class WebsiteDiscordAuthRoutes
     private static List<object> BuildRoster(SocketGuild? guild, PortalGuildData portal)
     {
         var rows = new List<object>();
+        var portalDriversByDiscord = portal.Drivers
+            .Where(d => !string.IsNullOrWhiteSpace(d.DiscordUserId))
+            .GroupBy(d => d.DiscordUserId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
-        foreach (var driver in portal.Drivers)
+        if (guild != null)
         {
-            var truck = portal.Trucks.FirstOrDefault(t =>
-                (!string.IsNullOrWhiteSpace(driver.DiscordUserId) && string.Equals(t.DriverDiscordUserId, driver.DiscordUserId, StringComparison.OrdinalIgnoreCase)) ||
-                (!string.IsNullOrWhiteSpace(driver.Name) && string.Equals(t.Driver, driver.Name, StringComparison.OrdinalIgnoreCase)));
+            foreach (var member in guild.Users.Where(u => !u.IsBot).OrderBy(u => u.DisplayName).Take(1000))
+            {
+                portalDriversByDiscord.TryGetValue(member.Id.ToString(), out var driver);
+                var truck = ResolveTruckForDriver(portal, member.Id.ToString(), driver?.Name ?? member.DisplayName);
+                var role = FirstNonBlank(driver?.Role, ResolveMemberRole(guild, member));
 
+                rows.Add(new
+                {
+                    userName = FirstNonBlank(driver?.Name, member.DisplayName, member.GlobalName, member.Username, "Driver"),
+                    role,
+                    currentTruck = FirstNonBlank(driver?.AssignedTruck, driver?.FavoriteTruck, truck?.Name, truck?.Model, "Unassigned"),
+                    totalMileage = FirstNonBlank(driver?.TotalMiles, driver?.Mileage, truck?.Odometer, "0"),
+                    status = FirstNonBlank(driver?.Status, member.Status.ToString()),
+                    awards = string.IsNullOrWhiteSpace(driver?.Achievement) ? Array.Empty<string>() : new[] { driver.Achievement },
+                    location = FirstNonBlank(truck?.Location, "Unknown"),
+                    driverScore = "N/A",
+                    joined = FirstNonBlank(driver?.YearsInVtc, member.JoinedAt?.ToString("yyyy-MM-dd"), "N/A"),
+                    discordUserId = member.Id.ToString(),
+                    avatarUrl = member.GetDisplayAvatarUrl()
+                });
+            }
+        }
+
+        foreach (var driver in portal.Drivers.Where(d => string.IsNullOrWhiteSpace(d.DiscordUserId) || rows.All(r => !JsonContainsDiscordId(r, d.DiscordUserId))))
+        {
+            var truck = ResolveTruckForDriver(portal, driver.DiscordUserId, driver.Name);
             rows.Add(new
             {
                 userName = FirstNonBlank(driver.Name, driver.DiscordUsername, "Driver"),
@@ -311,29 +352,139 @@ public static class WebsiteDiscordAuthRoutes
                 status = FirstNonBlank(driver.Status, truck?.Status, "Member"),
                 awards = string.IsNullOrWhiteSpace(driver.Achievement) ? Array.Empty<string>() : new[] { driver.Achievement },
                 location = FirstNonBlank(truck?.Location, "Unknown"),
-                joined = FirstNonBlank(driver.YearsInVtc, "N/A")
+                driverScore = "N/A",
+                joined = FirstNonBlank(driver.YearsInVtc, "N/A"),
+                discordUserId = driver.DiscordUserId,
+                avatarUrl = driver.DiscordAvatarUrl
             });
         }
 
-        if (rows.Count == 0 && guild != null)
-        {
-            foreach (var member in guild.Users.Where(u => !u.IsBot).OrderBy(u => u.DisplayName).Take(500))
+        return rows;
+    }
+
+    private static List<object> BuildFleet(PortalGuildData portal)
+    {
+        return portal.Trucks
+            .OrderBy(t => PadTruckNumber(t.TruckNumber))
+            .Select(t => new
             {
-                rows.Add(new
-                {
-                    userName = FirstNonBlank(member.DisplayName, member.GlobalName, member.Username, "Driver"),
-                    role = ResolveMemberRole(guild, member),
-                    currentTruck = "Unassigned",
-                    totalMileage = "0",
-                    status = member.Status.ToString(),
-                    awards = Array.Empty<string>(),
-                    location = "Unknown",
-                    joined = "N/A"
-                });
-            }
+                id = t.Id,
+                truckNumber = t.TruckNumber,
+                name = FirstNonBlank(t.Name, t.Model, "Truck"),
+                model = t.Model,
+                driver = t.Driver,
+                driverDiscordUserId = t.DriverDiscordUserId,
+                plate = t.Plate,
+                odometer = t.Odometer,
+                location = t.Location,
+                status = t.Status,
+                condition = t.Condition,
+                fuel = t.Fuel,
+                notes = t.Notes
+            })
+            .Cast<object>()
+            .ToList();
+    }
+
+    private static List<object> BuildGarages(PortalGuildData portal)
+    {
+        return portal.Garages
+            .OrderByDescending(g => g.IsOwned)
+            .ThenBy(g => FirstNonBlank(g.CityName, g.City))
+            .Select(g => new
+            {
+                id = g.Id,
+                cityName = FirstNonBlank(g.CityName, g.City, g.CityToken, "Garage"),
+                city = FirstNonBlank(g.City, g.CityName, g.CityToken, "Garage"),
+                state = g.State,
+                country = g.Country,
+                size = g.Size,
+                slots = FirstNonBlank(g.Slots, g.TruckCapacity.ToString()),
+                truckCapacity = g.TruckCapacity,
+                isOwned = g.IsOwned,
+                notes = g.Notes,
+                assignedTruckNumbers = g.AssignedTruckNumbers
+            })
+            .Cast<object>()
+            .ToList();
+    }
+
+    private static List<object> BuildLatestInfo(SocketGuild? guild, PortalGuildData portal)
+    {
+        var items = portal.LatestInfo
+            .OrderByDescending(x => x.CreatedUtc)
+            .Take(10)
+            .Select(x => new { title = x.Title, body = x.Body, meta = FirstNonBlank(x.Meta, x.CreatedUtc.ToString("yyyy-MM-dd")) })
+            .Cast<object>()
+            .ToList();
+
+        if (items.Count == 0)
+        {
+            items.Add(new
+            {
+                title = "Discord VTC Connected",
+                body = guild == null
+                    ? "The portal is connected, but Discord guild details were not cached yet. Keep the bot online and refresh."
+                    : $"{guild.Name} is connected to the OverWatch ELD portal.",
+                meta = "Live VTC"
+            });
+
+            items.Add(new
+            {
+                title = "Roster Sync",
+                body = guild == null
+                    ? "Roster data will show once Discord member cache is available."
+                    : $"{guild.Users.Count(u => !u.IsBot)} Discord members are available to the portal roster.",
+                meta = "Roster"
+            });
         }
 
-        return rows;
+        return items;
+    }
+
+    private static object BuildStats(SocketGuild? guild, PortalGuildData portal, int rosterCount, int fleetCount, int garageCount)
+    {
+        var humans = guild?.Users.Where(u => !u.IsBot).ToList() ?? new List<SocketGuildUser>();
+        var online = humans.Count(u => u.Status is UserStatus.Online or UserStatus.Idle or UserStatus.DoNotDisturb);
+        var ownersAdminsManagers = humans.Count(u => ResolveMemberRole(guild, u) is "Owner" or "Admin" or "Manager");
+        var availableTrucks = portal.Trucks.Count(t => string.IsNullOrWhiteSpace(t.Status) || t.Status.Contains("available", StringComparison.OrdinalIgnoreCase));
+        var assignedTrucks = portal.Trucks.Count(t => !string.IsNullOrWhiteSpace(t.Driver) || !string.IsNullOrWhiteSpace(t.DriverDiscordUserId));
+
+        return new
+        {
+            members = rosterCount > 0 ? rosterCount : humans.Count,
+            discordMembers = humans.Count,
+            onlineMembers = online,
+            managementMembers = ownersAdminsManagers,
+            fleetTrucks = fleetCount,
+            assignedTrucks,
+            availableTrucks,
+            garages = garageCount,
+            ownedGarages = portal.Garages.Count(g => g.IsOwned),
+            latestInfo = portal.LatestInfo.Count,
+            updatedUtc = portal.UpdatedUtc
+        };
+    }
+
+    private static PortalTruck? ResolveTruckForDriver(PortalGuildData portal, string? discordUserId, string? driverName)
+    {
+        return portal.Trucks.FirstOrDefault(t =>
+            (!string.IsNullOrWhiteSpace(discordUserId) && string.Equals(t.DriverDiscordUserId, discordUserId, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(driverName) && string.Equals(t.Driver, driverName, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    private static bool JsonContainsDiscordId(object row, string discordUserId)
+    {
+        if (string.IsNullOrWhiteSpace(discordUserId))
+            return false;
+
+        return row.ToString()?.Contains(discordUserId, StringComparison.OrdinalIgnoreCase) == true;
+    }
+
+    private static string PadTruckNumber(string value)
+    {
+        var digits = new string((value ?? "").Where(char.IsDigit).ToArray());
+        return string.IsNullOrWhiteSpace(digits) ? value : digits.PadLeft(10, '0');
     }
 
     private static string FirstNonBlank(params string?[] values)
