@@ -12,22 +12,58 @@ public static class VtcDirectoryRoutes
         app.MapGet("/api/vtc/directory", (PortalDataStore portalStore, DiscordSocketClient discord) =>
         {
             var root = portalStore.Load();
-            var vtcs = root.Guilds.Values
-                .Where(g => g.IsPublicDirectoryListed)
+            var byGuild = new Dictionary<string, PortalGuildData>(StringComparer.Ordinal);
+
+            foreach (var saved in root.Guilds.Values.Where(g => g.IsPublicDirectoryListed))
+                byGuild[saved.GuildId] = saved;
+
+            foreach (var guild in discord.Guilds)
+            {
+                var id = guild.Id.ToString();
+                if (!byGuild.ContainsKey(id))
+                {
+                    byGuild[id] = new PortalGuildData
+                    {
+                        GuildId = id,
+                        CompanyName = guild.Name,
+                        WelcomeText = $"{guild.Name} is registered with OverWatch ELD.",
+                        LogoImageUrl = guild.IconUrl ?? "",
+                        IsPublicDirectoryListed = true,
+                        IsAcceptingApplications = true
+                    };
+                }
+            }
+
+            var vtcs = byGuild.Values
                 .Select(g => BuildPublicCard(g, discord))
-                .OrderBy(x => x.Name)
+                .OrderBy(x => x.name)
                 .ToList();
 
-            return Results.Json(new { ok = true, vtcs });
+            return Results.Json(new { ok = true, vtcs, count = vtcs.Count, botGuildCount = discord.Guilds.Count });
         });
 
         app.MapGet("/api/vtc/public/{guildId}", (string guildId, PortalDataStore portalStore, DiscordSocketClient discord) =>
         {
             var root = portalStore.Load();
-            if (!root.Guilds.TryGetValue(guildId, out var portal) || !portal.IsPublicDirectoryListed)
+            root.Guilds.TryGetValue(guildId, out var portal);
+            var guild = ulong.TryParse(guildId, out var parsed) ? discord.GetGuild(parsed) : null;
+
+            if (portal == null && guild == null)
                 return Results.Json(new { ok = false, error = "NotFound" }, statusCode: 404);
 
-            var guild = ulong.TryParse(guildId, out var parsed) ? discord.GetGuild(parsed) : null;
+            portal ??= new PortalGuildData
+            {
+                GuildId = guildId,
+                CompanyName = guild?.Name ?? "Registered VTC",
+                WelcomeText = $"{guild?.Name ?? "This VTC"} is registered with OverWatch ELD.",
+                LogoImageUrl = guild?.IconUrl ?? "",
+                IsPublicDirectoryListed = true,
+                IsAcceptingApplications = true
+            };
+
+            if (!portal.IsPublicDirectoryListed)
+                return Results.Json(new { ok = false, error = "NotFound" }, statusCode: 404);
+
             var questions = portal.ApplicationQuestions
                 .Where(q => !string.IsNullOrWhiteSpace(q.Question))
                 .Select(q => new { id = q.Id, question = q.Question, type = q.Type, required = q.Required })
@@ -55,11 +91,27 @@ public static class VtcDirectoryRoutes
             });
         });
 
-        app.MapPost("/api/vtc/public/{guildId}/apply", async (string guildId, HttpContext ctx, PortalDataStore portalStore) =>
+        app.MapPost("/api/vtc/public/{guildId}/apply", async (string guildId, HttpContext ctx, PortalDataStore portalStore, DiscordSocketClient discord) =>
         {
             var req = await ctx.Request.ReadFromJsonAsync<SubmitApplicationRequest>() ?? new SubmitApplicationRequest();
             var root = portalStore.Load();
-            if (!root.Guilds.TryGetValue(guildId, out var portal) || !portal.IsPublicDirectoryListed)
+            root.Guilds.TryGetValue(guildId, out var portal);
+            var guild = ulong.TryParse(guildId, out var parsed) ? discord.GetGuild(parsed) : null;
+
+            if (portal == null && guild == null)
+                return Results.Json(new { ok = false, error = "NotFound" }, statusCode: 404);
+
+            portal ??= new PortalGuildData
+            {
+                GuildId = guildId,
+                CompanyName = guild?.Name ?? "Registered VTC",
+                WelcomeText = $"{guild?.Name ?? "This VTC"} is registered with OverWatch ELD.",
+                LogoImageUrl = guild?.IconUrl ?? "",
+                IsPublicDirectoryListed = true,
+                IsAcceptingApplications = true
+            };
+
+            if (!portal.IsPublicDirectoryListed)
                 return Results.Json(new { ok = false, error = "NotFound" }, statusCode: 404);
 
             if (!portal.IsAcceptingApplications)
@@ -95,7 +147,14 @@ public static class VtcDirectoryRoutes
                 SubmittedUtc = DateTimeOffset.UtcNow
             };
 
-            portalStore.UpdateGuild(guildId, g => g.Applications.Add(appRow));
+            portalStore.UpdateGuild(guildId, g =>
+            {
+                g.CompanyName = FirstNonBlank(g.CompanyName, portal.CompanyName);
+                g.WelcomeText = FirstNonBlank(g.WelcomeText, portal.WelcomeText);
+                g.LogoImageUrl = FirstNonBlank(g.LogoImageUrl, portal.LogoImageUrl);
+                g.Applications.Add(appRow);
+            });
+
             return Results.Json(new { ok = true, applicationId = appRow.Id });
         });
 
