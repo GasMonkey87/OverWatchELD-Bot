@@ -122,6 +122,7 @@ public sealed class PortalGuildData
     public string SelectedFeaturedDriver { get; set; } = "";
     public List<PortalTruck> Trucks { get; set; } = new();
     public List<PortalGarage> Garages { get; set; } = new();
+    public List<PortalAuditEntry> AuditLog { get; set; } = new();
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -161,6 +162,16 @@ public sealed class PortalLatestInfo
     public string Title { get; set; } = "";
     public string Body { get; set; } = "";
     public string Meta { get; set; } = "";
+    public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class PortalAuditEntry
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Action { get; set; } = "";
+    public string Detail { get; set; } = "";
+    public string Actor { get; set; } = "";
+    public string ActorDiscordUserId { get; set; } = "";
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 
