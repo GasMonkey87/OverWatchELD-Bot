@@ -8,16 +8,67 @@ public static class PortalLoadBoardRoutes
 {
     public static void Register(WebApplication app)
     {
-        app.MapGet("/api/vtc/portal/loads", (string guildId, string? status, PortalDataStore store) =>
-        {
-            if (string.IsNullOrWhiteSpace(guildId)) return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
-            var guild = store.GetGuild(guildId);
-            var rows = guild.DispatchLoads.AsEnumerable();
-            if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "All", StringComparison.OrdinalIgnoreCase))
-                rows = rows.Where(x => string.Equals(x.Status, status, StringComparison.OrdinalIgnoreCase));
-            return Results.Ok(new { ok = true, guildId, loads = rows.OrderByDescending(x => x.UpdatedUtc).ToList() });
-        });
+        app.MapGet("/api/vtc/portal/loads", (
+    string guildId,
+    string? status,
+    PortalDataStore store,
+    DispatchLoadStore dispatchLoadStore) =>
+{
+    if (string.IsNullOrWhiteSpace(guildId))
+        return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
 
+    var guild = store.GetGuild(guildId);
+
+    var portalRows = guild.DispatchLoads.ToList();
+
+    var legacyRows = dispatchLoadStore.List(guildId)
+        .Select(load => new PortalDispatchLoad
+        {
+            Id = load.Id,
+            LoadNumber = load.LoadNumber,
+            Status = NormalizePortalLoadStatus(load.Status),
+            Title = load.LoadNumber,
+            Cargo = load.Commodity,
+            Origin = load.PickupLocation,
+            Destination = load.DropoffLocation,
+            AssignedDriver = load.DriverName,
+            AssignedDriverDiscordUserId = load.DriverDiscordUserId,
+            AssignedTruck = load.TruckId,
+            Dispatcher = "ELD Dispatch Tracker",
+            Notes = load.DispatcherNotes,
+            BolUrl = load.BolNumber,
+            IsCompanyLoad = true,
+            CreatedUtc = load.CreatedUtc,
+            UpdatedUtc = load.UpdatedUtc,
+            ClaimedUtc = load.AssignedUtc,
+            PickedUpUtc = load.PickupUtc,
+            DeliveredUtc = load.DeliveredUtc
+        })
+        .ToList();
+
+    var merged = legacyRows
+        .Concat(portalRows)
+        .GroupBy(x => string.IsNullOrWhiteSpace(x.LoadNumber) ? x.Id : x.LoadNumber, StringComparer.OrdinalIgnoreCase)
+        .Select(g => g.OrderByDescending(x => x.UpdatedUtc).First())
+        .ToList();
+
+    if (!string.IsNullOrWhiteSpace(status) &&
+        !string.Equals(status, "All", StringComparison.OrdinalIgnoreCase))
+    {
+        merged = merged
+            .Where(x => string.Equals(x.Status, status, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    return Results.Ok(new
+    {
+        ok = true,
+        guildId,
+        loads = merged.OrderByDescending(x => x.UpdatedUtc).ToList(),
+        portalCount = portalRows.Count,
+        dispatchCount = legacyRows.Count
+    });
+});
         app.MapPost("/api/vtc/portal/loads", async (HttpContext ctx, PortalDataStore store) =>
         {
             var guildId = ctx.Request.Query["guildId"].ToString();
@@ -89,6 +140,25 @@ public static class PortalLoadBoardRoutes
         g.AuditLog.Add(new PortalAuditEntry { Action = action, Detail = detail, Actor = "Portal Load Board", CreatedUtc = DateTimeOffset.UtcNow });
     }
 
+    private static string NormalizePortalLoadStatus(string? status)
+{
+    var s = (status ?? "").Trim().Replace("_", " ").ToLowerInvariant();
+
+    return s switch
+    {
+        "unassigned" => "Available",
+        "assigned" => "Assigned",
+        "picked up" => "Picked Up",
+        "pickedup" => "Picked Up",
+        "in transit" => "In Transit",
+        "delivered" => "Delivered",
+        "paid" => "Paid",
+        "cancelled" => "Cancelled",
+        "canceled" => "Cancelled",
+        _ => string.IsNullOrWhiteSpace(status) ? "Available" : status.Trim()
+    };
+}
+    
     private static string First(params string?[] values)
     {
         foreach (var v in values) if (!string.IsNullOrWhiteSpace(v)) return v.Trim();
