@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -16,8 +17,26 @@ public static class VtcSelectionRoutes
             if (session == null)
                 return Results.Json(new { ok = false, error = "NotAuthenticated" }, statusCode: 401);
 
-            var selectedGuildId = FirstNonBlank(ctx.Request.Query["guildId"].ToString(), ctx.Request.Cookies["ow_selected_guild"]);
+            var locks = LoadLocks();
+            var accountKey = GetAccountKey(session);
+            locks.TryGetValue(accountKey, out var locked);
+
+            var selectedGuildId = FirstNonBlank(ctx.Request.Query["guildId"].ToString(), ctx.Request.Cookies["ow_selected_guild"], locked?.GuildId);
             var vtcs = BuildVtcChoices(session, portalStore, discord);
+
+            if (session.IsEmailAccount && locked != null)
+            {
+                vtcs = vtcs.Where(v => string.Equals(v.GuildId, locked.GuildId, StringComparison.Ordinal)).ToList();
+                if (vtcs.Count == 0)
+                {
+                    var root = portalStore.Load();
+                    root.Guilds.TryGetValue(locked.GuildId, out var portal);
+                    var guild = ulong.TryParse(locked.GuildId, out var parsedGuildId) ? discord.GetGuild(parsedGuildId) : null;
+                    portal ??= new PortalGuildData { GuildId = locked.GuildId, CompanyName = FirstNonBlank(locked.VtcName, guild?.Name, "Locked VTC") };
+                    vtcs.Add(BuildChoice(locked.GuildId, guild, portal, "Driver", "Locked Email VTC"));
+                }
+                selectedGuildId = locked.GuildId;
+            }
 
             if (!string.IsNullOrWhiteSpace(selectedGuildId) && vtcs.All(v => v.GuildId != selectedGuildId))
                 selectedGuildId = "";
@@ -27,9 +46,11 @@ public static class VtcSelectionRoutes
                 ok = true,
                 selectedGuildId,
                 count = vtcs.Count,
-                requiresSelection = vtcs.Count != 1 || string.IsNullOrWhiteSpace(selectedGuildId),
+                requiresSelection = session.IsEmailAccount && locked != null ? false : (vtcs.Count != 1 || string.IsNullOrWhiteSpace(selectedGuildId)),
                 isEmailAccount = session.IsEmailAccount,
                 discordLinked = !string.IsNullOrWhiteSpace(session.DiscordUserId),
+                lockedToVtc = session.IsEmailAccount && locked != null,
+                canChangeVtc = !(session.IsEmailAccount && locked != null),
                 vtcs = vtcs.Select(v => new
                 {
                     guildId = v.GuildId,
@@ -57,9 +78,36 @@ public static class VtcSelectionRoutes
             if (string.IsNullOrWhiteSpace(req.GuildId))
                 return Results.Json(new { ok = false, error = "MissingGuildId" }, statusCode: 400);
 
+            var locks = LoadLocks();
+            var accountKey = GetAccountKey(session);
+            if (session.IsEmailAccount && locks.TryGetValue(accountKey, out var existing) && !string.Equals(existing.GuildId, req.GuildId, StringComparison.Ordinal))
+            {
+                return Results.Json(new
+                {
+                    ok = false,
+                    error = "VtcLocked",
+                    message = "This email account is already locked to a VTC. Leave the current VTC from the portal before selecting another.",
+                    guildId = existing.GuildId,
+                    vtcName = existing.VtcName
+                }, statusCode: 409);
+            }
+
             var vtcs = BuildVtcChoices(session, portalStore, discord);
-            if (vtcs.All(v => v.GuildId != req.GuildId))
+            var selected = vtcs.FirstOrDefault(v => v.GuildId == req.GuildId);
+            if (selected == null)
                 return Results.Json(new { ok = false, error = "Forbidden" }, statusCode: 403);
+
+            if (session.IsEmailAccount && !locks.ContainsKey(accountKey))
+            {
+                locks[accountKey] = new EmailVtcLock
+                {
+                    AccountKey = accountKey,
+                    GuildId = selected.GuildId,
+                    VtcName = selected.Name,
+                    LockedUtc = DateTimeOffset.UtcNow
+                };
+                SaveLocks(locks);
+            }
 
             ctx.Response.Cookies.Append("ow_selected_guild", req.GuildId, new CookieOptions
             {
@@ -70,7 +118,23 @@ public static class VtcSelectionRoutes
                 IsEssential = true
             });
 
-            return Results.Json(new { ok = true, guildId = req.GuildId, redirectUrl = "/portal/?guildId=" + Uri.EscapeDataString(req.GuildId) });
+            return Results.Json(new { ok = true, guildId = req.GuildId, lockedToVtc = session.IsEmailAccount, redirectUrl = "/portal/?guildId=" + Uri.EscapeDataString(req.GuildId) });
+        });
+
+        app.MapPost("/api/portal/leave-vtc", (HttpContext ctx, WebSessionStore sessions) =>
+        {
+            var session = GetSession(ctx, sessions);
+            if (session == null)
+                return Results.Json(new { ok = false, error = "NotAuthenticated" }, statusCode: 401);
+
+            var locks = LoadLocks();
+            var accountKey = GetAccountKey(session);
+            var removed = session.IsEmailAccount && locks.Remove(accountKey);
+            if (removed)
+                SaveLocks(locks);
+
+            ctx.Response.Cookies.Delete("ow_selected_guild");
+            return Results.Json(new { ok = true, removed, redirectUrl = "/select-vtc/" });
         });
     }
 
@@ -85,7 +149,6 @@ public static class VtcSelectionRoutes
             {
                 var member = ResolveMember(guild, session.DiscordUserId);
                 if (member == null) continue;
-
                 var guildId = guild.Id.ToString();
                 root.Guilds.TryGetValue(guildId, out var portal);
                 portal ??= new PortalGuildData { GuildId = guildId, CompanyName = guild.Name, LogoImageUrl = guild.IconUrl ?? "" };
@@ -152,14 +215,33 @@ public static class VtcSelectionRoutes
         }
         if (string.IsNullOrWhiteSpace(sessionId))
             sessionId = ctx.Request.Headers["X-OverWatch-Session"].ToString();
-
         return !string.IsNullOrWhiteSpace(sessionId) && sessions.TryGet(sessionId, out var session) ? session : null;
     }
 
+    private static Dictionary<string, EmailVtcLock> LoadLocks()
+    {
+        try
+        {
+            var path = LockPath();
+            if (!File.Exists(path)) return new Dictionary<string, EmailVtcLock>(StringComparer.OrdinalIgnoreCase);
+            return JsonSerializer.Deserialize<Dictionary<string, EmailVtcLock>>(File.ReadAllText(path)) ?? new Dictionary<string, EmailVtcLock>(StringComparer.OrdinalIgnoreCase);
+        }
+        catch { return new Dictionary<string, EmailVtcLock>(StringComparer.OrdinalIgnoreCase); }
+    }
+
+    private static void SaveLocks(Dictionary<string, EmailVtcLock> locks)
+    {
+        var path = LockPath();
+        Directory.CreateDirectory(Path.GetDirectoryName(path) ?? AppContext.BaseDirectory);
+        File.WriteAllText(path, JsonSerializer.Serialize(locks, new JsonSerializerOptions { WriteIndented = true }));
+    }
+
+    private static string LockPath() => Path.Combine(AppContext.BaseDirectory, "data", "email_vtc_locks.json");
+    private static string GetAccountKey(WebSessionUser session) => FirstNonBlank(session.AccountId, session.Email, session.Username).Trim().ToLowerInvariant();
+
     private static SocketGuildUser? ResolveMember(SocketGuild guild, string discordUserId)
     {
-        if (string.IsNullOrWhiteSpace(discordUserId) || !ulong.TryParse(discordUserId, out var userId))
-            return null;
+        if (string.IsNullOrWhiteSpace(discordUserId) || !ulong.TryParse(discordUserId, out var userId)) return null;
         return guild.GetUser(userId);
     }
 
@@ -178,18 +260,18 @@ public static class VtcSelectionRoutes
 
     private static string FirstNonBlank(params string?[] values)
     {
-        foreach (var value in values)
-        {
-            if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
-        }
+        foreach (var value in values) if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
         return "";
     }
 
-    private sealed class SelectVtcRequest
+    private sealed class SelectVtcRequest { public string GuildId { get; set; } = ""; }
+    private sealed class EmailVtcLock
     {
+        public string AccountKey { get; set; } = "";
         public string GuildId { get; set; } = "";
+        public string VtcName { get; set; } = "";
+        public DateTimeOffset LockedUtc { get; set; }
     }
-
     private sealed class VtcChoice
     {
         public string GuildId { get; set; } = "";
