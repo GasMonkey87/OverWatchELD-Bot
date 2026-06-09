@@ -2,6 +2,7 @@ using Discord.WebSocket;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using OverWatchELD.VtcBot.Stores;
+using OverWatchELD.VtcBot.Models;
 
 namespace OverWatchELD.VtcBot.Routes;
 
