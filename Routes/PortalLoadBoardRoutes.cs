@@ -1,54 +1,56 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using OverWatchELD.VtcBot.Models;
 using OverWatchELD.VtcBot.Stores;
-using Microsoft.AspNetCore.Mvc;
 
 namespace OverWatchELD.VtcBot.Routes;
 
 public static class PortalLoadBoardRoutes
 {
+    private static readonly JsonSerializerOptions ReadOpts = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions WriteOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, WriteIndented = true };
+
     public static void Register(WebApplication app)
     {
-        app.MapGet("/api/vtc/portal/loads", (
-            string guildId,
-            string? status,
-            [FromServices] PortalDataStore store,
-            [FromServices] DispatchLoadStore dispatchLoadStore) =>
+        app.MapGet("/api/vtc/portal/loads", (string guildId, string? status, [FromServices] PortalDataStore store) =>
         {
             if (string.IsNullOrWhiteSpace(guildId)) return Results.BadRequest(new { ok = false, error = "MissingGuildId" });
+
             var guild = store.GetGuild(guildId);
             var portalRows = guild.DispatchLoads.ToList();
-            var legacyRows = dispatchLoadStore.List(guildId).Select(load => new PortalDispatchLoad
+            var legacyRows = new List<PortalDispatchLoad>();
+            string legacyError = "";
+
+            try
             {
-                Id = load.Id,
-                LoadNumber = load.LoadNumber,
-                Status = NormalizePortalLoadStatus(load.Status),
-                Title = load.LoadNumber,
-                Cargo = load.Commodity,
-                Origin = load.PickupLocation,
-                Destination = load.DropoffLocation,
-                AssignedDriver = load.DriverName,
-                AssignedDriverDiscordUserId = load.DriverDiscordUserId,
-                AssignedTruck = load.TruckId,
-                Dispatcher = "ELD Dispatch Tracker",
-                Notes = load.DispatcherNotes,
-                BolUrl = load.BolNumber,
-                IsCompanyLoad = true,
-                CreatedUtc = load.CreatedUtc,
-                UpdatedUtc = load.UpdatedUtc,
-                ClaimedUtc = load.AssignedUtc,
-                PickedUpUtc = load.PickupUtc,
-                DeliveredUtc = load.DeliveredUtc
-            }).ToList();
+                var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
+                var legacyStore = new DispatchLoadStore(Path.Combine(dataDir, "dispatch_loads.json"), ReadOpts, WriteOpts);
+                legacyRows = legacyStore.List(guildId).Select(ConvertLegacyLoad).ToList();
+            }
+            catch (Exception ex)
+            {
+                legacyError = ex.GetType().Name + ": " + ex.Message;
+            }
+
             var merged = legacyRows.Concat(portalRows)
                 .GroupBy(x => string.IsNullOrWhiteSpace(x.LoadNumber) ? x.Id : x.LoadNumber, StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.OrderByDescending(x => x.UpdatedUtc).First())
                 .ToList();
+
             if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "All", StringComparison.OrdinalIgnoreCase))
                 merged = merged.Where(x => string.Equals(x.Status, status, StringComparison.OrdinalIgnoreCase)).ToList();
-            return Results.Ok(new { ok = true, guildId, loads = merged.OrderByDescending(x => x.UpdatedUtc).ToList(), portalCount = portalRows.Count, dispatchCount = legacyRows.Count });
+
+            return Results.Ok(new
+            {
+                ok = true,
+                guildId,
+                loads = merged.OrderByDescending(x => x.UpdatedUtc).ToList(),
+                portalCount = portalRows.Count,
+                dispatchCount = legacyRows.Count,
+                legacyError
+            });
         });
 
         app.MapPost("/api/vtc/portal/loads", async (HttpContext ctx, [FromServices] PortalDataStore store) =>
@@ -115,6 +117,32 @@ public static class PortalLoadBoardRoutes
             });
             return row == null ? Results.NotFound(new { ok = false, error = "LoadNotFound" }) : Results.Ok(new { ok = true, load = row });
         });
+    }
+
+    private static PortalDispatchLoad ConvertLegacyLoad(DispatchLoad load)
+    {
+        return new PortalDispatchLoad
+        {
+            Id = load.Id,
+            LoadNumber = load.LoadNumber,
+            Status = NormalizePortalLoadStatus(load.Status),
+            Title = load.LoadNumber,
+            Cargo = load.Commodity,
+            Origin = load.PickupLocation,
+            Destination = load.DropoffLocation,
+            AssignedDriver = load.DriverName,
+            AssignedDriverDiscordUserId = load.DriverDiscordUserId,
+            AssignedTruck = load.TruckId,
+            Dispatcher = "ELD Dispatch Tracker",
+            Notes = load.DispatcherNotes,
+            BolUrl = load.BolNumber,
+            IsCompanyLoad = true,
+            CreatedUtc = load.CreatedUtc,
+            UpdatedUtc = load.UpdatedUtc,
+            ClaimedUtc = load.AssignedUtc,
+            PickedUpUtc = load.PickupUtc,
+            DeliveredUtc = load.DeliveredUtc
+        };
     }
 
     private static string NormalizePortalLoadStatus(string? status)
