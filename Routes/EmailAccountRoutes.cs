@@ -10,6 +10,7 @@ public static class EmailAccountRoutes
     public static void Register(WebApplication app, EmailAccountStore accountStore, WebSessionStore sessionStore)
     {
         WebsiteDiscordAuthRoutes.Register(app);
+        VtcDirectoryRoutes.Register(app);
 
         app.MapPost("/api/account/register", async (HttpContext ctx) =>
         {
