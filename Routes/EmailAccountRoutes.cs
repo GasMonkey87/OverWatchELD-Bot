@@ -12,7 +12,8 @@ public static class EmailAccountRoutes
         WebsiteDiscordAuthRoutes.Register(app);
         VtcDirectoryRoutes.Register(app);
         VtcSelectionRoutes.Register(app);
-
+        PortalMeEmailRoutes.Register(app);
+        
         app.MapPost("/api/account/register", async (HttpContext ctx) =>
         {
             var req = await ctx.Request.ReadFromJsonAsync<RegisterRequest>();
