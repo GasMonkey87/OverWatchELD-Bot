@@ -13,6 +13,7 @@ public static class EmailAccountRoutes
         VtcDirectoryRoutes.Register(app);
         VtcSelectionRoutes.Register(app);
         PortalMeEmailRoutes.Register(app);
+        PortalLoadBoardRoutes.Register(app);
         
         app.MapPost("/api/account/register", async (HttpContext ctx) =>
         {
