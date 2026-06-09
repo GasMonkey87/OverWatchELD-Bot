@@ -12,7 +12,7 @@ public static class PortalMeEmailRoutes
 {
     public static void Register(WebApplication app)
     {
-        app.MapGet("/api/portal/me-email", (HttpContext ctx, WebSessionStore sessionStore, PortalDataStore portalStore, BotServices services, DiscordSocketClient discord) =>
+        app.MapGet("/api/portal/me-email", (HttpContext ctx, WebSessionStore sessionStore, PortalDataStore portalStore, DiscordSocketClient discord) =>
         {
             var session = GetSession(ctx, sessionStore);
             if (session == null)
@@ -30,6 +30,7 @@ public static class PortalMeEmailRoutes
             var member = ResolveMember(discordGuild, session.DiscordUserId);
             var role = session.IsEmailAccount && string.IsNullOrWhiteSpace(session.DiscordUserId) ? "Driver" : ResolveMemberRole(discordGuild, member);
             var companyName = FirstNonBlank(portal.CompanyName, portal.SiteTitle, discordGuild?.Name, "Registered VTC");
+            var services = (BotServices?)ctx.RequestServices.GetService(typeof(BotServices)) ?? new BotServices();
 
             var liveStatuses = services.DriverStatusStore?.List(guildId) ?? new List<DriverStatusStore.DriverStatusEntry>();
             var perf = services.PerformanceStore?.Load(guildId) ?? new Dictionary<string, DriverPerformance>(StringComparer.OrdinalIgnoreCase);
