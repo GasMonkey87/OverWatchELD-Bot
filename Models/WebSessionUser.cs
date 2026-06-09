@@ -7,6 +7,10 @@ public sealed class WebSessionUser
     public string Email { get; set; } = "";
     public bool IsEmailAccount { get; set; }
 
+    // Locked VTC selection for email/password accounts.
+    public string LockedGuildId { get; set; } = "";
+    public string LockedVtcName { get; set; } = "";
+
     // Discord fields. These are optional for email accounts until they link Discord.
     public string DiscordUserId { get; set; } = "";
     public string Username { get; set; } = "";
