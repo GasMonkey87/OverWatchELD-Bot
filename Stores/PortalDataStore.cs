@@ -103,6 +103,17 @@ public sealed class PortalGuildData
     public string HeroImageUrl { get; set; } = "";
     public string JoinDiscordUrl { get; set; } = "";
     public string LearnMoreUrl { get; set; } = "";
+    public bool IsPublicDirectoryListed { get; set; } = true;
+    public bool IsAcceptingApplications { get; set; } = true;
+    public string PublicRecruitingMessage { get; set; } = "";
+    public string PublicRequirements { get; set; } = "";
+    public List<PortalApplicationQuestion> ApplicationQuestions { get; set; } = new()
+    {
+        new PortalApplicationQuestion { Question = "What is your Discord username?", Required = true },
+        new PortalApplicationQuestion { Question = "How many hours do you have in ATS/ETS2?", Required = true },
+        new PortalApplicationQuestion { Question = "Why do you want to join this VTC?", Required = true }
+    };
+    public List<PortalApplication> Applications { get; set; } = new();
     public List<PortalLatestInfo> LatestInfo { get; set; } = new();
     public List<PortalDriver> Drivers { get; set; } = new();
     public List<PortalDriver> FeaturedDrivers { get; set; } = new();
@@ -112,6 +123,36 @@ public sealed class PortalGuildData
     public List<PortalTruck> Trucks { get; set; } = new();
     public List<PortalGarage> Garages { get; set; } = new();
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class PortalApplicationQuestion
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Question { get; set; } = "";
+    public string Type { get; set; } = "textarea";
+    public bool Required { get; set; } = true;
+}
+
+public sealed class PortalApplicationAnswer
+{
+    public string QuestionId { get; set; } = "";
+    public string Question { get; set; } = "";
+    public string Answer { get; set; } = "";
+}
+
+public sealed class PortalApplication
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string ApplicantName { get; set; } = "";
+    public string ApplicantEmail { get; set; } = "";
+    public string ApplicantDiscord { get; set; } = "";
+    public string ApplicantDiscordUserId { get; set; } = "";
+    public List<PortalApplicationAnswer> Answers { get; set; } = new();
+    public string Status { get; set; } = "Pending";
+    public string ReviewedBy { get; set; } = "";
+    public string ReviewNotes { get; set; } = "";
+    public DateTimeOffset SubmittedUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? ReviewedUtc { get; set; }
 }
 
 public sealed class PortalLatestInfo
@@ -163,8 +204,6 @@ public sealed class PortalTruck
 public sealed class PortalGarage
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
-
-    // Legacy portal fields
     public string City { get; set; } = "";
     public string State { get; set; } = "";
     public string Country { get; set; } = "";
@@ -173,8 +212,6 @@ public sealed class PortalGarage
     public string PurchasedBy { get; set; } = "";
     public string PurchasedUtc { get; set; } = "";
     public string Notes { get; set; } = "";
-
-    // VTC Garage / live-map fields
     public string CityToken { get; set; } = "";
     public string CityName { get; set; } = "";
     public string Size { get; set; } = "Small";
