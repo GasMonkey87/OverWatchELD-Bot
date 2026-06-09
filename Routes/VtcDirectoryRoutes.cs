@@ -83,6 +83,7 @@ public static class VtcDirectoryRoutes
                     logoUrl = FirstNonBlank(portal.LogoImageUrl, guild?.IconUrl, ""),
                     bannerUrl = FirstNonBlank(portal.BannerImageUrl, portal.HeroImageUrl, ""),
                     acceptingApplications = portal.IsAcceptingApplications,
+                    applicationStatusText = portal.IsAcceptingApplications ? "Accepting Applications" : "Applications Closed",
                     memberCount = guild?.Users.Count(u => !u.IsBot) ?? portal.Drivers.Count,
                     truckCount = portal.Trucks.Count,
                     garageCount = portal.Garages.Count,
@@ -156,6 +157,31 @@ public static class VtcDirectoryRoutes
             });
 
             return Results.Json(new { ok = true, applicationId = appRow.Id });
+        });
+
+        app.MapPost("/api/vtc/admin/{guildId}/settings", async (string guildId, HttpContext ctx, PortalDataStore portalStore, WebSessionStore sessions, DiscordSocketClient discord) =>
+        {
+            var access = CheckManagerAccess(ctx, sessions, discord, guildId);
+            if (!access.Ok) return Results.Json(new { ok = false, error = access.Error }, statusCode: access.StatusCode);
+
+            var req = await ctx.Request.ReadFromJsonAsync<SaveVtcSettingsRequest>() ?? new SaveVtcSettingsRequest();
+            var updated = portalStore.UpdateGuild(guildId, g =>
+            {
+                g.IsAcceptingApplications = req.IsAcceptingApplications;
+                g.IsPublicDirectoryListed = req.IsPublicDirectoryListed;
+                if (req.PublicRecruitingMessage != null)
+                    g.PublicRecruitingMessage = req.PublicRecruitingMessage.Trim();
+                if (req.PublicRequirements != null)
+                    g.PublicRequirements = req.PublicRequirements.Trim();
+            });
+
+            return Results.Json(new
+            {
+                ok = true,
+                isAcceptingApplications = updated.IsAcceptingApplications,
+                isPublicDirectoryListed = updated.IsPublicDirectoryListed,
+                applicationStatusText = updated.IsAcceptingApplications ? "Accepting Applications" : "Applications Closed"
+            });
         });
 
         app.MapPost("/api/vtc/admin/{guildId}/questions", async (string guildId, HttpContext ctx, PortalDataStore portalStore, WebSessionStore sessions, DiscordSocketClient discord) =>
@@ -243,6 +269,7 @@ public static class VtcDirectoryRoutes
             logoUrl = FirstNonBlank(portal.LogoImageUrl, guild?.IconUrl, ""),
             bannerUrl = FirstNonBlank(portal.BannerImageUrl, portal.HeroImageUrl, ""),
             acceptingApplications = portal.IsAcceptingApplications,
+            applicationStatusText = portal.IsAcceptingApplications ? "Accepting Applications" : "Applications Closed",
             memberCount = guild?.Users.Count(u => !u.IsBot) ?? portal.Drivers.Count,
             truckCount = portal.Trucks.Count,
             garageCount = portal.Garages.Count,
@@ -309,6 +336,14 @@ public static class VtcDirectoryRoutes
         public string ApplicantDiscord { get; set; } = "";
         public string ApplicantDiscordUserId { get; set; } = "";
         public Dictionary<string, string> Answers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed class SaveVtcSettingsRequest
+    {
+        public bool IsAcceptingApplications { get; set; } = true;
+        public bool IsPublicDirectoryListed { get; set; } = true;
+        public string? PublicRecruitingMessage { get; set; }
+        public string? PublicRequirements { get; set; }
     }
 
     private sealed class SaveQuestionsRequest
