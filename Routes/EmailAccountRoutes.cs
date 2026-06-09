@@ -11,6 +11,7 @@ public static class EmailAccountRoutes
     {
         WebsiteDiscordAuthRoutes.Register(app);
         VtcDirectoryRoutes.Register(app);
+        VtcSelectionRoutes.Register(app);
 
         app.MapPost("/api/account/register", async (HttpContext ctx) =>
         {
@@ -108,7 +109,8 @@ public static class EmailAccountRoutes
             displayName = string.IsNullOrWhiteSpace(account.DisplayName) ? account.Email : account.DisplayName,
             discordLinked = !string.IsNullOrWhiteSpace(account.DiscordUserId),
             discordUserId = account.DiscordUserId ?? "",
-            guildId = ""
+            guildId = "",
+            redirectUrl = "/select-vtc/"
         });
     }
 
