@@ -250,6 +250,12 @@ public sealed class PortalDispatchLoad
     public string BolUrl { get; set; } = "";
     public string ReceiptUrl { get; set; } = "";
     public string DiscordMessageUrl { get; set; } = "";
+    public string MarketType { get; set; } = "freight";
+    public string GameMarket { get; set; } = "freight_market";
+    public string TargetMarket { get; set; } = "freight_market";
+    public string Trailer { get; set; } = "";
+    public string TrailerDefinition { get; set; } = "";
+    public string TrailerVariant { get; set; } = "";
     public bool IsCompanyLoad { get; set; } = true;
     public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
