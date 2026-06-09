@@ -267,7 +267,7 @@ public static class PortalMeEmailRoutes
     }
 
     private static string FirstNonBlank(params string?[] values)
-    {
+    { 
         foreach (var value in values) if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
         return "";
     }
