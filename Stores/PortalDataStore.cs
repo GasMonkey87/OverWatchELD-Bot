@@ -28,18 +28,13 @@ public sealed class PortalDataStore
     {
         lock (_lock)
         {
-            if (!File.Exists(_path))
-                return new PortalDataRoot();
-
+            if (!File.Exists(_path)) return new PortalDataRoot();
             try
             {
                 var json = File.ReadAllText(_path);
                 return JsonSerializer.Deserialize<PortalDataRoot>(json, ReadOptions) ?? new PortalDataRoot();
             }
-            catch
-            {
-                return new PortalDataRoot();
-            }
+            catch { return new PortalDataRoot(); }
         }
     }
 
@@ -48,9 +43,7 @@ public sealed class PortalDataStore
         lock (_lock)
         {
             var dir = Path.GetDirectoryName(_path);
-            if (!string.IsNullOrWhiteSpace(dir))
-                Directory.CreateDirectory(dir);
-
+            if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
             File.WriteAllText(_path, JsonSerializer.Serialize(data, WriteOptions));
         }
     }
@@ -64,7 +57,6 @@ public sealed class PortalDataStore
             root.Guilds[guildId] = guild;
             Save(root);
         }
-
         return guild;
     }
 
@@ -76,7 +68,6 @@ public sealed class PortalDataStore
             guild = new PortalGuildData { GuildId = guildId };
             root.Guilds[guildId] = guild;
         }
-
         update(guild);
         guild.GuildId = guildId;
         guild.UpdatedUtc = DateTimeOffset.UtcNow;
@@ -122,6 +113,7 @@ public sealed class PortalGuildData
     public string SelectedFeaturedDriver { get; set; } = "";
     public List<PortalTruck> Trucks { get; set; } = new();
     public List<PortalGarage> Garages { get; set; } = new();
+    public List<PortalDispatchLoad> DispatchLoads { get; set; } = new();
     public List<PortalAuditEntry> AuditLog { get; set; } = new();
     public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -233,4 +225,36 @@ public sealed class PortalGarage
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
     public List<string> AssignedTruckNumbers { get; set; } = new();
+}
+
+public sealed class PortalDispatchLoad
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string LoadNumber { get; set; } = "";
+    public string Status { get; set; } = "Available";
+    public string Title { get; set; } = "";
+    public string Cargo { get; set; } = "";
+    public string Weight { get; set; } = "";
+    public string Origin { get; set; } = "";
+    public string OriginCompany { get; set; } = "";
+    public string Destination { get; set; } = "";
+    public string DestinationCompany { get; set; } = "";
+    public string Miles { get; set; } = "";
+    public string Rate { get; set; } = "";
+    public string Revenue { get; set; } = "";
+    public string AssignedDriver { get; set; } = "";
+    public string AssignedDriverDiscordUserId { get; set; } = "";
+    public string AssignedTruck { get; set; } = "";
+    public string Dispatcher { get; set; } = "";
+    public string Notes { get; set; } = "";
+    public string BolUrl { get; set; } = "";
+    public string ReceiptUrl { get; set; } = "";
+    public string DiscordMessageUrl { get; set; } = "";
+    public bool IsCompanyLoad { get; set; } = true;
+    public DateTimeOffset CreatedUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedUtc { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? ClaimedUtc { get; set; }
+    public DateTimeOffset? PickedUpUtc { get; set; }
+    public DateTimeOffset? DeliveredUtc { get; set; }
+    public DateTimeOffset? PaidUtc { get; set; }
 }
