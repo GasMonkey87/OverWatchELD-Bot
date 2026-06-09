@@ -42,15 +42,19 @@ public static class PortalLoadBoardRoutes
             if (!string.IsNullOrWhiteSpace(status) && !string.Equals(status, "All", StringComparison.OrdinalIgnoreCase))
                 merged = merged.Where(x => string.Equals(x.Status, status, StringComparison.OrdinalIgnoreCase)).ToList();
 
-            return Results.Ok(new
-            {
-                ok = true,
-                guildId,
-                loads = merged.OrderByDescending(x => x.UpdatedUtc).ToList(),
-                portalCount = portalRows.Count,
-                dispatchCount = legacyRows.Count,
-                legacyError
-            });
+            return Results.Ok(new { ok = true, guildId, loads = merged.OrderByDescending(x => x.UpdatedUtc).ToList(), portalCount = portalRows.Count, dispatchCount = legacyRows.Count, legacyError });
+        });
+
+        app.MapGet("/api/vtc/portal/community-loads", ([FromServices] PortalDataStore store) =>
+        {
+            var root = store.Load();
+            var rows = root.Guilds.Values
+                .SelectMany(g => g.DispatchLoads.Select(l => new { guildId = g.GuildId, vtcName = First(g.CompanyName, g.SiteTitle, g.GuildId), load = l }))
+                .Where(x => !x.load.IsCompanyLoad || ContainsCommunityMarker(x.load))
+                .OrderByDescending(x => x.load.UpdatedUtc)
+                .Take(250)
+                .ToList();
+            return Results.Ok(new { ok = true, loads = rows });
         });
 
         app.MapPost("/api/vtc/portal/loads", async (HttpContext ctx, [FromServices] PortalDataStore store) =>
@@ -119,48 +123,21 @@ public static class PortalLoadBoardRoutes
         });
     }
 
+    private static bool ContainsCommunityMarker(PortalDispatchLoad load)
+    {
+        return (load.Notes ?? "").Contains("Load Type: community", StringComparison.OrdinalIgnoreCase)
+            || (load.Dispatcher ?? "").Contains("Community", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static PortalDispatchLoad ConvertLegacyLoad(DispatchLoad load)
     {
-        return new PortalDispatchLoad
-        {
-            Id = load.Id,
-            LoadNumber = load.LoadNumber,
-            Status = NormalizePortalLoadStatus(load.Status),
-            Title = load.LoadNumber,
-            Cargo = load.Commodity,
-            Origin = load.PickupLocation,
-            Destination = load.DropoffLocation,
-            AssignedDriver = load.DriverName,
-            AssignedDriverDiscordUserId = load.DriverDiscordUserId,
-            AssignedTruck = load.TruckId,
-            Dispatcher = "ELD Dispatch Tracker",
-            Notes = load.DispatcherNotes,
-            BolUrl = load.BolNumber,
-            IsCompanyLoad = true,
-            CreatedUtc = load.CreatedUtc,
-            UpdatedUtc = load.UpdatedUtc,
-            ClaimedUtc = load.AssignedUtc,
-            PickedUpUtc = load.PickupUtc,
-            DeliveredUtc = load.DeliveredUtc
-        };
+        return new PortalDispatchLoad { Id = load.Id, LoadNumber = load.LoadNumber, Status = NormalizePortalLoadStatus(load.Status), Title = load.LoadNumber, Cargo = load.Commodity, Origin = load.PickupLocation, Destination = load.DropoffLocation, AssignedDriver = load.DriverName, AssignedDriverDiscordUserId = load.DriverDiscordUserId, AssignedTruck = load.TruckId, Dispatcher = "ELD Dispatch Tracker", Notes = load.DispatcherNotes, BolUrl = load.BolNumber, IsCompanyLoad = true, CreatedUtc = load.CreatedUtc, UpdatedUtc = load.UpdatedUtc, ClaimedUtc = load.AssignedUtc, PickedUpUtc = load.PickupUtc, DeliveredUtc = load.DeliveredUtc };
     }
 
     private static string NormalizePortalLoadStatus(string? status)
     {
         var s = (status ?? "").Trim().Replace("_", " ").ToLowerInvariant();
-        return s switch
-        {
-            "unassigned" => "Available",
-            "assigned" => "Assigned",
-            "picked up" => "Picked Up",
-            "pickedup" => "Picked Up",
-            "in transit" => "In Transit",
-            "delivered" => "Delivered",
-            "paid" => "Paid",
-            "cancelled" => "Cancelled",
-            "canceled" => "Cancelled",
-            _ => string.IsNullOrWhiteSpace(status) ? "Available" : status.Trim()
-        };
+        return s switch { "unassigned" => "Available", "assigned" => "Assigned", "picked up" => "Picked Up", "pickedup" => "Picked Up", "in transit" => "In Transit", "delivered" => "Delivered", "paid" => "Paid", "cancelled" => "Cancelled", "canceled" => "Cancelled", _ => string.IsNullOrWhiteSpace(status) ? "Available" : status.Trim() };
     }
 
     private static void AddLog(PortalGuildData g, string action, string detail)
