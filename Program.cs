@@ -983,6 +983,7 @@ Message:
         DispatchRoutes.Register(app, services, JsonWriteOpts, dispatchLoadStore, dispatchMessageStore);
         ManagementRoutes.Register(app, services, dispatchMessageStore, driverDisciplineStore);
         VtcManagementRoutes.Register(app);
+        EldLogExportRoutes.Register(app, services);
         app.MapPortalDataRoutes();
         BolUploadRoutes.Register(app.MapGroup("/api"), services, JsonWriteOpts);
         Console.WriteLine($"Bot running on :{port}");
