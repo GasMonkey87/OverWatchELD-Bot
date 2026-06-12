@@ -30,6 +30,9 @@ public static class EldLogExportRoutes
         {
             try
             {
+                Console.WriteLine("[EldLogExportRoutes] POST /api/logs/export");
+                Console.WriteLine($"[EldLogExportRoutes] Content-Type: {ctx.Request.ContentType}");
+
                 if (services.Client == null)
                     return Results.Json(new { ok = false, error = "DiscordClientMissing" }, statusCode: 503);
 
@@ -41,8 +44,8 @@ public static class EldLogExportRoutes
                 {
                     var form = await ctx.Request.ReadFormAsync();
                     req = ReadMultipartRequest(form);
-                    graphFile = FirstFile(form.Files, "graph", "image", "file", "eld-log-graph.png", "graph.png");
-                    textFile = FirstFile(form.Files, "log", "txt", "report", "eld-log.txt", "log.txt");
+                    graphFile = FirstFile(form.Files, "graph", "image", "eld-log-graph", "eld-log-graph.png", "graph.png");
+                    textFile = FirstFile(form.Files, "log", "txt", "report", "eld-log", "eld-log.txt", "log.txt");
                 }
                 else
                 {
@@ -66,38 +69,57 @@ public static class EldLogExportRoutes
                     {
                         ok = false,
                         error = "LogsChannelNotConfigured",
-                        hint = "Run the bot setup again or configure the logs channel. The route looked for GuildSettings.LogsChannelId and channel names containing logs/logbook/dot."
+                        hint = "Configure a logs channel for this guild, or create a text channel containing eld-logs, logs, logbook, or dot."
                     }, statusCode: 400);
                 }
 
                 var safeGraphName = "eld-log-graph.png";
-                var embed = BuildEmbed(req, graphFile != null ? safeGraphName : null);
+                var hasGraph = graphFile != null && graphFile.Length > 0;
+                var embed = BuildEmbed(req, hasGraph ? safeGraphName : null);
                 var textAttachment = BuildTextAttachment(req);
 
-                if (graphFile != null && graphFile.Length > 0)
+                try
                 {
-                    await using var graphStream = graphFile.OpenReadStream();
-                    await channel.SendFileAsync(
-                        graphStream,
-                        safeGraphName,
-                        text: "OverWatch ELD DOT log export",
-                        embed: embed);
-                }
-                else
-                {
-                    await channel.SendMessageAsync("OverWatch ELD DOT log export", embed: embed);
-                }
+                    if (hasGraph && graphFile != null)
+                    {
+                        await using var graphStream = graphFile.OpenReadStream();
+                        await channel.SendFileAsync(
+                            graphStream,
+                            safeGraphName,
+                            text: "OverWatch ELD DOT log export",
+                            embed: embed);
+                    }
+                    else
+                    {
+                        await channel.SendMessageAsync("OverWatch ELD DOT log export", embed: embed);
+                    }
 
-                if (textFile != null && textFile.Length > 0)
-                {
-                    await using var txtStream = textFile.OpenReadStream();
-                    await channel.SendFileAsync(txtStream, "eld-log-export.txt", text: "Attached DOT log text export.");
+                    if (textFile != null && textFile.Length > 0)
+                    {
+                        await using var txtStream = textFile.OpenReadStream();
+                        await channel.SendFileAsync(txtStream, "eld-log-export.txt", text: "Attached DOT log text export.");
+                    }
+                    else if (!string.IsNullOrWhiteSpace(textAttachment))
+                    {
+                        var bytes = Encoding.UTF8.GetBytes(textAttachment);
+                        await using var ms = new MemoryStream(bytes);
+                        await channel.SendFileAsync(ms, "eld-log-export.txt", text: "Attached DOT log text export.");
+                    }
                 }
-                else if (!string.IsNullOrWhiteSpace(textAttachment))
+                catch (Exception ex)
                 {
-                    var bytes = Encoding.UTF8.GetBytes(textAttachment);
-                    await using var ms = new MemoryStream(bytes);
-                    await channel.SendFileAsync(ms, "eld-log-export.txt", text: "Attached DOT log text export.");
+                    Console.WriteLine("[EldLogExportRoutes] Discord send failed:");
+                    Console.WriteLine(ex.ToString());
+
+                    return Results.Json(new
+                    {
+                        ok = false,
+                        error = "DiscordSendFailed",
+                        message = ex.Message,
+                        type = ex.GetType().FullName,
+                        channelId = channel.Id.ToString(),
+                        channelName = channel.Name
+                    }, statusCode: 500);
                 }
 
                 return Results.Json(new
@@ -105,18 +127,21 @@ public static class EldLogExportRoutes
                     ok = true,
                     channelId = channel.Id.ToString(),
                     channelName = channel.Name,
-                    imageAttached = graphFile != null && graphFile.Length > 0
+                    imageAttached = hasGraph
                 });
             }
             catch (Exception ex)
             {
-                Console.WriteLine("[EldLogExportRoutes] /api/logs/export failed: " + ex);
+                Console.WriteLine("=== ELD LOG EXPORT ROUTE CRASH ===");
+                Console.WriteLine(ex.ToString());
+
                 return Results.Json(new
                 {
                     ok = false,
                     error = "ExportRouteException",
                     message = ex.Message,
-                    type = ex.GetType().Name
+                    type = ex.GetType().FullName,
+                    stack = ex.StackTrace
                 }, statusCode: 500);
             }
         });
@@ -129,7 +154,8 @@ public static class EldLogExportRoutes
             foreach (var name in names)
             {
                 var value = form[name].ToString();
-                if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                    return value.Trim();
             }
             return "";
         }
@@ -159,11 +185,13 @@ public static class EldLogExportRoutes
         foreach (var name in names)
         {
             var byName = files.GetFile(name);
-            if (byName != null) return byName;
+            if (byName != null)
+                return byName;
 
             var byFileName = files.FirstOrDefault(f =>
                 string.Equals(f.FileName, name, StringComparison.OrdinalIgnoreCase));
-            if (byFileName != null) return byFileName;
+            if (byFileName != null)
+                return byFileName;
         }
 
         return files.FirstOrDefault(f =>
@@ -180,16 +208,21 @@ public static class EldLogExportRoutes
             if (settingsStore != null)
             {
                 var settings = await settingsStore.GetAsync(guildId);
-                if (ulong.TryParse(settings.LogsChannelId, out var configuredId))
+                var logsChannelId = settings?.LogsChannelId;
+
+                if (!string.IsNullOrWhiteSpace(logsChannelId) &&
+                    ulong.TryParse(logsChannelId, out var configuredId))
                 {
                     var configured = guild.GetTextChannel(configuredId);
-                    if (configured != null) return configured;
+                    if (configured != null)
+                        return configured;
                 }
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine("[EldLogExportRoutes] GuildSettings lookup failed: " + ex.Message);
+            Console.WriteLine("[EldLogExportRoutes] GuildSettings lookup failed:");
+            Console.WriteLine(ex.ToString());
         }
 
         return guild.TextChannels.FirstOrDefault(c =>
@@ -202,25 +235,23 @@ public static class EldLogExportRoutes
     private static Embed BuildEmbed(LogExportRequest req, string? graphAttachmentName)
     {
         var driver = FirstNonBlank(req.DriverName, req.DiscordUsername, "Unknown Driver");
+
         var embed = new EmbedBuilder()
             .WithTitle("OverWatch ELD DOT Log Export")
             .WithColor(Color.Blue)
-            .AddField("Driver", driver, true)
-            .AddField("Date Range", FirstNonBlank(req.DateRange, "N/A"), true)
-            .AddField("Certified", FirstNonBlank(req.Certified, "N/A"), true)
-            .AddField("Truck", FirstNonBlank(req.Truck, "Unknown Truck"), true)
-            .AddField("Unit #", FirstNonBlank(req.UnitNumber, "N/A"), true)
-            .AddField("Violations", FirstNonBlank(req.Violations, "None"), true)
-            .AddField("HOS Remaining", FirstNonBlank(req.HosRemaining, "N/A"), false)
-            .AddField("Discord ID", FirstNonBlank(req.DiscordUserId, "Not linked"), true)
-            .AddField("TruckersMP ID", FirstNonBlank(req.TruckersMpId, "Not linked"), true)
-            .AddField("Permanent Key", FirstNonBlank(req.PermanentDriverKey, "N/A"), false)
+            .AddField("Driver", Clip(driver, 256), true)
+            .AddField("Date Range", Clip(FirstNonBlank(req.DateRange, "N/A"), 256), true)
+            .AddField("Certified", Clip(FirstNonBlank(req.Certified, "N/A"), 256), true)
+            .AddField("Truck", Clip(FirstNonBlank(req.Truck, "Unknown Truck"), 256), true)
+            .AddField("Unit #", Clip(FirstNonBlank(req.UnitNumber, "N/A"), 256), true)
+            .AddField("Violations", Clip(FirstNonBlank(req.Violations, "None"), 256), true)
+            .AddField("HOS Remaining", Clip(FirstNonBlank(req.HosRemaining, "N/A"), 1024), false)
+            .AddField("Discord ID", Clip(FirstNonBlank(req.DiscordUserId, "Not linked"), 256), true)
+            .AddField("TruckersMP ID", Clip(FirstNonBlank(req.TruckersMpId, "Not linked"), 256), true)
+            .AddField("Permanent Key", Clip(FirstNonBlank(req.PermanentDriverKey, "N/A"), 1024), false)
+            .WithDescription(Clip(FirstNonBlank(req.Summary, "See attached log export."), 1000))
             .WithFooter("OverWatch ELD • DOT Compliance Export")
             .WithCurrentTimestamp();
-
-        var summary = FirstNonBlank(req.Summary, "See attached log export.");
-        if (summary.Length > 1000) summary = summary[..1000] + "…";
-        embed.WithDescription(summary);
 
         if (!string.IsNullOrWhiteSpace(graphAttachmentName))
             embed.WithImageUrl("attachment://" + graphAttachmentName);
@@ -251,11 +282,24 @@ public static class EldLogExportRoutes
         return sb.ToString();
     }
 
+    private static string Clip(string? value, int max)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "N/A";
+
+        value = value.Trim();
+        if (value.Length <= max)
+            return value;
+
+        return value[..Math.Max(0, max - 12)] + "… truncated";
+    }
+
     private static string FirstNonBlank(params string?[] values)
     {
         foreach (var value in values)
         {
-            if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
         }
         return "";
     }
