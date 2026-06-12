@@ -28,6 +28,9 @@ public static class EldLogExportRoutes
 
         app.MapPost("/api/logs/export", async (HttpContext ctx) =>
         {
+                Console.WriteLine("=== ELD EXPORT ROUTE HIT ===");
+    Console.WriteLine($"ContentType={ctx.Request.ContentType}");
+
             try
             {
                 Console.WriteLine("[EldLogExportRoutes] POST /api/logs/export");
