@@ -47,7 +47,18 @@ public static class EldLogExportRoutes
                 if (ctx.Request.HasFormContentType)
                 {
                     var form = await ctx.Request.ReadFormAsync();
-                    Console.WriteLine("===== FORM FIELDS =====");
+                    Console.WriteLine("===== FORM DEBUG =====");
+
+foreach (var key in form.Keys)
+{
+    Console.WriteLine($"FIELD: {key}");
+}
+
+foreach (var file in form.Files)
+{
+    Console.WriteLine(
+        $"FILE: Name={file.Name} FileName={file.FileName} Length={file.Length}");
+}
 
 foreach (var key in form.Keys)
 {
