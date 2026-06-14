@@ -19,12 +19,13 @@ public static class EldLogExportRoutes
     public static void Register(WebApplication app, BotServices services)
     {
         app.MapGet("/api/logs/export/health", () => Results.Json(new
-        {
-            ok = true,
-            route = "/api/logs/export",
-            supports = new[] { "application/json", "multipart/form-data" },
-            utc = DateTimeOffset.UtcNow
-        }));
+{
+    ok = true,
+    route = "/api/logs/export",
+    version = "DEBUG_POST_TEST_001",
+    supports = new[] { "application/json", "multipart/form-data" },
+    utc = DateTimeOffset.UtcNow
+}));
 
         app.MapPost("/api/logs/export", async (HttpContext ctx) =>
 {
