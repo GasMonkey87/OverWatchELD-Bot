@@ -246,6 +246,40 @@ public static partial class Program
         builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
         var app = builder.Build();
 
+        app.Use(async (ctx, next) =>
+{
+    if (ctx.Request.Path.StartsWithSegments("/api/logs/export"))
+    {
+        Console.WriteLine("=== EXPORT REQUEST ENTERED PIPELINE ===");
+        Console.WriteLine($"Method={ctx.Request.Method}");
+        Console.WriteLine($"Path={ctx.Request.Path}");
+        Console.WriteLine($"ContentType={ctx.Request.ContentType}");
+        Console.WriteLine($"ContentLength={ctx.Request.ContentLength}");
+    }
+
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("=== EXPORT PIPELINE CRASH ===");
+        Console.WriteLine(ex.ToString());
+
+        ctx.Response.StatusCode = 500;
+        ctx.Response.ContentType = "application/json";
+
+        await ctx.Response.WriteAsync(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            ok = false,
+            error = "PipelineCrash",
+            message = ex.Message,
+            type = ex.GetType().FullName,
+            stack = ex.ToString()
+        }));
+    }
+});
+        
         app.UseCors("CloudflarePortal");
 
         await app.Services.GetRequiredService<PersistentDispatchMessageStore>().EnsureCreatedAsync();
