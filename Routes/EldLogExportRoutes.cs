@@ -27,12 +27,14 @@ public static class EldLogExportRoutes
         }));
 
         app.MapPost("/api/logs/export", async (HttpContext ctx) =>
-        {
-                Console.WriteLine("=== ELD EXPORT ROUTE HIT ===");
+{
+    Console.WriteLine("=== ELD EXPORT ROUTE HIT ===");
     Console.WriteLine($"ContentType={ctx.Request.ContentType}");
 
-            try
-            {
+    throw new Exception("ROUTE ENTERED TEST");
+
+    try
+    {
                 Console.WriteLine("[EldLogExportRoutes] POST /api/logs/export");
                 Console.WriteLine($"[EldLogExportRoutes] Content-Type: {ctx.Request.ContentType}");
 
