@@ -47,6 +47,18 @@ public static class EldLogExportRoutes
                 if (ctx.Request.HasFormContentType)
                 {
                     var form = await ctx.Request.ReadFormAsync();
+                    Console.WriteLine("===== FORM FIELDS =====");
+
+foreach (var key in form.Keys)
+{
+    Console.WriteLine($"FIELD: {key}");
+}
+
+foreach (var file in form.Files)
+{
+    Console.WriteLine(
+        $"FILE: Name={file.Name} FileName={file.FileName} Length={file.Length}");
+}
                     req = ReadMultipartRequest(form);
                     graphFile = FirstFile(form.Files, "graph", "image", "eld-log-graph", "eld-log-graph.png", "graph.png");
                     textFile = FirstFile(form.Files, "log", "txt", "report", "eld-log", "eld-log.txt", "log.txt");
