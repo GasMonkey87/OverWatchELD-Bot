@@ -19,24 +19,21 @@ public static class EldLogExportRoutes
     public static void Register(WebApplication app, BotServices services)
     {
         app.MapGet("/api/logs/export/health", () => Results.Json(new
-{
-    ok = true,
-    route = "/api/logs/export",
-    version = "DEBUG_POST_TEST_001",
-    supports = new[] { "application/json", "multipart/form-data" },
-    utc = DateTimeOffset.UtcNow
-}));
+        {
+            ok = true,
+            route = "/api/logs/export",
+            version = "GRAPH_MULTIPART_PAYLOAD_FIX_001",
+            supports = new[] { "application/json", "multipart/form-data" },
+            utc = DateTimeOffset.UtcNow
+        }));
 
-       app.MapPost("/api/logs/export", async (HttpContext ctx) =>
-{
-    Console.WriteLine("=== ELD EXPORT ROUTE HIT DEBUG_POST_TEST_001 ===");
-    Console.WriteLine($"ContentType={ctx.Request.ContentType}");
+        app.MapPost("/api/logs/export", async (HttpContext ctx) =>
+        {
+            Console.WriteLine("=== ELD EXPORT ROUTE HIT GRAPH_MULTIPART_PAYLOAD_FIX_001 ===");
+            Console.WriteLine($"ContentType={ctx.Request.ContentType}");
 
-    try
-    {
-        Console.WriteLine("[EldLogExportRoutes] POST /api/logs/export");
-                Console.WriteLine($"[EldLogExportRoutes] Content-Type: {ctx.Request.ContentType}");
-
+            try
+            {
                 if (services.Client == null)
                     return Results.Json(new { ok = false, error = "DiscordClientMissing" }, statusCode: 503);
 
@@ -47,36 +44,67 @@ public static class EldLogExportRoutes
                 if (ctx.Request.HasFormContentType)
                 {
                     var form = await ctx.Request.ReadFormAsync();
+
                     Console.WriteLine("===== FORM DEBUG =====");
+                    foreach (var key in form.Keys)
+                        Console.WriteLine($"FIELD: {key}");
+                    foreach (var file in form.Files)
+                        Console.WriteLine($"FILE: Name={file.Name} FileName={file.FileName} Length={file.Length}");
 
-foreach (var key in form.Keys)
-{
-    Console.WriteLine($"FIELD: {key}");
-}
-
-foreach (var file in form.Files)
-{
-    Console.WriteLine(
-        $"FILE: Name={file.Name} FileName={file.FileName} Length={file.Length}");
-}
-
-foreach (var key in form.Keys)
-{
-    Console.WriteLine($"FIELD: {key}");
-}
-
-foreach (var file in form.Files)
-{
-    Console.WriteLine(
-        $"FILE: Name={file.Name} FileName={file.FileName} Length={file.Length}");
-}
                     req = ReadMultipartRequest(form);
-                    graphFile = FirstFile(form.Files, "graph", "image", "eld-log-graph", "eld-log-graph.png", "graph.png");
-                    textFile = FirstFile(form.Files, "log", "txt", "report", "eld-log", "eld-log.txt", "log.txt");
+
+                    var payloadJson = form["payload"].ToString();
+                    if (string.IsNullOrWhiteSpace(payloadJson))
+                        payloadJson = form["payload_json"].ToString();
+
+                    if (!string.IsNullOrWhiteSpace(payloadJson))
+                    {
+                        try
+                        {
+                            var fromPayload = JsonSerializer.Deserialize<LogExportRequest>(payloadJson, JsonOpts);
+                            if (fromPayload != null)
+                                req = Merge(req, fromPayload);
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("[EldLogExportRoutes] payload/payload_json parse failed:");
+                            Console.WriteLine(ex.ToString());
+                        }
+                    }
+
+                    graphFile = FirstFile(
+                        form.Files,
+                        "graph",
+                        "image",
+                        "files[0]",
+                        "eld-log-graph",
+                        "eld-log-graph.png",
+                        "graph.png");
+
+                    textFile = FirstTextFile(
+                        form.Files,
+                        "log",
+                        "txt",
+                        "report",
+                        "files[1]",
+                        "eld-log",
+                        "eld-log.txt",
+                        "log.txt",
+                        "driver-log-export");
                 }
                 else
                 {
                     req = await ctx.Request.ReadFromJsonAsync<LogExportRequest>(JsonOpts) ?? new LogExportRequest();
+
+                    if ((req.HasGraph || !string.IsNullOrWhiteSpace(req.GraphBase64)) &&
+                        !string.IsNullOrWhiteSpace(req.GraphBase64))
+                    {
+                        graphFile = new InMemoryFormFile(
+                            Convert.FromBase64String(req.GraphBase64),
+                            "graph",
+                            FirstNonBlank(req.GraphFileName, "eld-log-graph.png"),
+                            FirstNonBlank(req.GraphMimeType, "image/png"));
+                    }
                 }
 
                 if (string.IsNullOrWhiteSpace(req.GuildId))
@@ -102,6 +130,11 @@ foreach (var file in form.Files)
 
                 var safeGraphName = "eld-log-graph.png";
                 var hasGraph = graphFile != null && graphFile.Length > 0;
+
+                Console.WriteLine($"[EldLogExportRoutes] hasGraph={hasGraph}");
+                Console.WriteLine($"[EldLogExportRoutes] graphFile={graphFile?.FileName ?? "NULL"} length={graphFile?.Length ?? 0}");
+                Console.WriteLine($"[EldLogExportRoutes] guildId={req.GuildId} driver={req.DriverName}");
+
                 var embed = BuildEmbed(req, hasGraph ? safeGraphName : null);
                 var textAttachment = BuildTextAttachment(req);
 
@@ -207,6 +240,33 @@ foreach (var file in form.Files)
         };
     }
 
+    private static LogExportRequest Merge(LogExportRequest a, LogExportRequest b)
+    {
+        return new LogExportRequest
+        {
+            GuildId = FirstNonBlank(a.GuildId, b.GuildId),
+            DriverName = FirstNonBlank(a.DriverName, b.DriverName),
+            DiscordUserId = FirstNonBlank(a.DiscordUserId, b.DiscordUserId),
+            DiscordUsername = FirstNonBlank(a.DiscordUsername, b.DiscordUsername),
+            TruckersMpId = FirstNonBlank(a.TruckersMpId, b.TruckersMpId),
+            IdentityHash = FirstNonBlank(a.IdentityHash, b.IdentityHash),
+            PermanentDriverKey = FirstNonBlank(a.PermanentDriverKey, b.PermanentDriverKey),
+            Truck = FirstNonBlank(a.Truck, b.Truck),
+            UnitNumber = FirstNonBlank(a.UnitNumber, b.UnitNumber),
+            DateRange = FirstNonBlank(a.DateRange, b.DateRange),
+            Certified = FirstNonBlank(a.Certified, b.Certified),
+            Violations = FirstNonBlank(a.Violations, b.Violations),
+            HosRemaining = FirstNonBlank(a.HosRemaining, b.HosRemaining),
+            Summary = FirstNonBlank(a.Summary, b.Summary),
+            ReportText = FirstNonBlank(a.ReportText, b.ReportText),
+            ExportStyle = FirstNonBlank(a.ExportStyle, b.ExportStyle),
+            HasGraph = a.HasGraph || b.HasGraph,
+            GraphFileName = FirstNonBlank(a.GraphFileName, b.GraphFileName),
+            GraphBase64 = FirstNonBlank(a.GraphBase64, b.GraphBase64),
+            GraphMimeType = FirstNonBlank(a.GraphMimeType, b.GraphMimeType)
+        };
+    }
+
     private static IFormFile? FirstFile(IFormFileCollection files, params string[] names)
     {
         foreach (var name in names)
@@ -223,6 +283,25 @@ foreach (var file in form.Files)
 
         return files.FirstOrDefault(f =>
             (f.ContentType ?? "").Contains("image", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static IFormFile? FirstTextFile(IFormFileCollection files, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            var byName = files.GetFile(name);
+            if (byName != null)
+                return byName;
+
+            var byFileName = files.FirstOrDefault(f =>
+                f.FileName.Contains(name, StringComparison.OrdinalIgnoreCase));
+            if (byFileName != null)
+                return byFileName;
+        }
+
+        return files.FirstOrDefault(f =>
+            (f.ContentType ?? "").Contains("text", StringComparison.OrdinalIgnoreCase) ||
+            f.FileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase));
     }
 
     private static async Task<SocketTextChannel?> ResolveLogsChannelAsync(
@@ -331,6 +410,32 @@ foreach (var file in form.Files)
         return "";
     }
 
+    private sealed class InMemoryFormFile : IFormFile
+    {
+        private readonly byte[] _bytes;
+
+        public InMemoryFormFile(byte[] bytes, string name, string fileName, string contentType)
+        {
+            _bytes = bytes;
+            Name = name;
+            FileName = fileName;
+            Headers = new HeaderDictionary();
+            ContentType = contentType;
+        }
+
+        public string ContentType { get; }
+        public string ContentDisposition => "";
+        public IHeaderDictionary Headers { get; }
+        public long Length => _bytes.Length;
+        public string Name { get; }
+        public string FileName { get; }
+
+        public void CopyTo(Stream target) => target.Write(_bytes, 0, _bytes.Length);
+        public Task CopyToAsync(Stream target, CancellationToken cancellationToken = default)
+            => target.WriteAsync(_bytes, 0, _bytes.Length, cancellationToken);
+        public Stream OpenReadStream() => new MemoryStream(_bytes);
+    }
+
     private sealed class LogExportRequest
     {
         public string GuildId { get; set; } = "";
@@ -348,5 +453,10 @@ foreach (var file in form.Files)
         public string HosRemaining { get; set; } = "";
         public string Summary { get; set; } = "";
         public string ReportText { get; set; } = "";
+        public string ExportStyle { get; set; } = "";
+        public bool HasGraph { get; set; }
+        public string GraphFileName { get; set; } = "";
+        public string GraphBase64 { get; set; } = "";
+        public string GraphMimeType { get; set; } = "";
     }
 }
