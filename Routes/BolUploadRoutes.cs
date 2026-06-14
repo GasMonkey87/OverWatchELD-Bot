@@ -171,16 +171,19 @@ public static class BolUploadRoutes
                 }, statusCode: 404);
             }
             catch (Exception ex)
-            {
-                Console.WriteLine("[BOL UPLOAD ERROR] " + ex);
-                return Results.Json(new
-                {
-                    ok = false,
-                    error = "BolUploadFailed",
-                    detail = ex.Message,
-                    type = ex.GetType().FullName
-                }, statusCode: 500);
-            }
+{
+    Console.WriteLine("=== BOL UPLOAD CRASH ===");
+    Console.WriteLine(ex.ToString());
+
+    return Results.Json(new
+    {
+        ok = false,
+        error = "BolUploadFailed",
+        message = ex.Message,
+        type = ex.GetType().FullName,
+        stack = ex.ToString()
+    }, statusCode: 500);
+}
         }
 
         r.MapPost("/loads/bol/upload", HandleBolUpload);
