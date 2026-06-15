@@ -242,14 +242,14 @@ public static class BolUploadRoutes
 
         r.MapPost("/loads/bol/upload", HandleBolUpload);
 
-        r.MapGet("/loads/bol/upload/version", () => Results.Json(new
-        {
-            ok = true,
-            route = "BolUploadRoutes",
-            version = "bol-upload-full-fix-2026-06-14",
-            utc = DateTimeOffset.UtcNow
-        }, jsonWrite));
-    }
+        r.MapGet("/loads/bol/upload/version", () =>
+{
+    return Results.Json(new
+    {
+        ok = true,
+        version = "bol-upload-debug"
+    });
+});
 
     private static IResult JsonError(string error, string message, string traceId, int statusCode, string? type = null)
     {
