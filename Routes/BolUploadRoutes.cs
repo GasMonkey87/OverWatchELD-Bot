@@ -32,15 +32,34 @@ public static class BolUploadRoutes
 
         async Task<IResult> HandleBolUpload(HttpRequest req)
         {
+            var traceId = Guid.NewGuid().ToString("N")[..8];
+
             try
             {
+                Console.WriteLine($"=== BOL UPLOAD ENTERED trace={traceId} ===");
+                Console.WriteLine($"ContentType={req.ContentType}");
+                Console.WriteLine($"ContentLength={req.ContentLength}");
+                Console.WriteLine($"HasFormContentType={req.HasFormContentType}");
+
                 if (services.Client == null)
-                    return Results.Json(new { ok = false, error = "ClientNull" }, statusCode: 503);
+                    return JsonError("ClientNull", "Discord client is null.", traceId, 503);
+
+                if (!services.DiscordReady)
+                    Console.WriteLine($"[BOL {traceId}] DiscordReady=false; will still try using cached guilds.");
 
                 if (!req.HasFormContentType)
-                    return Results.Json(new { ok = false, error = "ExpectedMultipartFormData" }, statusCode: 400);
+                    return JsonError("ExpectedMultipartFormData", "POST must be multipart/form-data.", traceId, 400);
 
-                var form = await req.ReadFormAsync();
+                IFormCollection form;
+                try
+                {
+                    form = await req.ReadFormAsync();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[BOL {traceId}] ReadFormAsync failed: {ex}");
+                    return JsonError("ReadFormFailed", ex.Message, traceId, 400, ex.GetType().FullName);
+                }
 
                 var guildIdFromForm = FirstNonBlank(
                     form["guildId"].ToString(),
@@ -63,32 +82,54 @@ public static class BolUploadRoutes
                                string.Equals(Path.GetExtension(f.FileName), ".pdf", StringComparison.OrdinalIgnoreCase)) ??
                            form.Files.FirstOrDefault();
 
+                Console.WriteLine($"[BOL {traceId}] guildId={guildIdFromForm}; loadNumber={loadNumber}; status={status}; files={form.Files.Count}");
+
                 if (string.IsNullOrWhiteSpace(loadNumber))
-                    return Results.Json(new { ok = false, error = "MissingLoadNumber" }, statusCode: 400);
+                    return JsonError("MissingLoadNumber", "Multipart form is missing loadNumber/currentLoadNumber/bolNumber.", traceId, 400);
 
                 if (file == null || file.Length == 0)
-                    return Results.Json(new { ok = false, error = "MissingFile" }, statusCode: 400);
+                    return JsonError("MissingFile", "Multipart form is missing file/bol/bolFile PDF upload.", traceId, 400);
+
+                Console.WriteLine($"[BOL {traceId}] fileName={file.FileName}; fileLength={file.Length}; fileContentType={file.ContentType}");
+
+                byte[] fileBytes;
+                try
+                {
+                    await using var input = file.OpenReadStream();
+                    using var ms = new MemoryStream();
+                    await input.CopyToAsync(ms);
+                    fileBytes = ms.ToArray();
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[BOL {traceId}] Copy uploaded file failed: {ex}");
+                    return JsonError("CopyFileFailed", ex.Message, traceId, 500, ex.GetType().FullName);
+                }
+
+                if (fileBytes.Length == 0)
+                    return JsonError("EmptyCopiedFile", "Uploaded file copied to 0 bytes.", traceId, 400);
 
                 var ext = Path.GetExtension(file.FileName);
                 if (string.IsNullOrWhiteSpace(ext))
                     ext = ".pdf";
 
                 var safeStatus = string.IsNullOrWhiteSpace(status) ? "" : $" - {status}";
-                var displayName = $"BOL - {loadNumber}{safeStatus}{ext}";
+                var displayName = $"BOL - {SanitizeFileName(loadNumber)}{SanitizeFileName(safeStatus)}{ext}";
                 var message = $"📄 BOL PDF attached for load `{loadNumber}`.";
 
                 var map = threadStore.GetByLoadNumber(loadNumber);
+                Console.WriteLine($"[BOL {traceId}] mapFound={map != null}");
 
                 if (map != null && ulong.TryParse(map.ThreadId, out var threadId) && threadId != 0)
                 {
                     try
                     {
+                        Console.WriteLine($"[BOL {traceId}] Trying threadId={map.ThreadId}");
                         var channel = await services.Client.Rest.GetChannelAsync(threadId);
 
                         if (channel is RestThreadChannel thread)
                         {
-                            await using var stream = file.OpenReadStream();
-
+                            await using var stream = new MemoryStream(fileBytes);
                             await thread.SendFileAsync(stream, displayName, message);
 
                             return Results.Json(new
@@ -96,14 +137,17 @@ public static class BolUploadRoutes
                                 ok = true,
                                 uploaded = true,
                                 target = "thread",
+                                traceId,
                                 loadNumber,
                                 threadId = map.ThreadId
                             }, jsonWrite);
                         }
+
+                        Console.WriteLine($"[BOL {traceId}] Channel for threadId was not RestThreadChannel: {channel?.GetType().FullName ?? "null"}");
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine("[BOL THREAD UPLOAD ERROR] " + ex);
+                        Console.WriteLine($"[BOL {traceId}] BOL THREAD UPLOAD ERROR: {ex}");
                     }
                 }
 
@@ -112,13 +156,13 @@ public static class BolUploadRoutes
                 {
                     try
                     {
+                        Console.WriteLine($"[BOL {traceId}] Trying mapped guild={mappedGuildId}, channel={mappedChannelId}");
                         var guild = services.Client.GetGuild(mappedGuildId);
                         var channel = guild?.GetTextChannel(mappedChannelId);
 
                         if (channel != null)
                         {
-                            await using var stream = file.OpenReadStream();
-
+                            await using var stream = new MemoryStream(fileBytes);
                             await channel.SendFileAsync(stream, displayName, message);
 
                             return Results.Json(new
@@ -126,73 +170,100 @@ public static class BolUploadRoutes
                                 ok = true,
                                 uploaded = true,
                                 target = "mapped-channel",
+                                traceId,
                                 loadNumber,
                                 channelId = map.ChannelId
                             }, jsonWrite);
                         }
+
+                        Console.WriteLine($"[BOL {traceId}] Mapped channel not found in cached guild.");
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine("[BOL MAPPED CHANNEL UPLOAD ERROR] " + ex);
+                        Console.WriteLine($"[BOL {traceId}] BOL MAPPED CHANNEL UPLOAD ERROR: {ex}");
                     }
                 }
 
-                var fallbackChannel = await ResolveBolFallbackChannelAsync(services, guildIdFromForm);
+                var fallbackChannel = await ResolveBolFallbackChannelAsync(services, guildIdFromForm, traceId);
                 if (fallbackChannel != null)
                 {
-                    await using var stream = file.OpenReadStream();
-                    var embed = new EmbedBuilder()
-                        .WithTitle("Bill of Lading PDF")
-                        .WithColor(Color.Blue)
-                        .AddField("Load Number", loadNumber, true)
-                        .AddField("Status", string.IsNullOrWhiteSpace(status) ? "BOL PDF Export" : status, true)
-                        .WithFooter("OverWatch ELD • BOL Export")
-                        .WithCurrentTimestamp()
-                        .Build();
-
-                    await fallbackChannel.SendFileAsync(stream, displayName, text: message, embed: embed);
-
-                    return Results.Json(new
+                    try
                     {
-                        ok = true,
-                        uploaded = true,
-                        target = "bol-channel",
-                        loadNumber,
-                        channelId = fallbackChannel.Id.ToString(),
-                        channelName = fallbackChannel.Name
-                    }, jsonWrite);
+                        Console.WriteLine($"[BOL {traceId}] Trying fallback channel #{fallbackChannel.Name} ({fallbackChannel.Id})");
+
+                        var embed = new EmbedBuilder()
+                            .WithTitle("Bill of Lading PDF")
+                            .WithColor(Color.Blue)
+                            .AddField("Load Number", loadNumber, true)
+                            .AddField("Status", string.IsNullOrWhiteSpace(status) ? "BOL PDF Export" : status, true)
+                            .WithFooter("OverWatch ELD • BOL Export")
+                            .WithCurrentTimestamp()
+                            .Build();
+
+                        await using var stream = new MemoryStream(fileBytes);
+                        await fallbackChannel.SendFileAsync(stream, displayName, text: message, embed: embed);
+
+                        return Results.Json(new
+                        {
+                            ok = true,
+                            uploaded = true,
+                            target = "bol-channel",
+                            traceId,
+                            loadNumber,
+                            channelId = fallbackChannel.Id.ToString(),
+                            channelName = fallbackChannel.Name
+                        }, jsonWrite);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[BOL {traceId}] BOL FALLBACK CHANNEL SEND ERROR: {ex}");
+                        return JsonError("BolDiscordSendFailed", ex.Message, traceId, 500, ex.GetType().FullName);
+                    }
                 }
 
                 return Results.Json(new
                 {
                     ok = false,
                     error = "NoBolThreadOrChannel",
-                    hint = "No load thread was found and no BOL channel is configured. Set the BOL channel or create a channel named bol, bills-of-lading, or documents."
+                    traceId,
+                    guildId = guildIdFromForm,
+                    loadNumber,
+                    hint = "No load thread was found and no BOL channel is configured. Create a channel named bol, bills-of-lading, documents, or paperwork, or configure the BOL channel ID."
                 }, statusCode: 404);
             }
             catch (Exception ex)
-{
-    Console.WriteLine("=== BOL UPLOAD CRASH ===");
-    Console.WriteLine(ex.ToString());
+            {
+                Console.WriteLine($"=== BOL UPLOAD CRASH trace={traceId} ===");
+                Console.WriteLine(ex.ToString());
 
-    return Results.Json(new
-    {
-        ok = false,
-        error = "BolUploadFailed",
-        message = ex.Message,
-        type = ex.GetType().FullName,
-        stack = ex.ToString()
-    }, statusCode: 500);
-}
+                return JsonError("BolUploadFailed", ex.Message, traceId, 500, ex.GetType().FullName);
+            }
         }
 
         r.MapPost("/loads/bol/upload", HandleBolUpload);
 
-        // Do not map /loads/bol/post here. BolDiscordOnlyRoutes already owns the JSON BOL post route.
-        // Keeping this upload endpoint separate avoids ASP.NET ambiguous endpoint matches.
+        r.MapGet("/loads/bol/upload/version", () => Results.Json(new
+        {
+            ok = true,
+            route = "BolUploadRoutes",
+            version = "bol-upload-full-fix-2026-06-14",
+            utc = DateTimeOffset.UtcNow
+        }, jsonWrite));
     }
 
-    private static async Task<SocketTextChannel?> ResolveBolFallbackChannelAsync(BotServices services, string guildIdText)
+    private static IResult JsonError(string error, string message, string traceId, int statusCode, string? type = null)
+    {
+        return Results.Json(new
+        {
+            ok = false,
+            error,
+            message,
+            traceId,
+            type
+        }, statusCode: statusCode);
+    }
+
+    private static async Task<SocketTextChannel?> ResolveBolFallbackChannelAsync(BotServices services, string guildIdText, string traceId)
     {
         if (services.Client == null)
             return null;
@@ -204,7 +275,12 @@ public static class BolUploadRoutes
 
         guild ??= services.Client.Guilds.FirstOrDefault();
         if (guild == null)
+        {
+            Console.WriteLine($"[BOL {traceId}] No guild found. client guild count={services.Client.Guilds.Count}");
             return null;
+        }
+
+        Console.WriteLine($"[BOL {traceId}] Resolving fallback in guild={guild.Name} ({guild.Id})");
 
         try
         {
@@ -213,19 +289,23 @@ public static class BolUploadRoutes
                 : null;
 
             var channelId = ResolveBolChannelId(settings);
+            Console.WriteLine($"[BOL {traceId}] Configured BOL channel ID={channelId}");
+
             if (ulong.TryParse(channelId, out var configuredId))
             {
                 var configured = guild.GetTextChannel(configuredId);
                 if (configured != null)
                     return configured;
+
+                Console.WriteLine($"[BOL {traceId}] Configured channel ID was not found in guild cache.");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine("[BOL UPLOAD SETTINGS LOOKUP ERROR] " + ex.Message);
+            Console.WriteLine($"[BOL {traceId}] BOL UPLOAD SETTINGS LOOKUP ERROR: {ex}");
         }
 
-        return guild.TextChannels.FirstOrDefault(c =>
+        var found = guild.TextChannels.FirstOrDefault(c =>
         {
             var name = Normalize(c.Name);
             return name == "bol" ||
@@ -235,6 +315,12 @@ public static class BolUploadRoutes
                    name.Contains("documents") ||
                    name.Contains("paperwork");
         });
+
+        Console.WriteLine(found == null
+            ? $"[BOL {traceId}] No fallback channel by name found."
+            : $"[BOL {traceId}] Fallback channel by name found: #{found.Name} ({found.Id})");
+
+        return found;
     }
 
     private static string ResolveBolChannelId(object? settings)
@@ -311,6 +397,14 @@ public static class BolUploadRoutes
         return "";
     }
 
+    private static string SanitizeFileName(string value)
+    {
+        foreach (var c in Path.GetInvalidFileNameChars())
+            value = value.Replace(c, '-');
+
+        return value.Trim();
+    }
+
     private sealed class LoadThreadMapStore
     {
         private readonly string _path;
@@ -347,8 +441,9 @@ public static class BolUploadRoutes
                 return JsonSerializer.Deserialize<List<LoadThreadEntry>>(raw, _readOpts)
                        ?? new List<LoadThreadEntry>();
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine("[BOL LOAD THREAD MAP READ ERROR] " + ex);
                 return new List<LoadThreadEntry>();
             }
         }
