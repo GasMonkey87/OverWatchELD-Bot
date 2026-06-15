@@ -1019,7 +1019,6 @@ Message:
         VtcManagementRoutes.Register(app);
         OverWatchELD.VtcBot.Routes.EldLogExportRoutes.Register(app, services);
         app.MapPortalDataRoutes();
-        BolUploadRoutes.Register(app.MapGroup("/api"), services, JsonWriteOpts);
         Console.WriteLine($"Bot running on :{port}");
         EmailAccountRoutes.Register(
     app,
